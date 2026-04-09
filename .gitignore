@@ -1,0 +1,125 @@
+# Local agent / IDE
+.opencode/
+
+# Root scratch (not the test suite)
+/test.dart
+
+# Miscellaneous
+*.class
+*.log
+*.pyc
+*.swp
+.DS_Store
+.atom/
+.build/
+.buildlog/
+.history
+.svn/
+.swiftpm/
+migrate_working_dir/
+
+# IntelliJ related
+*.iml
+*.ipr
+*.iws
+.idea/
+
+# The .vscode folder contains launch configuration and tasks you configure in
+# VS Code which you may wish to be included in version control, so this line
+# is commented out by default.
+#.vscode/
+
+# Flutter/Dart/Pub related
+**/doc/api/
+**/ios/Flutter/.last_build_id
+.dart_tool/
+.flutter-plugins-dependencies
+.pub-cache/
+.pub/
+/build/
+/coverage/
+
+# Node related (Cloud Functions / agent runtime)
+**/node_modules/
+
+# Symbolication related
+app.*.symbols
+
+# Obfuscation related
+app.*.map.json
+
+# Android Studio will place build artifacts here
+/android/app/debug
+/android/app/profile
+/android/app/release
+
+# Local secrets / tokens (never commit)
+token.txt
+
+# Dotenv
+.env
+functions/.env
+functions/.env.secrets
+
+# Never commit Firebase Auth exports or local identity dumps
+auth_export.json
+
+# Firebase & Google (Sensitive)
+lib/firebase_options.dart
+android/app/google-services.json
+ios/Runner/GoogleService-Info.plist
+ios/firebase_app_id_file.json
+firestore.rules
+firestore.indexes.json
+storage.rules
+*google-services.json*
+*GoogleService-Info.plist*
+
+# Android sensitive
+android/key.properties
+*.jks
+*.keystore
+
+# Web sensitive
+web/index.html.bak
+
+# Local scratch / tooling output
+tmp/
+dart_analyze.txt
+.firebase/
+
+# Do not commit installers or stray binaries under datasets
+Accident_DataSet/**/*.exe
+Accident_DataSet/**/*.msi
+
+# Verbose analysis logs (may contain local paths)
+analysis_log*.txt
+analysis_output.txt
+analysis_output_utf8.txt
+analysis_utf8.txt
+
+# Root-level dev build artifacts, analysis logs & deploy logs (never commit these)
+analyze*.txt
+analyze*.log
+analyze*.log
+build*.txt
+build*.log
+compile*.txt
+compile*.log
+err*.txt
+err*.log
+error*.txt
+error*.log
+flutter_run*.txt
+flutter_run*.log
+flutter_analyze*.txt
+flutter_analyze*.log
+flutter_0*.log
+deploy*.txt
+deploy*.log
+verify_clean.txt
+build_error.txt
+build_output*.txt
+build_web_verbose.txt
+*.iml
+

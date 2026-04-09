@@ -1,0 +1,19 @@
+{
+  "name": "emergencyos-copilot-agent",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "node --env-file=.env.local ./node_modules/.bin/tsx ./main.ts",
+    "start": "node --env-file=.env.local ./node_modules/.bin/tsx ./main.ts",
+    "build": "echo \"No build step required (tsx).\""
+  },
+  "dependencies": {
+    "@livekit/agents": "^1.2.1",
+    "@livekit/agents-plugin-livekit": "^1.2.1",
+    "@livekit/agents-plugin-silero": "^1.2.1",
+    "@livekit/noise-cancellation-node": "^0.1.9",
+    "dotenv": "^17.3.1",
+    "tsx": "^4.21.0",
+    "zod": "^3.25.76"
+  }
+}

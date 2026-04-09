@@ -1,0 +1,21 @@
+{
+  "projects": {
+    "default": "emergencyos-101"
+  },
+  "targets": {
+    "emergencyos-101": {
+      "hosting": {
+        "main": [
+          "emergencyos-101"
+        ],
+        "admin": [
+          "emergencyos-admin"
+        ],
+        "fleet": [
+          "emergencyos-fleet"
+        ]
+      }
+    }
+  },
+  "etags": {}
+}

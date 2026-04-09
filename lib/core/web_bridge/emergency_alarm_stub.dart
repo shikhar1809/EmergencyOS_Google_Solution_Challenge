@@ -1,0 +1,2 @@
+void emergencyAlarmStart() {}
+void emergencyAlarmStop() {}

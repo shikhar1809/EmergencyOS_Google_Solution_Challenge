@@ -1,0 +1,559 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <!--
+    If you are serving your web app in a path other than the root, change the
+    href value below to reflect the base path you are serving from.
+
+    The path provided below has to start and end with a slash "/" in order for
+    it to work correctly.
+
+    For more details:
+    * https://developer.mozilla.org/en-US/docs/Web/HTML/Element/base
+
+    This is a placeholder for base href that will be replaced by the value of
+    the `--base-href` argument provided to `flutter build`.
+  -->
+  <base href="$FLUTTER_BASE_HREF">
+
+  <meta charset="UTF-8">
+  <meta content="IE=Edge" http-equiv="X-UA-Compatible">
+  <!-- Reduce stale PWA / browser cache after deploys -->
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+  <meta name="description" content="AI-powered emergency response and first aid platform.">
+
+  <!-- iOS & PWA meta tags & icons -->
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="theme-color" content="#0B1220">
+  <meta name="apple-mobile-web-app-title" content="EmergencyOS">
+  <!-- Tab + home-screen icon: copy of assets/images/logo.png at web/favicon.png -->
+  <link rel="icon" type="image/png" href="favicon.png">
+  <link rel="apple-touch-icon" href="favicon.png">
+
+  <script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyADAZzkECSDAHj0NT-QNBaqZ8ejFs31tGM" defer></script>
+  <script>
+    window.addEventListener('load', function () {
+      try {
+        if (window.google && google.maps && google.maps.event) {
+          google.maps.event.addDomListener(window, 'gm_authFailure', function () {
+            try {
+              window.dispatchEvent(new CustomEvent('eos-google-maps-unavailable', { detail: 'gm_authFailure' }));
+            } catch (e) {}
+          });
+        }
+      } catch (e) {}
+    });
+  </script>
+  <link rel="manifest" href="manifest.json">
+
+  <!-- Places API disabled - stub for Flutter Dart -->
+  <script>
+    window._getNearbyPlacesJson = function(lat, lng, type, callback) {
+      // Places API disabled - return empty results
+      callback('[]');
+    };
+  </script>
+
+  <!-- ═══════════════════════════════════════════════════════════════════
+       EmergencyOS · Robust Audio Engine v2
+       ───────────────────────────────────────────────────────────────────
+       Single AudioContext shared by TTS, PTT, alarm.
+       API exposed to Dart (via dart:js_interop):
+         eosSpeak(text, lang, doneCb)  — speak with self-healing watchdog
+         eosCancelSpeak()              — cancel + fire pending doneCb
+         eosPrimeAudio()               — resume AudioContext (call from gesture)
+         bankUserGesture()             — "bank" gesture token for async TTS
+         (Legacy: speakTextImpl, cancelSpeechText, resumeAudioForSpeech kept
+          for backward compat with any old call-sites still in the codebase)
+       ═══════════════════════════════════════════════════════════════════ -->
+  <script>
+    (function () {
+      // ──────────────────────────────────────────────────────────────────
+      // 1. SINGLE AUDIO CONTEXT
+      // ──────────────────────────────────────────────────────────────────
+      function _getAudioCtx() {
+        if (!window.__eosAudioCtx) {
+          try {
+            var Ctx = window.AudioContext || window.webkitAudioContext;
+            if (Ctx) window.__eosAudioCtx = new Ctx();
+          } catch (_) {}
+        }
+        return window.__eosAudioCtx || null;
+      }
+
+      function _resumeCtx(cb) {
+        var ctx = _getAudioCtx();
+        if (!ctx) { if (cb) cb(); return; }
+        if (ctx.state === 'suspended') {
+          ctx.resume().then(function() { if (cb) cb(); }).catch(function() { if (cb) cb(); });
+        } else {
+          if (cb) cb();
+        }
+      }
+
+      // ──────────────────────────────────────────────────────────────────
+      // 2. USER-GESTURE BANKING
+      // ──────────────────────────────────────────────────────────────────
+      window.__eosGestureTime = 0;
+      window.bankUserGesture = function() {
+        window.__eosGestureTime = Date.now();
+      };
+      ['touchstart', 'pointerup', 'click'].forEach(function(evt) {
+        document.addEventListener(evt, window.bankUserGesture, { passive: true, capture: true });
+      });
+
+      // ──────────────────────────────────────────────────────────────────
+      // 3. SPEECH SYNTHESIS (TTS)
+      // ──────────────────────────────────────────────────────────────────
+      var _speechUnlocked = false;
+      var _currentWatchdog = null;
+      var _currentDoneCb   = null;
+      var _ttsSpeaking     = false;
+
+      var _voicePrefs = {
+        'en-IN': ['Microsoft Neerja Online (Natural) - English (India)', 'Microsoft Ravi - English (India)', 'Google UK English Female', 'Google US English'],
+        'en':    ['Microsoft Neerja Online (Natural) - English (India)', 'Microsoft Ravi - English (India)', 'Google UK English Female', 'Google US English'],
+        'hi':    ['Google हिन्दी', 'Microsoft Swara Online (Natural) - Hindi (India)', 'Microsoft Hemant - Hindi (India)'],
+        'hi-IN': ['Google हिन्दी', 'Microsoft Swara Online (Natural) - Hindi (India)', 'Microsoft Hemant - Hindi (India)'],
+        'es': ['Google español', 'Microsoft Helena - Spanish (Spain)'],
+        'es-ES': ['Google español', 'Microsoft Helena - Spanish (Spain)'],
+        'fr': ['Google français', 'Microsoft Hortense - French (France)'],
+        'fr-FR': ['Google français', 'Microsoft Hortense - French (France)'],
+        'ar': ['Google العربية'], 'ar-SA': ['Google العربية'],
+        'zh': ['Google 普通话（中国大陆）'], 'zh-CN': ['Google 普通话（中国大陆）'],
+        'pt': ['Google português do Brasil'], 'pt-BR': ['Google português do Brasil'],
+        'de': ['Google Deutsch'], 'de-DE': ['Google Deutsch'],
+        'ja': ['Google 日本語'], 'ja-JP': ['Google 日本語'],
+        'ko': ['Google 한국의'], 'ko-KR': ['Google 한국의'],
+        'ru': ['Google русский'], 'ru-RU': ['Google русский'],
+      };
+
+      function _pickVoice(lang) {
+        if (!window.speechSynthesis) return null;
+        var voices = window.speechSynthesis.getVoices();
+        var prefs  = _voicePrefs[lang] || _voicePrefs[lang.split('-')[0]] || [];
+        for (var p = 0; p < prefs.length; p++)
+          for (var v = 0; v < voices.length; v++)
+            if (voices[v].name === prefs[p]) return voices[v];
+        var base = lang.split('-')[0];
+        for (var v = 0; v < voices.length; v++)
+          if (voices[v].lang && voices[v].lang.startsWith(base)) return voices[v];
+        for (var v = 0; v < voices.length; v++)
+          if (voices[v].lang && voices[v].lang.startsWith('en')) return voices[v];
+        return null;
+      }
+
+      function _clearWatchdog() {
+        if (_currentWatchdog) { clearTimeout(_currentWatchdog); _currentWatchdog = null; }
+      }
+
+      function _fireDone() {
+        _clearWatchdog();
+        _ttsSpeaking = false;
+        var cb = _currentDoneCb;
+        _currentDoneCb = null;
+        if (cb) cb();
+      }
+
+      // Prime: resumes AudioContext + speaks a silent utterance (inside user gesture).
+      window.eosPrimeAudio = function() {
+        window.bankUserGesture();
+        _resumeCtx(null);
+        if (!window.speechSynthesis) return;
+        try {
+          if (window.speechSynthesis.paused) window.speechSynthesis.resume();
+          if (!_speechUnlocked) {
+            var u = new SpeechSynthesisUtterance('');
+            u.volume = 0;
+            window.speechSynthesis.speak(u);
+            _speechUnlocked = true;
+          }
+        } catch(_) {}
+      };
+      // Legacy alias
+      window.unlockWebSpeechSynthesis = window.eosPrimeAudio;
+
+      // Cancel any in-flight TTS immediately.
+      window.eosCancelSpeak = function() {
+        _clearWatchdog();
+        var cb = _currentDoneCb;
+        _currentDoneCb = null;
+        _ttsSpeaking = false;
+        if (window.speechSynthesis) {
+          try { window.speechSynthesis.cancel(); } catch(_) {}
+        }
+        if (cb) cb();
+      };
+      // Legacy alias (also fires pending Dart onDone)
+      window.cancelSpeechText = function() {
+        window.eosCancelSpeak();
+        // Also tear down recognition so next listen() can grab the mic
+        if (_recognition) {
+          try {
+            var savedEnd = window._speechOnEnd;
+            window._speechOnEnd = null;
+            _stoppedIntentionally = true;
+            try { _recognition.abort(); } catch(_) {}
+            _recognition = null;
+            setTimeout(function() { window._speechOnEnd = savedEnd; }, 0);
+          } catch(_) {}
+        }
+      };
+
+      // Core TTS — call from inside user gesture or after eosPrimeAudio.
+      // doneCb: JS function or null.
+      window.eosSpeak = function(text, lang, doneCb) {
+        if (!text || !String(text).trim()) { if (doneCb) doneCb(); return; }
+        lang = lang || 'en-IN';
+
+        // Cancel any existing utterance without firing its doneCb (new request supersedes).
+        _clearWatchdog();
+        _currentDoneCb = null;
+        _ttsSpeaking = false;
+        if (window.speechSynthesis) {
+          try {
+            if (window.speechSynthesis.paused) window.speechSynthesis.resume();
+            window.speechSynthesis.cancel();
+          } catch(_) {}
+        }
+
+        _currentDoneCb = doneCb || null;
+
+        // Watchdog: estimated time + 4 s buffer. Prevents stuck queue on Firefox/WebKit.
+        var estMs = Math.max(Math.ceil(String(text).length * 88 + 2500), 5000);
+        _currentWatchdog = setTimeout(function() {
+          console.warn('[EOS-Audio] watchdog fired after ' + estMs + 'ms for text length=' + String(text).length);
+          _fireDone();
+        }, estMs);
+
+        var _doSpeak = function() {
+          if (!window.speechSynthesis) { _fireDone(); return; }
+          try {
+            // Unlock synthesis if not yet done
+            if (!_speechUnlocked) {
+              var dummy = new SpeechSynthesisUtterance('');
+              dummy.volume = 0;
+              window.speechSynthesis.speak(dummy);
+              _speechUnlocked = true;
+            }
+            var utter = new SpeechSynthesisUtterance(String(text));
+            utter.rate   = 0.92;
+            utter.pitch  = 0.95;
+            utter.volume = 1.0;
+            utter.lang   = lang;
+            var voice = _pickVoice(lang);
+            if (voice) utter.voice = voice;
+            _ttsSpeaking = true;
+            utter.onend   = function() { if (_ttsSpeaking) _fireDone(); };
+            utter.onerror  = function(e) {
+              console.warn('[EOS-Audio] TTS error:', e.error);
+              if (_ttsSpeaking) _fireDone();
+            };
+            window.speechSynthesis.speak(utter);
+          } catch(e) {
+            console.warn('[EOS-Audio] eosSpeak exception:', e);
+            _fireDone();
+          }
+        };
+
+        // Prefer to resume AudioContext, but do NOT delay the speak() call — staying inside
+        // the user-activation window is critical on Chrome/Safari.
+        _resumeCtx(null);
+        if (window.speechSynthesis && window.speechSynthesis.getVoices().length === 0) {
+          var _fired = false;
+          function _fireOnce() {
+            if (_fired) return; _fired = true;
+            try { window.speechSynthesis.onvoiceschanged = null; } catch(_) {}
+            _doSpeak();
+          }
+          window.speechSynthesis.onvoiceschanged = _fireOnce;
+          setTimeout(_fireOnce, 700); // WebKit sometimes never fires onvoiceschanged
+        } else {
+          _doSpeak();
+        }
+      };
+
+      // Legacy shim — Dart speech_web.dart still calls speakTextImpl / speakText.
+      window.speakTextImpl = function(text, lang) {
+        window.eosSpeak(text, lang, window._speechOnSpeakDone ? function() {
+          var cb = window._speechOnSpeakDone;
+          window._speechOnSpeakDone = null;
+          if (cb) cb();
+        } : null);
+      };
+      window.resumeAudioForSpeech = function(cb) {
+        window.bankUserGesture();
+        _resumeCtx(null);
+        if (typeof cb === 'function') { try { cb(); } catch(e) {} }
+      };
+      window.speakText = function(text, lang) {
+        window.resumeAudioForSpeech(function() { window.speakTextImpl(text, lang); });
+      };
+
+      // ──────────────────────────────────────────────────────────────────
+      // 4. SPEECH RECOGNITION (STT)
+      // ──────────────────────────────────────────────────────────────────
+      var _recognition = null;
+      var _stoppedIntentionally = false;
+
+      function _unlockSpeech() {
+        if (_speechUnlocked || !window.speechSynthesis) return;
+        try {
+          var u = new SpeechSynthesisUtterance('');
+          u.volume = 0;
+          window.speechSynthesis.speak(u);
+          _speechUnlocked = true;
+        } catch(_) {}
+        document.body.removeEventListener('touchstart', _unlockSpeech);
+        document.body.removeEventListener('click', _unlockSpeech);
+      }
+      document.body.addEventListener('touchstart', _unlockSpeech, {once:true});
+      document.body.addEventListener('click', _unlockSpeech, {once:true});
+
+      window.startSpeech = function(lang) {
+        try {
+          var SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+          if (!SR) {
+            if (window._speechOnError) window._speechOnError('not_supported');
+            if (window._speechOnEnd)   window._speechOnEnd();
+            return;
+          }
+          if (_recognition) { try { _recognition.abort(); } catch(_) {} _recognition = null; }
+          _stoppedIntentionally = false;
+          var r = new SR();
+          r.lang            = lang || 'en-US';
+          r.continuous      = true;
+          r.interimResults  = true;
+          r.maxAlternatives = 1;
+          r.onstart      = function() { console.log('[STT] started'); };
+          r.onsoundstart = function() { if (window._speechOnSound) window._speechOnSound(); };
+          r.onspeechstart= function() { if (window._speechOnSound) window._speechOnSound(); };
+          r.onresult     = function(e) {
+            var t = '';
+            for (var i = e.resultIndex; i < e.results.length; ++i)
+              t += e.results[i][0].transcript;
+            if (t && window._speechOnResult) window._speechOnResult(t);
+          };
+          r.onerror = function(e) {
+            if (e.error === 'aborted' || e.error === 'no-speech') return;
+            if (e.error === 'network' && _stoppedIntentionally) return;
+            if (e.error === 'network') {
+              try { r.abort(); } catch(_) {}
+              setTimeout(function() {
+                if (!_stoppedIntentionally && window.startSpeech) window.startSpeech(lang || 'en-US');
+              }, 450);
+              return;
+            }
+            if (window._speechOnError) window._speechOnError(e.error || 'unknown');
+          };
+          r.onend = function() {
+            _recognition = null;
+            _stoppedIntentionally = false;
+            if (window._speechOnEnd) window._speechOnEnd();
+          };
+          r.start();
+          _recognition = r;
+        } catch(ex) {
+          if (window._speechOnError) window._speechOnError(String(ex));
+          if (window._speechOnEnd)   window._speechOnEnd();
+        }
+      };
+
+      window.stopSpeech = function() {
+        if (_recognition) {
+          _stoppedIntentionally = true;
+          try { _recognition.stop(); } catch(_) {}
+        }
+      };
+
+      // Emergency Alarm Engine (Oscillator based to avoid asset loading issues)
+      var _audioCtx = null;
+      var _osc1 = null;
+      var _gain = null;
+
+      window.startEmergencyAlarm = function() {
+        try {
+          if (!_audioCtx) {
+            _audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+          }
+          if (_audioCtx.state === 'suspended') {
+            _audioCtx.resume();
+          }
+          
+          if (_osc1) return; 
+
+          _gain = _audioCtx.createGain();
+          _gain.gain.setValueAtTime(0.3, _audioCtx.currentTime); 
+          _gain.connect(_audioCtx.destination);
+
+          _osc1 = _audioCtx.createOscillator();
+          _osc1.type = 'sine';
+          _osc1.frequency.setValueAtTime(880, _audioCtx.currentTime); 
+          
+          _osc1.connect(_gain);
+          _osc1.start();
+          
+          var toggle = true;
+          var sirenInterval = setInterval(function() {
+            if (!_osc1) {
+              clearInterval(sirenInterval);
+              return;
+            }
+            // Traditional Ding-Dong or Warble
+            var freq = toggle ? 880 : 440;
+            _osc1.frequency.exponentialRampToValueAtTime(freq, _audioCtx.currentTime + 0.1);
+            toggle = !toggle;
+          }, 500);
+
+        } catch (e) {
+          console.error("Failed to start alarm:", e);
+        }
+      };
+
+      window.stopEmergencyAlarm = function() {
+        if (_osc1) {
+          try { _osc1.stop(); } catch(e) {}
+          _osc1 = null;
+        }
+      };
+
+      // Victim SOS Voice Note Recording
+      var _victimRecorder = null;
+      window.startVictimRecording = function() {
+        if (_victimRecorder) return;
+        navigator.mediaDevices.getUserMedia({ audio: true }).then(function(stream) {
+          var chunks = [];
+          var recorder = new MediaRecorder(stream, { mimeType: 'audio/webm' });
+          recorder.ondataavailable = function(e) { if (e.data.size > 0) chunks.push(e.data); };
+          recorder.onstop = function() {
+            var blob = new Blob(chunks, { type: 'audio/webm' });
+            var reader = new FileReader();
+            reader.onloadend = function() {
+              window._victimLastAudioB64 = reader.result.split(',')[1];
+              stream.getTracks().forEach(function(t) { t.stop(); });
+            };
+            reader.readAsDataURL(blob);
+          };
+          recorder.start();
+          _victimRecorder = recorder;
+        }).catch(function(e) { console.error('Mic error:', e); });
+      };
+
+      window.stopVictimRecording = function() {
+        if (_victimRecorder) {
+          _victimRecorder.stop();
+          _victimRecorder = null;
+        }
+      };
+
+      window.playPttAudio = function(b64, mimeHint) {
+        if (!b64) return;
+        function resumeCtx(cb) {
+          try {
+            var Ctx = window.AudioContext || window.webkitAudioContext;
+            if (!Ctx) { cb(); return; }
+            var ctx = window.__eosAudioCtx;
+            if (!ctx) { ctx = new Ctx(); window.__eosAudioCtx = ctx; }
+            if (ctx.state === 'suspended') {
+              ctx.resume().then(cb).catch(cb);
+            } else cb();
+          } catch (_) { cb(); }
+        }
+        var tryList = [];
+        if (mimeHint && typeof mimeHint === 'string') tryList.push(mimeHint);
+        tryList.push('audio/webm;codecs=opus', 'audio/webm', 'audio/mp4;codecs=mp4a.40.2', 'audio/mp4', 'audio/ogg;codecs=opus');
+        var i = 0;
+        function attempt() {
+          if (i >= tryList.length) {
+            console.warn('PTT play: no compatible mime for clip');
+            return;
+          }
+          var mime = tryList[i++];
+          var audio = new Audio('data:' + mime + ';base64,' + b64);
+          audio.volume = 1.0;
+          var p = audio.play();
+          if (p && p.catch) {
+            p.catch(function() { attempt(); });
+          }
+        }
+        resumeCtx(attempt);
+      };
+
+      var _meterCtx, _meterAnalyser, _meterData;
+      window.initAudioMeter = async function() {
+        try {
+          var stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+          _meterCtx = new (window.AudioContext || window.webkitAudioContext)();
+          var source = _meterCtx.createMediaStreamSource(stream);
+          _meterAnalyser = _meterCtx.createAnalyser();
+          _meterAnalyser.fftSize = 256;
+          source.connect(_meterAnalyser);
+          _meterData = new Uint8Array(_meterAnalyser.frequencyBinCount);
+          return true;
+        } catch (e) { console.error('Meter init fail', e); return false; }
+      };
+
+      window.getAudioVolume = function() {
+        if (!_meterAnalyser || !_meterData) return 0;
+        _meterAnalyser.getByteFrequencyData(_meterData);
+        var sum = 0;
+        for (var i = 0; i < _meterData.length; i++) sum += _meterData[i];
+        return (sum / _meterData.length) / 255.0;
+      };
+
+      var _pttRecorder;
+      window.startPttRecording = function() {
+        if (_pttRecorder) return;
+        navigator.mediaDevices.getUserMedia({ audio: true }).then(function(stream) {
+          var chunks = [];
+          var mime = 'audio/webm;codecs=opus';
+          if (typeof MediaRecorder !== 'undefined') {
+            if (!MediaRecorder.isTypeSupported(mime)) mime = 'audio/webm';
+            if (!MediaRecorder.isTypeSupported(mime)) mime = 'audio/mp4';
+          }
+          var opts = mime ? { mimeType: mime } : {};
+          var recorder = new MediaRecorder(stream, opts);
+          recorder.ondataavailable = function(e) { if (e.data.size > 0) chunks.push(e.data); };
+          recorder.onstop = function() {
+            var blob = new Blob(chunks, { type: recorder.mimeType || 'audio/webm' });
+            window._pttLastMime = recorder.mimeType || (blob.type || 'audio/webm');
+            var reader = new FileReader();
+            reader.onloadend = function() {
+              var r = reader.result;
+              window._pttLastAudioB64 = typeof r === 'string' && r.indexOf(',') >= 0 ? r.split(',')[1] : null;
+              stream.getTracks().forEach(function(t) { t.stop(); });
+            };
+            reader.readAsDataURL(blob);
+          };
+          try { recorder.start(200); } catch (e) { recorder.start(); }
+          _pttRecorder = recorder;
+        }).catch(function(e) { window._pttRecorderError = e.toString(); });
+      };
+
+      window.stopPttRecording = function() {
+        if (_pttRecorder) {
+          _pttRecorder.stop();
+          _pttRecorder = null;
+        }
+      };
+
+    })();
+  </script>
+</head>
+<body>
+  <!-- Container for Firebase Phone Auth Recaptcha -->
+  <div id="recaptcha-container" style="visibility: hidden;"></div>
+
+  <!--
+    You can customize the "flutter_bootstrap.js" script.
+    This is useful to provide a custom configuration to the Flutter loader
+    or to give the user feedback during the initialization process.
+
+    For more details:
+    * https://docs.flutter.dev/platform-integration/web/initialization
+  -->
+  <script src="flutter_bootstrap.js" async></script>
+</body>
+</html>

@@ -1,0 +1,1754 @@
+import 'package:flutter/material.dart';
+
+class AppLocalizations {
+  final Locale locale;
+  AppLocalizations(this.locale);
+
+  static AppLocalizations of(BuildContext context) {
+    return Localizations.of<AppLocalizations>(context, AppLocalizations) ??
+        AppLocalizations(const Locale('en'));
+  }
+
+  static const LocalizationsDelegate<AppLocalizations> delegate =
+      _AppLocalizationsDelegate();
+
+  String get(String key) =>
+      _localizedStrings[locale.languageCode]?[key] ??
+      _localizedStrings['en']![key] ??
+      key;
+
+  String get appName => get('app_name');
+  String get profileTitle => get('profile_title');
+  String get language => get('language');
+  String get saveMedicalProfile => get('save_medical_profile');
+  String get criticalMedicalInfo => get('critical_medical_info');
+  String get emergencyContacts => get('emergency_contacts');
+  String get goldenHourDetails => get('golden_hour_details');
+  String get sosLock => get('sos_lock');
+  String get topLifeSavers => get('top_life_savers');
+  String get livesSaved => get('lives_saved');
+  String get activeAlerts => get('active_alerts');
+  String get rank => get('rank');
+  String get onDuty => get('on_duty');
+  String get standby => get('standby');
+  String get sosButton => get('sos');
+  String get callNow => get('call_now');
+  String get quickGuide => get('quick_guide');
+  String get detailedInstructions => get('detailed_instructions');
+  String get redFlags => get('red_flags');
+  String get cautions => get('cautions');
+  String get voiceWalkthrough => get('voice_walkthrough');
+  String get playing => get('playing');
+  String get swipeNextGuide => get('swipe_next_guide');
+  String get watchVideoGuide => get('watch_video_guide');
+  String get emergencyGridScan => get('emergency_grid_scan');
+  String get areaTelemetry => get('area_telemetry');
+  String get reportHazard => get('report_hazard');
+  String get todaysDuty => get('todays_duty');
+  String get bloodType => get('blood_type');
+  String get allergies => get('allergies');
+  String get medicalConditions => get('medical_conditions');
+  String get contactName => get('contact_name');
+  String get contactPhone => get('contact_phone');
+  String get relationship => get('relationship');
+  String get medications => get('medications');
+  String get organDonor => get('organ_donor');
+  String get goodMorning => get('good_morning');
+  String get goodAfternoon => get('good_afternoon');
+  String get goodEvening => get('good_evening');
+  String get hospitals => get('hospitals');
+  String get visualWalkthrough => get('visual_walkthrough');
+  String get lifeline => get('lifeline');
+  String get navHome => get('nav_home');
+  String get navMap => get('nav_map');
+  String get navProfile => get('nav_profile');
+  String get stepPrefix => get('step_prefix');
+  String get highlightsSteps => get('highlights_steps');
+  String get offlineMode => get('offline_mode');
+  String get volunteer => get('volunteer');
+  String get unranked => get('unranked');
+  String get live => get('live');
+  String get you => get('you');
+  String get saved => get('saved');
+  String get xpResponses => get('xp_responses');
+  String get dutyMonitoring => get('duty_monitoring');
+  String get turnOnDutyMsg => get('turn_on_duty_msg');
+  String get onDutySnack => get('on_duty_snack');
+  String get offDutySnack => get('off_duty_snack');
+  String get nearbyVolunteersLocating => get('nearby_volunteers_locating');
+  String get activeVolunteersGridNone => get('active_volunteers_grid_none');
+  String activeVolunteersGridCount(int n) {
+    if (n <= 0) return activeVolunteersGridNone;
+    return get('active_volunteers_grid').replaceAll('{n}', '$n');
+  }
+
+  String get leaderboardOffline => get('leaderboard_offline');
+  String get leaderboardOfflineSub => get('leaderboard_offline_sub');
+  String get leaderboardEmptyPrimary => get('leaderboard_empty_primary');
+  String get leaderboardEmptySecondary => get('leaderboard_empty_secondary');
+  String get leaderboardOnDutyFallbackTitle => get('leaderboard_on_duty_fallback_title');
+  String get leaderboardOnDutyStat => get('leaderboard_on_duty_stat');
+  String get leaderboardViewGrid => get('leaderboard_view_grid');
+  String get leaderboardSoloOnDuty => get('leaderboard_solo_on_duty');
+  String get setSosPinFirst => get('set_sos_pin_first');
+  String get setPinSafetyMsg => get('set_pin_safety_msg');
+  String get setPinNow => get('set_pin_now');
+  String get later => get('later');
+
+  // Emergency consent
+  String get emergencyConsentTitle => get('emergency_consent_title');
+  String get emergencyConsentBody => get('emergency_consent_body');
+  String get consentNotNow => get('consent_not_now');
+  String get consentContinue => get('consent_continue');
+
+  // SOS screen
+  String get sosScreenTitle => get('sos_screen_title');
+  String get sosHoldBanner => get('sos_hold_banner');
+  String get sosHoldButton => get('sos_hold_button');
+  String get sosOfflineQueued => get('sos_offline_queued');
+  String get sosSemanticsHoldHint => get('sos_semantics_hold_hint');
+  String get sosStarting => get('sos_starting');
+  String get sosReleaseToSend => get('sos_release_to_send');
+  String get sosReleaseCancel => get('sos_release_cancel');
+  String get sosCheckConnectionRetry => get('sos_check_connection_retry');
+  String get sosRetry => get('sos_retry');
+  String get sosActiveFlowFailed => get('sos_active_flow_failed');
+  String get sosPinDispatchBody => get('sos_pin_dispatch_body');
+  String sosFailedMessage(String detail) =>
+      get('sos_failed_prefix').replaceAll('{detail}', detail);
+
+  // Volunteer voice mode prompt
+  String get volunteerVoiceModeTitle => get('volunteer_voice_mode_title');
+  String get volunteerVoiceModeSubtitle => get('volunteer_voice_mode_subtitle');
+  String get volunteerVoiceModeAudioTitle =>
+      get('volunteer_voice_mode_audio_title');
+  String get volunteerVoiceModeAudioSubtitle =>
+      get('volunteer_voice_mode_audio_subtitle');
+  String get volunteerVoiceModeSilentTitle =>
+      get('volunteer_voice_mode_silent_title');
+  String get volunteerVoiceModeSilentSubtitle =>
+      get('volunteer_voice_mode_silent_subtitle');
+  String get volunteerVoiceModeFooter =>
+      get('volunteer_voice_mode_footer');
+
+  // Common actions
+  String get cancel => get('cancel');
+  String get save => get('save');
+
+  // PIN dialog
+  String get pinChangeTitle => get('pin_change_title');
+  String get pinSetTitle => get('pin_set_title');
+  String get pinHintNew => get('pin_hint_new');
+  String get pinHintConfirm => get('pin_hint_confirm');
+  String get pinErrorTooShort => get('pin_error_too_short');
+  String get pinErrorMismatch => get('pin_error_mismatch');
+
+  // Profile sync & messages
+  String get profileSynced => get('profile_synced');
+  String get profileNotSynced => get('profile_not_synced');
+  String get profileSaving => get('profile_saving');
+  String get profileQueuedOffline => get('profile_queued_offline');
+  String get profileSaveFailed => get('profile_save_failed');
+  String get profileSaveTimedOut => get('profile_save_timed_out');
+  String get profileTimeJustNow => get('profile_time_just_now');
+  String profileTimeMinAgo(int n) =>
+      get('profile_time_min_ago').replaceAll('{n}', '$n');
+  String profileTimeHoursAgo(int n) =>
+      get('profile_time_hours_ago').replaceAll('{n}', '$n');
+  String profileTimeDaysAgo(int n) =>
+      get('profile_time_days_ago').replaceAll('{n}', '$n');
+  String get profileDbUnreachable => get('profile_db_unreachable');
+  String get profileSavedOfflineMsg => get('profile_saved_offline_msg');
+  String get profileSavedMsg => get('profile_saved_msg');
+  String get profileSaveTimeoutMsg => get('profile_save_timeout_msg');
+  String profileSaveError(String e) =>
+      get('profile_save_error').replaceAll('{e}', e);
+  String get profilePinSavedOffline => get('profile_pin_saved_offline');
+  String get profilePinSaved => get('profile_pin_saved');
+  String profilePinSaveError(String e) =>
+      get('profile_pin_save_error').replaceAll('{e}', e);
+
+  String get drillProfileBanner => get('drill_profile_banner');
+  String get profileSmsContactTitle => get('profile_sms_contact_title');
+  String get profileSmsContactSubtitle => get('profile_sms_contact_subtitle');
+  String get profileDispatchDeskTitle => get('profile_dispatch_desk_title');
+  String get profileDispatchDeskSubtitle => get('profile_dispatch_desk_subtitle');
+  String get profilePinStatusSet => get('profile_pin_status_set');
+  String get profilePinStatusUnset => get('profile_pin_status_unset');
+  String get profileChangePinBtn => get('profile_change_pin_btn');
+  String get profileSetPinBtn => get('profile_set_pin_btn');
+  String get profilePinExitNote => get('profile_pin_exit_note');
+  String get profileSosPinTitle => get('profile_sos_pin_title');
+  String get profileVoiceAgentEnableTitle => get('profile_voice_agent_enable_title');
+  String get profileVoiceAgentEnableSubtitle => get('profile_voice_agent_enable_subtitle');
+  String get profileVoiceStartMutedTitle => get('profile_voice_start_muted_title');
+  String get profileVoiceStartMutedSubtitle => get('profile_voice_start_muted_subtitle');
+  String get profileVoiceWalkthroughTitle => get('profile_voice_walkthrough_title');
+  String get profileVoiceWalkthroughSubtitle => get('profile_voice_walkthrough_subtitle');
+
+  String get profileUnsavedTitle => get('profile_unsaved_title');
+  String get profileUnsavedBody => get('profile_unsaved_body');
+  String get profileStay => get('profile_stay');
+  String get profileDiscard => get('profile_discard');
+  String get profileAdditionalInfo => get('profile_additional_info');
+  String get profilePronounsTitle => get('profile_pronouns_title');
+  String get profilePronounsHeHim => get('profile_pronouns_he_him');
+  String get profilePronounsSheHer => get('profile_pronouns_she_her');
+  String get profilePronounsTheyThem => get('profile_pronouns_they_them');
+
+  String get profileTabVolunteerHub => get('profile_tab_volunteer_hub');
+  String get profileVolunteerCertificationsTitle => get('profile_volunteer_certifications_title');
+  String get profileVolunteerCertificationsSubtitle => get('profile_volunteer_certifications_subtitle');
+  String get profileCprCertifiedTitle => get('profile_cpr_certified_title');
+  String get profileCprCertifiedSubtitle => get('profile_cpr_certified_subtitle');
+  String get profileAedCertifiedTitle => get('profile_aed_certified_title');
+  String get profileAedCertifiedSubtitle => get('profile_aed_certified_subtitle');
+  String get profileCertUploading => get('profile_cert_uploading');
+  String get profileUploadCprCert => get('profile_upload_cpr_cert');
+  String get profileUploadAedCert => get('profile_upload_aed_cert');
+  String get profileCertUploadNoBytes => get('profile_cert_upload_no_bytes');
+  String get profileCertUploaded => get('profile_cert_uploaded');
+  String profileCertUploadFailed(String e) =>
+      get('profile_cert_upload_failed').replaceAll('{e}', e);
+  String get help => get('help_screen_title');
+  String get profileStatNever => get('profile_stat_never');
+  String get profileLoading => get('profile_loading');
+  String get profileError => get('profile_error');
+  String get profileVolunteerStatsTitle => get('profile_volunteer_stats_title');
+  String get profileStatIncidentsResponded => get('profile_stat_incidents_responded');
+  String get profileStatTotalLivesSaved => get('profile_stat_total_lives_saved');
+  String get profileStatLastIncident => get('profile_stat_last_incident');
+  String get profileStatValueCreated => get('profile_stat_value_created');
+  String get profileStatValueCreatedHint => get('profile_stat_value_created_hint');
+
+  String get profileHintBloodType => get('profile_hint_blood_type');
+  String get profileHintAllergies => get('profile_hint_allergies');
+  String get profileHintConditions => get('profile_hint_conditions');
+  String get profileHintContactName => get('profile_hint_contact_name');
+  String get profileHintRelationship => get('profile_hint_relationship');
+  String get profileHintPhone => get('profile_hint_phone');
+  String get profileHintMedications => get('profile_hint_medications');
+  String get profileHintDonor => get('profile_hint_donor');
+
+  // Home & quick SOS
+  String get homeDutyHeading => get('home_duty_heading');
+  String homeDutyProgress(int done, int total) =>
+      get('home_duty_progress').replaceAll('{done}', '$done').replaceAll('{total}', '$total');
+  String get homeMapSemantics => get('home_map_semantics');
+  String get homeRecenterMap => get('home_recenter_map');
+  String get homeSosLargeFabHint => get('home_sos_large_fab_hint');
+  String get homeSosCancelledSnack => get('home_sos_cancelled_snack');
+  String get homeSosSentSnack => get('home_sos_sent_snack');
+  String get quickSosTitle => get('quick_sos_title');
+  String get quickSosSubtitle => get('quick_sos_subtitle');
+  String get quickSosPracticeBanner => get('quick_sos_practice_banner');
+  String get quickSosSectionWhat => get('quick_sos_section_what');
+  String get quickSosSectionSomeoneElse => get('quick_sos_section_someone_else');
+  String get quickSosSendNow => get('quick_sos_send_now');
+  String get quickSosSelectFirst => get('quick_sos_select_first');
+  String get quickSosSectionVictim => get('quick_sos_section_victim');
+  String get quickSosVictimSubtitle => get('quick_sos_victim_subtitle');
+  String get quickSosSectionPeople => get('quick_sos_section_people');
+  String get quickSosYesSomeoneElse => get('quick_sos_yes_someone_else');
+  String get quickSosNoForMe => get('quick_sos_no_for_me');
+  String get quickSosOtherHint => get('quick_sos_other_hint');
+  String get quickSosClose => get('quick_sos_close');
+  String get quickSosDrillSubmitDisabled => get('quick_sos_drill_submit_disabled');
+  String quickSosFailed(String detail) =>
+      get('quick_sos_failed').replaceAll('{detail}', detail);
+  String get quickSosCouldNotStart => get('quick_sos_could_not_start');
+  String get quickSosVictimConsciousQ => get('quick_sos_victim_conscious_q');
+  String get quickSosVictimBreathingQ => get('quick_sos_victim_breathing_q');
+  String get quickSosLabelYes => get('quick_sos_label_yes');
+  String get quickSosLabelNo => get('quick_sos_label_no');
+  String get quickSosLabelUnsure => get('quick_sos_label_unsure');
+  String get quickSosPerson => get('quick_sos_person');
+  String get quickSosPeople => get('quick_sos_people');
+  String get quickSosPeopleThreePlus => get('quick_sos_people_three_plus');
+
+  String get loginTagline => get('login_tagline');
+  String get loginSubtitle => get('login_subtitle');
+  String get loginContinueGoogle => get('login_continue_google');
+  String get loginContinuePhone => get('login_continue_phone');
+  String get loginSendCode => get('login_send_code');
+  String get loginVerifyLogin => get('login_verify_login');
+  String get loginPhoneLabel => get('login_phone_label');
+  String get loginPhoneHint => get('login_phone_hint');
+  String get loginOtpLabel => get('login_otp_label');
+  String get loginBackOptions => get('login_back_options');
+  String get loginChangePhone => get('login_change_phone');
+  String get loginDrillMode => get('login_drill_mode');
+  String get loginDrillSubtitle => get('login_drill_subtitle');
+  String get loginDrillSemantics => get('login_drill_semantics');
+  String get loginPractiseVictim => get('login_practise_victim');
+  String get loginPractiseVolunteer => get('login_practise_volunteer');
+  String get loginAdminNote => get('login_admin_note');
+  String get loginEmsDashboard => get('login_ems_dashboard');
+  String get loginEmergencyOperator => get('login_emergency_operator');
+
+  String get aiAssistPracticeBanner => get('ai_assist_practice_banner');
+  String aiAssistRailSemantics(int n, String title) =>
+      get('ai_assist_rail_semantics').replaceAll('{n}', '$n').replaceAll('{title}', title);
+  String get aiAssistEmergencyToggleOn => get('ai_assist_emergency_toggle_on');
+  String get aiAssistEmergencyToggleOff => get('ai_assist_emergency_toggle_off');
+
+  String get dashboardExitDrillTitle => get('dashboard_exit_drill_title');
+  String get dashboardExitDrillBody => get('dashboard_exit_drill_body');
+  String get dashboardBackLoginTooltip => get('dashboard_back_login_tooltip');
+  String get dashboardExitDrillConfirm => get('dashboard_exit_drill_confirm');
+
+  static const Map<String, Map<String, String>> _localizedStrings = {
+    // ── English ─────────────────────────────────────────────────────────────
+    'en': {
+      'app_name': 'EmergencyOS',
+      'profile_title': 'Profile & Medical ID',
+      'language': 'Language',
+      'save_medical_profile': 'Save Medical Profile',
+      'critical_medical_info': 'Critical Medical Info',
+      'emergency_contacts': 'Emergency Contacts',
+      'golden_hour_details': 'Golden Hour Details',
+      'sos_lock': 'SOS Lock',
+      'top_life_savers': 'Top Life Savers',
+      'lives_saved': 'Lives Saved',
+      'active_alerts': 'Active Alerts',
+      'rank': 'Rank',
+      'on_duty': 'ON DUTY',
+      'standby': 'STANDBY',
+      'sos': 'SOS',
+      'call_now': 'CALL NOW',
+      'quick_guide': 'QUICK GUIDE',
+      'detailed_instructions': 'DETAILED INSTRUCTIONS',
+      'red_flags': 'RED FLAGS',
+      'cautions': 'CAUTIONS',
+      'voice_walkthrough': 'Voice walkthrough',
+      'playing': 'Playing...',
+      'swipe_next_guide': 'Swipe for next guide',
+      'watch_video_guide': 'Watch full video guide',
+      'emergency_grid_scan': 'EMERGENCY GRID SCAN',
+      'area_telemetry': 'Area Telemetry & Risk Index',
+      'report_hazard': 'Report Hazard',
+      'todays_duty': "Today's Duty",
+      'blood_type': 'Blood Type',
+      'allergies': 'Allergies',
+      'medical_conditions': 'Medical Conditions',
+      'contact_name': 'Primary Contact Name',
+      'contact_phone': 'Primary Contact Phone',
+      'relationship': 'Relationship',
+      'medications': 'Current Medications',
+      'organ_donor': 'Organ Donor Status',
+      'good_morning': 'Good Morning,',
+      'good_afternoon': 'Good Afternoon,',
+      'good_evening': 'Good Evening,',
+      'hospitals': 'Hospitals / Trauma',
+      'visual_walkthrough': 'Visual walkthrough',
+      'lifeline': 'Lifeline',
+      'nav_home': 'Home',
+      'nav_map': 'Map',
+      'nav_profile': 'Profile',
+      'step_prefix': 'Step',
+      'highlights_steps': 'Highlights steps one by one',
+      'offline_mode': 'OFFLINE MODE — Network disconnected',
+      'volunteer': 'Volunteer',
+      'unranked': 'Unranked',
+      'live': 'Live',
+      'you': 'YOU',
+      'saved': 'saved',
+      'xp_responses': 'XP · {0} responses',
+      'duty_monitoring': 'Incoming SOS pop-ups are ON while you are on duty.',
+      'turn_on_duty_msg': 'Turn ON DUTY to receive SOS pop-ups.',
+      'on_duty_snack': 'ON DUTY — Monitoring for incidents in your area...',
+      'off_duty_snack': 'STANDBY — Duty session recorded.',
+      'nearby_volunteers_locating': 'Finding your position…',
+      'active_volunteers_grid_none': 'No other volunteers in your grid yet',
+      'active_volunteers_grid': '{n} active volunteers in your grid',
+      'leaderboard_offline': 'LEADERBOARD OFFLINE',
+      'leaderboard_offline_sub': 'Syncing paused. Cached scores shown.',
+      'leaderboard_empty_primary': 'No response scores yet',
+      'leaderboard_empty_secondary':
+          'Ranks list volunteers who have accepted an SOS. Past acceptances from archived incidents count here too.',
+      'leaderboard_on_duty_fallback_title': 'Volunteers on duty now',
+      'leaderboard_on_duty_stat': 'On duty',
+      'leaderboard_view_grid': 'Open emergency grid',
+      'leaderboard_solo_on_duty':
+          "You're on duty. Open the grid to see coverage; other volunteers appear here when they go on duty.",
+      'set_sos_pin_first': 'Set SOS PIN first',
+      'set_pin_safety_msg': 'For safety, you must set an SOS PIN before creating SOS incidents.',
+      'set_pin_now': 'Set PIN now',
+      'later': 'Later',
+      'emergency_consent_title': 'Emergency data & privacy',
+      'emergency_consent_body':
+          'When you trigger SOS, EmergencyOS may share your live location, optional profile '
+          'medical notes you added in Profile, and voice/updates with volunteers and services '
+          'you connect with through the app. '
+          'Practice / drill mode does not send a real dispatch.\n\n'
+          'You can review or reduce profile data anytime in Profile before an emergency.',
+      'consent_not_now': 'Not now',
+      'consent_continue': 'I understand — continue',
+      'sos_screen_title': 'SOS TRIGGER',
+      'sos_hold_banner': 'Only a 3-second hold can trigger SOS',
+      'sos_hold_button': 'HOLD 3 SECONDS TO TRIGGER SOS',
+      'sos_offline_queued':
+          'OFFLINE — SOS QUEUED. Your emergency will be automatically broadcast to responders when connectivity is restored.',
+      'sos_semantics_hold_hint':
+          'Hold for 3 seconds to trigger SOS emergency alert. Release early to cancel.',
+      'sos_starting': 'Starting SOS...',
+      'sos_release_to_send': 'Release to send SOS (enables voice guidance).',
+      'sos_release_cancel': 'Release early to cancel.',
+      'sos_check_connection_retry': 'Check connection and retry.',
+      'sos_failed_prefix': 'SOS failed: {detail}',
+      'sos_retry': 'RETRY',
+      'sos_active_flow_failed': 'Could not start SOS active flow. Please try again.',
+      'sos_pin_dispatch_body':
+          'For safety, set your SOS PIN in Profile before dispatching SOS.',
+      'volunteer_voice_mode_title': 'Choose your volunteer mode',
+      'volunteer_voice_mode_subtitle':
+          'Before you enter the mission view, pick how you want guidance during this call.',
+      'volunteer_voice_mode_audio_title': 'Audio guidance on',
+      'volunteer_voice_mode_audio_subtitle':
+          'Spoken prompts and updates while you navigate and triage.',
+      'volunteer_voice_mode_silent_title': 'Silent (visual-only)',
+      'volunteer_voice_mode_silent_subtitle':
+          'No text-to-speech; follow on-screen cards and checklists only.',
+      'volunteer_voice_mode_footer':
+          'You can change this preference later from the SOS and Lifeline settings.',
+      'cancel': 'Cancel',
+      'continue': 'Continue',
+      'close': 'Close',
+      'unlock': 'Unlock',
+      'pin': 'PIN',
+      'save': 'Save',
+      'pin_change_title': 'Change SOS PIN',
+      'pin_set_title': 'Set SOS PIN',
+      'pin_hint_new': 'New PIN',
+      'pin_hint_confirm': 'Confirm PIN',
+      'pin_error_too_short': 'PIN must be at least 4 digits.',
+      'pin_error_mismatch': 'PINs do not match.',
+      'wrong_pin': 'Wrong PIN.',
+      'wrong_pin_practice': 'Wrong PIN. Practice PIN is {pin}.',
+      'no_sos_pin_set': 'No SOS PIN set. Set it in Profile first.',
+      'sign_in_to_unlock': 'Sign in to unlock with Profile PIN.',
+      'sos_actions_title': 'SOS Actions',
+      'sos_actions_cancel_false_alarm': 'Cancel SOS (false alarm)',
+      'sos_actions_mark_resolved_safe': 'Mark Resolved (safe)',
+      'sos_actions_unlock_and_leave': 'Just unlock & leave (keep SOS running)',
+      'sos_other_emergency_title': 'Other emergency',
+      'sos_other_emergency_hint': 'Briefly describe what is happening…',
+      'sos_other_emergency_value_other': 'Other',
+      'sos_other_emergency_value_other_with_detail': 'Other: {detail}',
+      'sos_are_you_conscious': 'Are you conscious? Please answer yes or no.',
+      'volunteer_dispatch_escalating_tier_trying_hospital':
+          'Escalating to tier {tier}. Trying hospital {hospital}.',
+      'volunteer_dispatch_trying_hospital': 'Trying hospital {hospital}.',
+      'volunteer_dispatch_hospital_accepted':
+          '{hospital} has accepted the emergency. Ambulance coordination underway.',
+      'volunteer_dispatch_all_hospitals_notified':
+          'All hospitals notified. Escalating to emergency services.',
+      'profile_synced': 'Synced',
+      'profile_not_synced': 'Not synced',
+      'profile_saving': 'Saving…',
+      'profile_queued_offline': 'Queued (offline)',
+      'profile_save_failed': 'Save failed',
+      'profile_save_timed_out': 'Save timed out',
+      'profile_time_just_now': 'just now',
+      'profile_time_min_ago': '{n} min ago',
+      'profile_time_hours_ago': '{n}h ago',
+      'profile_time_days_ago': '{n}d ago',
+      'profile_db_unreachable':
+          'Could not reach database. Is Cloud Firestore enabled?',
+      'profile_saved_offline_msg': 'Saved locally — will sync when online.',
+      'profile_saved_msg': 'Medical info saved successfully.',
+      'profile_save_timeout_msg':
+          'Save timed out. Please check your internet or Firebase console.',
+      'profile_save_error': 'Error saving info: {e}',
+      'profile_pin_saved_offline': 'PIN saved locally — will sync when online.',
+      'profile_pin_saved': 'SOS PIN saved.',
+      'profile_pin_save_error': 'Could not save SOS PIN: {e}',
+      'drill_profile_banner':
+          'Practice Profile — same layout as live; changes here still save to your account when signed in.',
+      'profile_sms_contact_title': 'Send emergency updates to this contact (SMS)',
+      'profile_sms_contact_subtitle':
+          'When responders accept or ETAs change, EmergencyOS can text your emergency contact.',
+      'profile_dispatch_desk_title': 'I am emergency dispatch (join Lifeline WebRTC)',
+      'profile_dispatch_desk_subtitle':
+          'Enable only for official EMS/dispatch accounts. Lets you join Lifeline as dispatch on active volunteer incidents (not for general volunteers).',
+      'profile_pin_status_set': 'PIN is set',
+      'profile_pin_status_unset': 'PIN not set',
+      'profile_change_pin_btn': 'Change PIN',
+      'profile_set_pin_btn': 'Set PIN',
+      'profile_pin_exit_note':
+          'This PIN is required to exit the SOS Active screen and to cancel/resolve an SOS.',
+      'profile_sos_pin_title': 'SOS PIN lock',
+      'profile_voice_agent_enable_title': 'Enable Lifeline voice agent',
+      'profile_voice_agent_enable_subtitle': 'Shows voice controls on the Lifeline page.',
+      'profile_voice_start_muted_title': 'Start with microphone muted',
+      'profile_voice_start_muted_subtitle':
+          'When connecting, mic stays off until you unmute on the orb.',
+      'profile_voice_walkthrough_title': 'Full walkthrough mode',
+      'profile_voice_walkthrough_subtitle':
+          'Allows Lifeline voice to request SOS (you must still confirm in the app).',
+      'profile_unsaved_title': 'Discard changes?',
+      'profile_unsaved_body': 'You have unsaved medical profile changes.',
+      'profile_stay': 'Keep editing',
+      'profile_discard': 'Discard',
+      'profile_additional_info': 'Additional medical info',
+      'profile_pronouns_title': 'Map avatar pronouns',
+      'profile_pronouns_he_him': 'He / him',
+      'profile_pronouns_she_her': 'She / her',
+      'profile_pronouns_they_them': 'They / them',
+      'profile_tab_volunteer_hub': 'Volunteer hub',
+      'profile_volunteer_certifications_title': 'Certifications',
+      'profile_volunteer_certifications_subtitle':
+          'Upload CPR and AED certificates for verification.',
+      'profile_cpr_certified_title': 'CPR certified',
+      'profile_cpr_certified_subtitle': 'Mark when your CPR training is current.',
+      'profile_aed_certified_title': 'AED certified',
+      'profile_aed_certified_subtitle': 'Mark when your AED training is current.',
+      'profile_cert_uploading': 'Uploading…',
+      'profile_upload_cpr_cert': 'Upload CPR certificate',
+      'profile_upload_aed_cert': 'Upload AED certificate',
+      'profile_cert_upload_no_bytes': 'Could not read the selected file.',
+      'profile_cert_uploaded': 'Certificate uploaded.',
+      'profile_cert_upload_failed': 'Upload failed: {e}',
+      'help_screen_title': 'Help & support',
+      'profile_stat_never': 'Never',
+      'profile_loading': 'Loading…',
+      'profile_error': 'Could not load',
+      'profile_volunteer_stats_title': 'Your impact',
+      'profile_stat_incidents_responded': 'Incidents responded',
+      'profile_stat_total_lives_saved': 'Lives helped (estimate)',
+      'profile_stat_last_incident': 'Last response',
+      'profile_stat_value_created': 'Member since',
+      'profile_stat_value_created_hint': 'Based on your account activity.',
+      'profile_hint_blood_type': 'e.g. O+',
+      'profile_hint_allergies': 'e.g. Penicillin, Peanuts',
+      'profile_hint_conditions': 'e.g. Asthma, Diabetes',
+      'profile_hint_contact_name': 'John Doe',
+      'profile_hint_relationship': 'e.g. Spouse, Parent',
+      'profile_hint_phone': '+1 234 567 8900',
+      'profile_hint_medications': 'e.g. Insulin, Blood Thinners',
+      'profile_hint_donor': 'Yes / No',
+      'home_duty_heading': "Today's Duty",
+      'home_duty_progress': '{done} of {total} prep steps done',
+      'home_map_semantics': 'Map showing your area and emergency grid',
+      'home_recenter_map': 'Recenter map on my location',
+      'home_sos_large_fab_hint': 'Open SOS countdown to send an emergency alert',
+      'home_sos_cancelled_snack': 'SOS cancelled.',
+      'home_sos_sent_snack': 'SOS sent! Emergency services notified.',
+      'quick_sos_title': 'QUICK SOS',
+      'quick_sos_subtitle': 'Tap to answer — help arrives faster with details',
+      'quick_sos_practice_banner':
+          'Practice guided intake — Submit will not create a real SOS. Use Home + 3s hold on the red SOS for the drill scenario.',
+      'quick_sos_section_what': "WHAT'S THE EMERGENCY?",
+      'quick_sos_section_someone_else': 'ARE YOU TRIGGERING SOS FOR SOMEONE ELSE?',
+      'quick_sos_send_now': 'SEND SOS NOW',
+      'quick_sos_select_first': 'Select emergency type and confirm',
+      'quick_sos_section_victim': 'VICTIM STATUS',
+      'quick_sos_victim_subtitle': 'Helps responders prepare the right equipment',
+      'quick_sos_section_people': 'HOW MANY PEOPLE NEED HELP?',
+      'quick_sos_yes_someone_else': 'YES — for someone else',
+      'quick_sos_no_for_me': "NO — it's for me",
+      'quick_sos_other_hint': 'Briefly describe your situation...',
+      'quick_sos_close': 'Close quick SOS',
+      'quick_sos_drill_submit_disabled':
+          'Practice shell: intake submit is disabled. Go to Home and press & hold the red SOS button for 3 seconds to open the drill SOS screen.',
+      'quick_sos_failed': 'SOS failed: {detail}',
+      'quick_sos_could_not_start': 'Could not start SOS. Please try again.',
+      'quick_sos_victim_conscious_q': 'Is the person conscious?',
+      'quick_sos_victim_breathing_q': 'Is the person breathing?',
+      'quick_sos_label_yes': 'Yes',
+      'quick_sos_label_no': 'No',
+      'quick_sos_label_unsure': 'Unsure',
+      'quick_sos_person': 'person',
+      'quick_sos_people': 'people',
+      'quick_sos_people_three_plus': '3+',
+      'login_tagline': "Let's save some lives",
+      'login_subtitle':
+          'Sign in to report emergencies, coordinate with volunteers, and save lives during the Golden Hour.',
+      'login_continue_google': 'Continue with Google',
+      'login_continue_phone': 'Continue with Phone',
+      'login_send_code': 'Send Verification Code',
+      'login_verify_login': 'Verify & Login',
+      'login_phone_label': 'Phone Number',
+      'login_phone_hint': '+1234567890',
+      'login_otp_label': 'Verification Code (OTP)',
+      'login_back_options': 'Back to options',
+      'login_change_phone': 'Change phone number',
+      'login_drill_mode': 'Drill mode',
+      'login_drill_subtitle': 'Tap to practise — no real SOS',
+      'login_drill_semantics': 'Drill mode, practice without a real emergency',
+      'login_practise_victim': 'Practise as victim',
+      'login_practise_volunteer': 'Practise as volunteer',
+      'login_admin_note':
+          'Master admin and operator consoles: no separate admin account — tap below. If you are not signed in yet, we use a lightweight anonymous session only for that console.',
+      'login_ems_dashboard': 'EMS Dashboard',
+      'login_emergency_operator': 'Emergency service operator login',
+      'ai_assist_practice_banner':
+          'Practice Lifeline — same guides as live mode; nothing is sent to real dispatch.',
+      'ai_assist_rail_semantics': 'Lifeline training level {n}: {title}',
+      'ai_assist_emergency_toggle_on': 'Emergency mode on, urgent guidance',
+      'ai_assist_emergency_toggle_off': 'Emergency mode off',
+      'dashboard_exit_drill_title': 'Exit drill mode?',
+      'dashboard_exit_drill_body':
+          'You will be signed out of this practice session and returned to the login page.',
+      'dashboard_back_login_tooltip': 'Back to login',
+      'dashboard_exit_drill_confirm': 'Exit',
+    },
+
+    // ── Hindi (हिन्दी) ─────────────────────────────────────────────────────
+    'hi': {
+      'app_name': 'EmergencyOS',
+      'profile_title': 'प्रोफ़ाइल और मेडिकल आईडी',
+      'language': 'भाषा',
+      'save_medical_profile': 'मेडिकल प्रोफ़ाइल सहेजें',
+      'critical_medical_info': 'महत्वपूर्ण चिकित्सा जानकारी',
+      'emergency_contacts': 'आपातकालीन संपर्क',
+      'golden_hour_details': 'गोल्डन ऑवर विवरण',
+      'sos_lock': 'SOS लॉक',
+      'top_life_savers': 'शीर्ष जीवन रक्षक',
+      'lives_saved': 'बचाई गई जानें',
+      'active_alerts': 'सक्रिय अलर्ट',
+      'rank': 'रैंक',
+      'on_duty': 'ड्यूटी पर',
+      'standby': 'स्टैंडबाय',
+      'sos': 'SOS',
+      'call_now': 'अभी कॉल करें',
+      'quick_guide': 'त्वरित गाइड',
+      'detailed_instructions': 'विस्तृत निर्देश',
+      'red_flags': 'खतरे के संकेत',
+      'cautions': 'सावधानियाँ',
+      'voice_walkthrough': 'वॉइस वॉकथ्रू',
+      'playing': 'चल रहा है...',
+      'swipe_next_guide': 'अगली गाइड के लिए स्वाइप करें',
+      'watch_video_guide': 'पूरा वीडियो गाइड देखें',
+      'emergency_grid_scan': 'आपातकालीन ग्रिड स्कैन',
+      'area_telemetry': 'क्षेत्र टेलीमेट्री और जोखिम सूचकांक',
+      'report_hazard': 'खतरा रिपोर्ट करें',
+      'todays_duty': 'आज की ड्यूटी',
+      'blood_type': 'रक्त प्रकार',
+      'allergies': 'एलर्जी',
+      'medical_conditions': 'चिकित्सा स्थितियाँ',
+      'contact_name': 'प्राथमिक संपर्क नाम',
+      'contact_phone': 'प्राथमिक संपर्क फ़ोन',
+      'relationship': 'संबंध',
+      'medications': 'वर्तमान दवाइयाँ',
+      'organ_donor': 'अंग दाता स्थिति',
+      'good_morning': 'सुप्रभात,',
+      'good_afternoon': 'नमस्कार,',
+      'good_evening': 'शुभ संध्या,',
+      'hospitals': 'अस्पताल / ट्रॉमा',
+      'visual_walkthrough': 'विज़ुअल वॉकथ्रू',
+      'lifeline': 'लाइफलाइन',
+      'nav_home': 'होम',
+      'nav_map': 'मानचित्र',
+      'nav_profile': 'प्रोफ़ाइल',
+      'step_prefix': 'चरण',
+      'highlights_steps': 'एक-एक करके चरण दिखाता है',
+      'offline_mode': 'ऑफ़लाइन मोड — नेटवर्क डिस्कनेक्ट',
+      'volunteer': 'स्वयंसेवक',
+      'unranked': 'अनरैंक्ड',
+      'live': 'लाइव',
+      'you': 'आप',
+      'saved': 'बचाए',
+      'xp_responses': 'XP · {0} प्रतिक्रियाएँ',
+      'duty_monitoring': 'जब आप ड्यूटी पर हैं तो SOS पॉप-अप चालू हैं।',
+      'turn_on_duty_msg': 'SOS पॉप-अप प्राप्त करने के लिए ड्यूटी चालू करें।',
+      'on_duty_snack': 'ड्यूटी पर — आपके क्षेत्र में घटनाओं की निगरानी...',
+      'off_duty_snack': 'स्टैंडबाय — ड्यूटी सत्र दर्ज किया गया।',
+      'nearby_volunteers_locating': 'आपकी स्थिति ढूँढ रहे हैं…',
+      'active_volunteers_grid_none': 'आपके ग्रिड में अभी कोई अन्य स्वयंसेवक नहीं',
+      'active_volunteers_grid': 'आपके ग्रिड में {n} सक्रिय स्वयंसेवक',
+      'leaderboard_offline': 'लीडरबोर्ड ऑफ़लाइन',
+      'leaderboard_offline_sub': 'सिंकिंग रुकी। कैश्ड स्कोर दिखाए गए।',
+      'leaderboard_empty_primary': 'अभी कोई प्रतिक्रिया स्कोर नहीं',
+      'leaderboard_empty_secondary':
+          'रैंक उन स्वयंसेवकों की है जिन्होंने SOS स्वीकार किया है। संग्रहीत घटनाओं से पुराने स्वीकृति भी गिने जाते हैं।',
+      'leaderboard_on_duty_fallback_title': 'अभी ड्यूटी पर स्वयंसेवक',
+      'leaderboard_on_duty_stat': 'ड्यूटी पर',
+      'leaderboard_view_grid': 'आपातकालीन ग्रिड खोलें',
+      'leaderboard_solo_on_duty':
+          'आप ड्यूटी पर हैं। कवरेज देखने के लिए ग्रिड खोलें; अन्य स्वयंसेवक ड्यूटी पर आने पर यहाँ दिखेंगे।',
+      'set_sos_pin_first': 'पहले SOS पिन सेट करें',
+      'set_pin_safety_msg': 'सुरक्षा के लिए, SOS बनाने से पहले पिन सेट करना आवश्यक है।',
+      'set_pin_now': 'अभी पिन सेट करें',
+      'later': 'बाद में',
+      'emergency_consent_title': 'आपातकालीन डेटा और गोपनीयता',
+      'emergency_consent_body':
+          'जब आप SOS ट्रिगर करते हैं, EmergencyOS आपका लाइव स्थान, प्रोफ़ाइल में जोड़ा वैकल्पिक चिकित्सा विवरण, '
+          'और आवाज़/अपडेट उन स्वयंसेवकों और सेवाओं के साथ साझा कर सकता है जिनसे आप ऐप के ज़रिए जुड़ते हैं। '
+          'अभ्यास / ड्रिल मोड वास्तविक डिस्पैच नहीं भेजता।\n\n'
+          'आपातकाल से पहले कभी भी प्रोफ़ाइल में डेटा देख या कम कर सकते हैं।',
+      'consent_not_now': 'अभी नहीं',
+      'consent_continue': 'समझ गया — जारी रखें',
+      'sos_screen_title': 'SOS ट्रिगर',
+      'sos_hold_banner': 'केवल 3 सेकंड दबाए रखने पर SOS चालू होगा',
+      'sos_hold_button': 'SOS के लिए 3 सेकंड दबाए रखें',
+      'sos_offline_queued':
+          'ऑफ़लाइन — SOS कतार में। कनेक्टिविटी लौटने पर आपकी आपातकालीन सूचना स्वतः प्रतिक्रियाकर्ताओं तक पहुँचेगी।',
+      'sos_semantics_hold_hint':
+          'SOS के लिए 3 सेकंड दबाए रखें। रद्द करने के लिए जल्दी छोड़ें।',
+      'sos_starting': 'SOS शुरू हो रहा है...',
+      'sos_release_to_send': 'भेजने के लिए छोड़ें (वॉइस गाइड के लिए)।',
+      'sos_release_cancel': 'रद्द करने के लिए जल्दी छोड़ें।',
+      'sos_check_connection_retry': 'कनेक्शन जाँचें और फिर कोशिश करें।',
+      'sos_failed_prefix': 'SOS विफल: {detail}',
+      'sos_retry': 'फिर कोशिश',
+      'sos_active_flow_failed': 'SOS सक्रिय स्क्रीन शुरू नहीं हो सकी। पुनः प्रयास करें।',
+      'sos_pin_dispatch_body':
+          'सुरक्षा के लिए, SOS भेजने से पहले प्रोफ़ाइल में अपना SOS पिन सेट करें।',
+      'volunteer_voice_mode_title': 'स्वयंसेवक मोड चुनें',
+      'volunteer_voice_mode_subtitle':
+          'मिशन दृश्य खोलने से पहले चुनें कि इस कॉल के दौरान मार्गदर्शन कैसे चाहिए।',
+      'volunteer_voice_mode_audio_title': 'ऑडियो गाइडेंस चालू',
+      'volunteer_voice_mode_audio_subtitle':
+          'रूट और ट्रायाज के दौरान बोले गए प्रॉम्प्ट और अपडेट।',
+      'volunteer_voice_mode_silent_title': 'साइलेंट (केवल विज़ुअल)',
+      'volunteer_voice_mode_silent_subtitle':
+          'कोई टेक्स्ट-टू-स्पीच नहीं; केवल ऑन-स्क्रीन कार्ड और चेकलिस्ट देखें।',
+      'volunteer_voice_mode_footer':
+          'आप बाद में SOS और Lifeline सेटिंग्स में यह पसंद बदल सकते हैं।',
+      'cancel': 'रद्द',
+      'continue': 'जारी रखें',
+      'close': 'बंद करें',
+      'unlock': 'अनलॉक',
+      'pin': 'पिन',
+      'save': 'सहेजें',
+      'pin_change_title': 'SOS पिन बदलें',
+      'pin_set_title': 'SOS पिन सेट करें',
+      'pin_hint_new': 'नया पिन',
+      'pin_hint_confirm': 'पिन की पुष्टि',
+      'pin_error_too_short': 'पिन कम से कम 4 अंक का हो।',
+      'pin_error_mismatch': 'पिन मेल नहीं खाते।',
+      'wrong_pin': 'गलत पिन।',
+      'wrong_pin_practice': 'गलत पिन। अभ्यास पिन {pin} है।',
+      'no_sos_pin_set': 'SOS पिन सेट नहीं है। पहले प्रोफ़ाइल में सेट करें।',
+      'sign_in_to_unlock': 'प्रोफ़ाइल पिन से अनलॉक करने के लिए साइन इन करें।',
+      'sos_actions_title': 'SOS क्रियाएँ',
+      'sos_actions_cancel_false_alarm': 'SOS रद्द करें (गलत अलार्म)',
+      'sos_actions_mark_resolved_safe': 'समाधान चिह्नित करें (सुरक्षित)',
+      'sos_actions_unlock_and_leave': 'सिर्फ अनलॉक करें और बाहर जाएँ (SOS जारी रहे)',
+      'sos_other_emergency_title': 'अन्य आपात स्थिति',
+      'sos_other_emergency_hint': 'संक्षेप में बताएं क्या हो रहा है…',
+      'sos_other_emergency_value_other': 'अन्य',
+      'sos_other_emergency_value_other_with_detail': 'अन्य: {detail}',
+      'sos_are_you_conscious': 'क्या आप होश में हैं? कृपया हाँ या ना में जवाब दें।',
+      'volunteer_dispatch_escalating_tier_trying_hospital':
+          'टियर {tier} तक बढ़ा रहे हैं। अस्पताल {hospital} आज़मा रहे हैं।',
+      'volunteer_dispatch_trying_hospital': 'अस्पताल {hospital} आज़मा रहे हैं।',
+      'volunteer_dispatch_hospital_accepted':
+          'अस्पताल {hospital} ने आपात स्थिति स्वीकार कर ली है। एम्बुलेंस समन्वय जारी है।',
+      'volunteer_dispatch_all_hospitals_notified':
+          'सभी अस्पतालों को सूचित किया गया। आपात सेवाओं तक बढ़ाया जा रहा है।',
+      'profile_synced': 'सिंक हो गया',
+      'profile_not_synced': 'सिंक नहीं',
+      'profile_saving': 'सहेज रहा है…',
+      'profile_queued_offline': 'कतार में (ऑफ़लाइन)',
+      'profile_save_failed': 'सहेजना विफल',
+      'profile_save_timed_out': 'समय समाप्त',
+      'profile_time_just_now': 'अभी',
+      'profile_time_min_ago': '{n} मि पहले',
+      'profile_time_hours_ago': '{n} घं पहले',
+      'profile_time_days_ago': '{n} दिन पहले',
+      'profile_db_unreachable':
+          'डेटाबेस तक नहीं पहुँच सके। क्या Cloud Firestore चालू है?',
+      'profile_saved_offline_msg': 'स्थानीय रूप से सहेजा — ऑनलाइन होने पर सिंक होगा।',
+      'profile_saved_msg': 'चिकित्सा जानकारी सहेजी गई।',
+      'profile_save_timeout_msg':
+          'सहेजना समय समाप्त। इंटरनेट या Firebase कंसोल जाँचें।',
+      'profile_save_error': 'सहेजने में त्रुटि: {e}',
+      'profile_pin_saved_offline': 'पिन स्थानीय सहेजा — ऑनलाइन होने पर सिंक होगा।',
+      'profile_pin_saved': 'SOS पिन सहेजा गया।',
+      'profile_pin_save_error': 'SOS पिन सहेज नहीं सका: {e}',
+      'drill_profile_banner':
+          'अभ्यास प्रोफ़ाइल — लेआउट वैसा ही; साइन इन होने पर यहाँ के बदलाव आपके खाते में सहेजे जाते हैं।',
+      'profile_sms_contact_title': 'इस संपर्क को आपातकालीन अपडेट भेजें (SMS)',
+      'profile_sms_contact_subtitle':
+          'जब प्रतिक्रियाकर्ता स्वीकार करें या ETA बदले, EmergencyOS आपके आपातकालीन संपर्क को SMS भेज सकता है।',
+      'profile_dispatch_desk_title': 'मैं आपातकालीन डिस्पैच हूँ (Lifeline WebRTC)',
+      'profile_dispatch_desk_subtitle':
+          'केवल आधिकारिक EMS/डिस्पैच खातों के लिए। सक्रिय स्वयंसेवक घटनाओं पर Lifeline में डिस्पैच के रूप में शामिल होने देता है।',
+      'profile_pin_status_set': 'पिन सेट है',
+      'profile_pin_status_unset': 'पिन सेट नहीं',
+      'profile_change_pin_btn': 'पिन बदलें',
+      'profile_set_pin_btn': 'पिन सेट करें',
+      'profile_pin_exit_note':
+          'SOS सक्रिय स्क्रीन से बाहर निकलने और SOS रद्द/सुलझाने के लिए यह पिन ज़रूरी है।',
+      'profile_hint_blood_type': 'उदा. O+',
+      'profile_hint_allergies': 'उदा. पेनिसिलिन, मूँगफली',
+      'profile_hint_conditions': 'उदा. अस्थमा, मधुमेह',
+      'profile_hint_contact_name': 'नाम',
+      'profile_hint_relationship': 'उदा. जीवनसाथी, माता-पिता',
+      'profile_hint_phone': '+91 98765 43210',
+      'profile_hint_medications': 'उदा. इंसुलिन',
+      'profile_hint_donor': 'हाँ / नहीं',
+      'home_duty_heading': 'आज की ड्यूटी',
+      'home_duty_progress': '{done}/{total} पूर्ण',
+      'home_map_semantics': 'आपका परिचालन क्षेत्र और वर्तमान स्थान दिखाने वाला मानचित्र',
+      'home_recenter_map': 'मानचित्र को अपने स्थान पर केंद्रित करें',
+      'home_sos_large_fab_hint': 'आपातकालीन अलर्ट भेजने के लिए SOS उलटी गिनती खोलें',
+      'home_sos_cancelled_snack': 'SOS रद्द।',
+      'home_sos_sent_snack': 'SOS भेजा गया! आपात सेवाएँ सूचित।',
+      'quick_sos_title': 'त्वरित SOS',
+      'quick_sos_subtitle': 'उत्तर दें — विवरण के साथ मदद तेज़ी से पहुँचती है',
+      'quick_sos_practice_banner':
+          'अभ्यास मार्गदर्शित इनटेक — सबमिट वास्तविक SOS नहीं बनाएगा। ड्रिल के लिए होम पर लाल SOS 3 सेकंड दबाएँ।',
+      'quick_sos_section_what': 'आपातकाल क्या है?',
+      'quick_sos_section_someone_else': 'क्या आप किसी और के लिए SOS ट्रिगर कर रहे हैं?',
+      'quick_sos_send_now': 'अभी SOS भेजें',
+      'quick_sos_select_first': 'आपातकाल चुनें और पुष्टि करें',
+      'quick_sos_section_victim': 'पीड़ित की स्थिति',
+      'quick_sos_victim_subtitle': 'प्रतिक्रियाकर्ताओं को सही उपकरण तैयार करने में मदद करता है',
+      'quick_sos_section_people': 'कितने लोगों को मदद चाहिए?',
+      'quick_sos_yes_someone_else': 'हाँ — किसी और के लिए',
+      'quick_sos_no_for_me': 'नहीं — मेरे लिए',
+      'quick_sos_other_hint': 'संक्षेप में अपनी स्थिति बताएँ...',
+      'quick_sos_close': 'त्वरित SOS बंद करें',
+      'quick_sos_drill_submit_disabled':
+          'अभ्यास: सबमिट अक्षम। ड्रिल के लिए होम पर लाल SOS 3 सेकंड दबाएँ।',
+      'quick_sos_failed': 'SOS विफल: {detail}',
+      'quick_sos_could_not_start': 'SOS शुरू नहीं हो सका। पुनः प्रयास करें।',
+      'quick_sos_victim_conscious_q': 'क्या व्यक्ति होश में है?',
+      'quick_sos_victim_breathing_q': 'क्या व्यक्ति साँस ले रहा है?',
+      'quick_sos_label_yes': 'हाँ',
+      'quick_sos_label_no': 'नहीं',
+      'quick_sos_label_unsure': 'पक्का नहीं',
+      'quick_sos_person': 'व्यक्ति',
+      'quick_sos_people': 'लोग',
+      'quick_sos_people_three_plus': '3+',
+      'login_tagline': 'आइए जानें बचाएँ',
+      'login_subtitle':
+          'आपातकाल रिपोर्ट करें, स्वयंसेवकों के साथ समन्वय करें, गोल्डन ऑवर में जानें बचाएँ।',
+      'login_continue_google': 'Google से जारी रखें',
+      'login_continue_phone': 'फ़ोन से जारी रखें',
+      'login_send_code': 'सत्यापन कोड भेजें',
+      'login_verify_login': 'सत्यापित करें और लॉग इन',
+      'login_phone_label': 'फ़ोन नंबर',
+      'login_phone_hint': '+919876543210',
+      'login_otp_label': 'सत्यापन कोड (OTP)',
+      'login_back_options': 'विकल्पों पर वापस',
+      'login_change_phone': 'फ़ोन नंबर बदलें',
+      'login_drill_mode': 'ड्रिल मोड',
+      'login_drill_subtitle': 'अभ्यास के लिए टैप करें — कोई वास्तविक SOS नहीं',
+      'login_drill_semantics': 'ड्रिल मोड, वास्तविक आपातकाल के बिना अभ्यास',
+      'login_practise_victim': 'पीड़ित के रूप में अभ्यास',
+      'login_practise_volunteer': 'स्वयंसेवक के रूप में अभ्यास',
+      'login_admin_note':
+          'मास्टर कंसोल: अलग खाता नहीं — नीचे टैप करें। साइन इन नहीं होने पर हल्का अनाम सत्र।',
+      'login_ems_dashboard': 'EMS डैशबोर्ड',
+      'login_emergency_operator': 'आपातकालीन सेवा ऑपरेटर लॉग इन',
+      'ai_assist_practice_banner':
+          'अभ्यास Lifeline — वास्तविक डिस्पैच पर कुछ नहीं जाता।',
+      'ai_assist_rail_semantics': 'Lifeline स्तर {n}: {title}',
+      'ai_assist_emergency_toggle_on': 'आपातकालीन मोड चालू, तत्काल मार्गदर्शन',
+      'ai_assist_emergency_toggle_off': 'आपातकालीन मोड बंद',
+      'dashboard_exit_drill_title': 'ड्रिल मोड से बाहर?',
+      'dashboard_exit_drill_body':
+          'आप अभ्यास सत्र से साइन आउट होंगे और लॉगिन पर लौटेंगे।',
+      'dashboard_back_login_tooltip': 'लॉगिन पर वापस',
+      'dashboard_exit_drill_confirm': 'बाहर निकलें',
+    },
+
+    // ── Tamil (தமிழ்) ──────────────────────────────────────────────────────
+    'ta': {
+      'app_name': 'EmergencyOS',
+      'profile_title': 'சுயவிவரம் & மருத்துவ அடையாளம்',
+      'language': 'மொழி',
+      'save_medical_profile': 'மருத்துவ விவரம் சேமி',
+      'critical_medical_info': 'முக்கிய மருத்துவ தகவல்',
+      'emergency_contacts': 'அவசர தொடர்புகள்',
+      'golden_hour_details': 'கோல்டன் ஹவர் விவரங்கள்',
+      'sos_lock': 'SOS பூட்டு',
+      'top_life_savers': 'சிறந்த உயிர் காப்பாளர்கள்',
+      'lives_saved': 'காப்பாற்றிய உயிர்கள்',
+      'active_alerts': 'செயலில் உள்ள எச்சரிக்கைகள்',
+      'rank': 'தரவரிசை',
+      'on_duty': 'பணியில்',
+      'standby': 'காத்திருப்பு',
+      'sos': 'SOS',
+      'call_now': 'இப்போது அழைக்கவும்',
+      'quick_guide': 'விரைவு வழிகாட்டி',
+      'detailed_instructions': 'விரிவான வழிமுறைகள்',
+      'red_flags': 'ஆபத்து அறிகுறிகள்',
+      'cautions': 'எச்சரிக்கைகள்',
+      'voice_walkthrough': 'குரல் வழிகாட்டுதல்',
+      'playing': 'இயங்குகிறது...',
+      'swipe_next_guide': 'அடுத்த வழிகாட்டிக்கு ஸ்வைப் செய்யவும்',
+      'watch_video_guide': 'முழு வீடியோ வழிகாட்டியைப் பாருங்கள்',
+      'emergency_grid_scan': 'அவசர கிரிட் ஸ்கேன்',
+      'area_telemetry': 'பகுதி டெலிமெட்ரி & ஆபத்து குறியீடு',
+      'report_hazard': 'ஆபத்தைப் புகாரளிக்கவும்',
+      'todays_duty': 'இன்றைய கடமை',
+      'blood_type': 'இரத்த வகை',
+      'allergies': 'ஒவ்வாமைகள்',
+      'medical_conditions': 'மருத்துவ நிலைகள்',
+      'contact_name': 'முதன்மை தொடர்பு பெயர்',
+      'contact_phone': 'முதன்மை தொடர்பு எண்',
+      'relationship': 'உறவு',
+      'medications': 'தற்போதைய மருந்துகள்',
+      'organ_donor': 'உறுப்பு தான நிலை',
+      'good_morning': 'காலை வணக்கம்,',
+      'good_afternoon': 'மதிய வணக்கம்,',
+      'good_evening': 'மாலை வணக்கம்,',
+      'hospitals': 'மருத்துவமனைகள்',
+      'visual_walkthrough': 'காட்சி வழிகாட்டுதல்',
+      'lifeline': 'லைஃப்லைன்',
+      'nav_home': 'முகப்பு',
+      'nav_map': 'வரைபடம்',
+      'nav_profile': 'சுயவிவரம்',
+      'step_prefix': 'படி',
+      'highlights_steps': 'ஒவ்வொன்றாக படிகளை காட்டுகிறது',
+      'offline_mode': 'ஆஃப்லைன் — நெட்வொர்க் துண்டிக்கப்பட்டது',
+      'volunteer': 'தன்னார்வலர்',
+      'unranked': 'தரவரிசை இல்லை',
+      'live': 'நேரலை',
+      'you': 'நீங்கள்',
+      'saved': 'காப்பாற்றியது',
+      'xp_responses': 'XP · {0} பதில்கள்',
+      'duty_monitoring': 'நீங்கள் பணியில் இருக்கும்போது SOS பாப்-அப்கள் இயக்கத்தில் உள்ளன.',
+      'turn_on_duty_msg': 'SOS பாப்-அப்கள் பெற பணியை இயக்கவும்.',
+      'on_duty_snack': 'பணியில் — உங்கள் பகுதியில் சம்பவங்களை கண்காணிக்கிறது...',
+      'off_duty_snack': 'காத்திருப்பு — பணி அமர்வு பதிவு செய்யப்பட்டது.',
+      'leaderboard_offline': 'லீடர்போர்டு ஆஃப்லைன்',
+      'leaderboard_offline_sub': 'ஒத்திசைவு நிறுத்தப்பட்டது. கேச் செய்யப்பட்ட மதிப்பெண்கள்.',
+      'set_sos_pin_first': 'முதலில் SOS பின் அமைக்கவும்',
+      'set_pin_safety_msg': 'பாதுகாப்பிற்காக, SOS உருவாக்கும் முன் பின் அமைக்க வேண்டும்.',
+      'set_pin_now': 'இப்போது பின் அமை',
+      'later': 'பின்னர்',
+      'sos_screen_title': 'SOS',
+      'sos_hold_banner': 'அவசரத்தை அனுப்ப 3 வினாடிகள் அழுத்திப் பிடிக்கவும்.',
+      'sos_hold_button': 'SOS ஐ அனுப்ப அழுத்திப் பிடிக்கவும்',
+      'sos_semantics_hold_hint': 'SOS. அனுப்ப மூன்று வினாடிகள் அழுத்திப் பிடிக்கவும்.',
+      'home_duty_heading': 'இன்றைய கடமை',
+      'home_duty_progress': '{done}/{total} முடிந்தது',
+      'home_map_semantics': 'உங்கள் பகுதி மற்றும் இருப்பிடத்தைக் காட்டும் வரைபடம்',
+      'home_recenter_map': 'வரைபடத்தை உங்கள் இருப்பிடத்திற்கு மையப்படுத்து',
+      'home_sos_large_fab_hint': 'அவசர எச்சரிக்கைக்கு SOS எண்ணிக்கையைத் திற',
+      'home_sos_cancelled_snack': 'SOS ரத்து.',
+      'home_sos_sent_snack': 'SOS அனுப்பப்பட்டது! அவசர சேவைகளுக்குத் தெரிவிக்கப்பட்டது.',
+      'quick_sos_title': 'விரைவு SOS',
+      'quick_sos_subtitle': 'பதிலளிக்கவும் — விவரங்களுடன் உதவி விரைவாக வரும்',
+      'quick_sos_practice_banner':
+          'பயிற்சி வழிகாட்டப்பட்ட உள்வாங்கல் — சமர்ப்பிப்பு உண்மையான SOS ஐ உருவாக்காது.',
+      'quick_sos_section_what': 'அவசரம் என்ன?',
+      'quick_sos_section_someone_else': 'வேறொருவருக்காக SOS ஐத் தூண்டுகிறீர்களா?',
+      'quick_sos_send_now': 'இப்போது SOS அனுப்பு',
+      'quick_sos_select_first': 'அவசரத்தைத் தேர்ந்தெடுத்து உறுதிப்படுத்தவும்',
+      'quick_sos_section_victim': 'பாதிக்கப்பட்டவர் நிலை',
+      'quick_sos_victim_subtitle': 'பதிலளிப்பவர்கள் சரியான உபகரணங்களைத் தயார் செய்ய உதவுகிறது',
+      'quick_sos_section_people': 'எத்தனை பேருக்கு உதவி தேவை?',
+      'quick_sos_yes_someone_else': 'ஆம் — வேறொருவருக்காக',
+      'quick_sos_no_for_me': 'இல்லை — எனக்காக',
+      'quick_sos_other_hint': 'உங்கள் நிலையை சுருக்கமாக விவரிக்கவும்...',
+      'quick_sos_close': 'விரைவு SOS மூடு',
+      'quick_sos_drill_submit_disabled':
+          'பயிற்சி: சமர்ப்பிப்பு முடக்கப்பட்டது. ட்ரிலுக்கு முகப்பில் சிவப்பு SOS 3 வி. அழுத்தவும்.',
+      'quick_sos_failed': 'SOS தோல்வி: {detail}',
+      'quick_sos_could_not_start': 'SOS தொடங்க முடியவில்லை. மீண்டும் முயலவும்.',
+      'quick_sos_victim_conscious_q': 'அந்த நபர் உணர்வுடன் உள்ளாரா?',
+      'quick_sos_victim_breathing_q': 'அந்த நபர் சுவாசிக்கிறாரா?',
+      'quick_sos_label_yes': 'ஆம்',
+      'quick_sos_label_no': 'இல்லை',
+      'quick_sos_label_unsure': 'உறுதியில்லை',
+      'quick_sos_person': 'நபர்',
+      'quick_sos_people': 'நபர்கள்',
+      'quick_sos_people_three_plus': '3+',
+      'login_tagline': 'உயிர்களைக் காப்போம்',
+      'login_subtitle':
+          'அவசரங்களைப் புகாரளிக்கவும், தன்னார்வலர்களுடன் ஒருங்கிணைக்கவும், கோல்டன் ஹவரில் உயிர்களைக் காப்பாற்றவும்.',
+      'login_continue_google': 'Google உடன் தொடரவும்',
+      'login_continue_phone': 'தொலைபேசியுடன் தொடரவும்',
+      'login_send_code': 'சரிபார்ப்புக் குறியீட்டை அனுப்பு',
+      'login_verify_login': 'சரிபார்த்து உள்நுழை',
+      'login_phone_label': 'தொலைபேசி எண்',
+      'login_phone_hint': '+919876543210',
+      'login_otp_label': 'சரிபார்ப்புக் குறியீடு (OTP)',
+      'login_back_options': 'விருப்பங்களுக்குத் திரும்பு',
+      'login_change_phone': 'தொலைபேசி எண்ணை மாற்று',
+      'login_drill_mode': 'பயிற்சி பயன்முறை',
+      'login_drill_subtitle': 'பயிற்சிக்குத் தட்டவும் — உண்மையான SOS இல்லை',
+      'login_drill_semantics': 'பயிற்சி பயன்முறை, உண்மையான அவசரம் இல்லாமல்',
+      'login_practise_victim': 'பாதிக்கப்பட்டவராக பயிற்சி',
+      'login_practise_volunteer': 'தன்னார்வலராக பயிற்சி',
+      'login_admin_note':
+          'முதன்மை கன்சோல்: தனி கணக்கு இல்லை — கீழே தட்டவும். உள்நுழையாவிட்டால் இலகுவான அநாமதேய அமர்வு.',
+      'login_ems_dashboard': 'EMS டாஷ்போர்டு',
+      'login_emergency_operator': 'அவசர சேவை ஆபரேட்டர் உள்நுழைவு',
+      'ai_assist_practice_banner':
+          'பயிற்சி Lifeline — உண்மையான டிஸ்பैச் எதுவும் அனுப்பப்படாது.',
+      'ai_assist_rail_semantics': 'Lifeline நிலை {n}: {title}',
+      'ai_assist_emergency_toggle_on': 'அவசர பயன்முறை இயக்கம், அவசர வழிகாட்டுதல்',
+      'ai_assist_emergency_toggle_off': 'அவசர பயன்முறை முடக்கம்',
+      'dashboard_exit_drill_title': 'பயிற்சி பயன்முறையிலிருந்து வெளியேற?',
+      'dashboard_exit_drill_body':
+          'இந்த பயிற்சி அமர்விலிருந்து வெளியேறி உள்நுழைவு பக்கத்திற்குத் திரும்புவீர்கள்.',
+      'dashboard_back_login_tooltip': 'உள்நுழைவுக்குத் திரும்பு',
+    },
+
+    // ── Telugu (తెలుగు) ────────────────────────────────────────────────────
+    'te': {
+      'app_name': 'EmergencyOS',
+      'profile_title': 'ప్రొఫైల్ & వైద్య గుర్తింపు',
+      'language': 'భాష',
+      'save_medical_profile': 'వైద్య ప్రొఫైల్ సేవ్ చేయండి',
+      'critical_medical_info': 'కీలక వైద్య సమాచారం',
+      'emergency_contacts': 'అత్యవసర సంప్రదింపులు',
+      'golden_hour_details': 'గోల్డెన్ అవర్ వివరాలు',
+      'sos_lock': 'SOS లాక్',
+      'top_life_savers': 'అగ్ర ప్రాణ రక్షకులు',
+      'lives_saved': 'రక్షించిన ప్రాణాలు',
+      'active_alerts': 'యాక్టివ్ అలర్ట్‌లు',
+      'rank': 'ర్యాంక్',
+      'on_duty': 'డ్యూటీలో',
+      'standby': 'స్టాండ్‌బై',
+      'sos': 'SOS',
+      'call_now': 'ఇప్పుడు కాల్ చేయండి',
+      'quick_guide': 'త్వరిత గైడ్',
+      'detailed_instructions': 'వివరమైన సూచనలు',
+      'red_flags': 'ప్రమాద సంకేతాలు',
+      'cautions': 'జాగ్రత్తలు',
+      'voice_walkthrough': 'వాయిస్ వాక్‌త్రూ',
+      'playing': 'ప్లే అవుతోంది...',
+      'swipe_next_guide': 'తదుపరి గైడ్ కోసం స్వైప్ చేయండి',
+      'watch_video_guide': 'పూర్తి వీడియో గైడ్ చూడండి',
+      'emergency_grid_scan': 'అత్యవసర గ్రిడ్ స్కాన్',
+      'area_telemetry': 'ప్రాంత టెలిమెట్రీ & ప్రమాద సూచిక',
+      'report_hazard': 'ప్రమాదాన్ని నివేదించండి',
+      'todays_duty': 'నేటి డ్యూటీ',
+      'blood_type': 'రక్త రకం',
+      'allergies': 'అలర్జీలు',
+      'medical_conditions': 'వైద్య పరిస్థితులు',
+      'contact_name': 'ప్రాథమిక సంప్రదింపు పేరు',
+      'contact_phone': 'ప్రాథమిక సంప్రదింపు ఫోన్',
+      'relationship': 'సంబంధం',
+      'medications': 'ప్రస్తుత మందులు',
+      'organ_donor': 'అవయవ దాత స్థితి',
+      'good_morning': 'శుభోదయం,',
+      'good_afternoon': 'శుభ మధ్యాహ్నం,',
+      'good_evening': 'శుభ సాయంత్రం,',
+      'hospitals': 'ఆసుపత్రులు',
+      'visual_walkthrough': 'విజువల్ వాక్‌త్రూ',
+      'lifeline': 'లైఫ్‌లైన్',
+      'nav_home': 'హోమ్',
+      'nav_map': 'మ్యాప్',
+      'nav_profile': 'ప్రొఫైల్',
+      'step_prefix': 'దశ',
+      'highlights_steps': 'ఒక్కొక్కటిగా దశలను చూపిస్తుంది',
+      'offline_mode': 'ఆఫ్‌లైన్ — నెట్‌వర్క్ డిస్‌కనెక్ట్',
+      'volunteer': 'వాలంటీర్',
+      'unranked': 'ర్యాంక్ లేదు',
+      'live': 'లైవ్',
+      'you': 'మీరు',
+      'saved': 'రక్షించారు',
+      'xp_responses': 'XP · {0} ప్రతిస్పందనలు',
+      'duty_monitoring': 'మీరు డ్యూటీలో ఉన్నప్పుడు SOS పాప్-అప్‌లు ఆన్ చేయబడ్డాయి.',
+      'turn_on_duty_msg': 'SOS పాప్-అప్‌లు అందుకోవడానికి డ్యూటీ ఆన్ చేయండి.',
+      'on_duty_snack': 'డ్యూటీలో — మీ ప్రాంతంలో సంఘటనలను పర్యవేక్షిస్తోంది...',
+      'off_duty_snack': 'స్టాండ్‌బై — డ్యూటీ సెషన్ రికార్డ్ చేయబడింది.',
+      'leaderboard_offline': 'లీడర్‌బోర్డ్ ఆఫ్‌లైన్',
+      'leaderboard_offline_sub': 'సింక్ ఆగింది. కాష్ స్కోర్‌లు చూపబడ్డాయి.',
+      'set_sos_pin_first': 'ముందు SOS పిన్ సెట్ చేయండి',
+      'set_pin_safety_msg': 'భద్రత కోసం, SOS సృష్టించే ముందు పిన్ సెట్ చేయాలి.',
+      'set_pin_now': 'ఇప్పుడు పిన్ సెట్ చేయండి',
+      'later': 'తర్వాత',
+    },
+
+    // ── Kannada (ಕನ್ನಡ) ────────────────────────────────────────────────────
+    'kn': {
+      'app_name': 'EmergencyOS',
+      'profile_title': 'ಪ್ರೊಫೈಲ್ & ವೈದ್ಯಕೀಯ ಗುರುತು',
+      'language': 'ಭಾಷೆ',
+      'save_medical_profile': 'ವೈದ್ಯಕೀಯ ಪ್ರೊಫೈಲ್ ಉಳಿಸಿ',
+      'critical_medical_info': 'ನಿರ್ಣಾಯಕ ವೈದ್ಯಕೀಯ ಮಾಹಿತಿ',
+      'emergency_contacts': 'ತುರ್ತು ಸಂಪರ್ಕಗಳು',
+      'golden_hour_details': 'ಗೋಲ್ಡನ್ ಅವರ್ ವಿವರಗಳು',
+      'sos_lock': 'SOS ಲಾಕ್',
+      'top_life_savers': 'ಅಗ್ರ ಜೀವ ರಕ್ಷಕರು',
+      'lives_saved': 'ಉಳಿಸಿದ ಜೀವಗಳು',
+      'active_alerts': 'ಸಕ್ರಿಯ ಎಚ್ಚರಿಕೆಗಳು',
+      'rank': 'ಶ್ರೇಣಿ',
+      'on_duty': 'ಕರ್ತವ್ಯದಲ್ಲಿ',
+      'standby': 'ಸ್ಟ್ಯಾಂಡ್‌ಬೈ',
+      'sos': 'SOS',
+      'call_now': 'ಈಗ ಕರೆ ಮಾಡಿ',
+      'quick_guide': 'ತ್ವರಿತ ಮಾರ್ಗದರ್ಶಿ',
+      'detailed_instructions': 'ವಿವರವಾದ ಸೂಚನೆಗಳು',
+      'red_flags': 'ಅಪಾಯ ಸಂಕೇತಗಳು',
+      'cautions': 'ಎಚ್ಚರಿಕೆಗಳು',
+      'voice_walkthrough': 'ಧ್ವನಿ ಮಾರ್ಗದರ್ಶನ',
+      'playing': 'ನುಡಿಸುತ್ತಿದೆ...',
+      'swipe_next_guide': 'ಮುಂದಿನ ಮಾರ್ಗದರ್ಶಿಗಾಗಿ ಸ್ವೈಪ್ ಮಾಡಿ',
+      'watch_video_guide': 'ಪೂರ್ಣ ವೀಡಿಯೊ ಮಾರ್ಗದರ್ಶಿ ನೋಡಿ',
+      'emergency_grid_scan': 'ತುರ್ತು ಗ್ರಿಡ್ ಸ್ಕ್ಯಾನ್',
+      'area_telemetry': 'ಪ್ರದೇಶ ಟೆಲಿಮೆಟ್ರಿ & ಅಪಾಯ ಸೂಚಿ',
+      'report_hazard': 'ಅಪಾಯ ವರದಿ ಮಾಡಿ',
+      'todays_duty': 'ಇಂದಿನ ಕರ್ತವ್ಯ',
+      'blood_type': 'ರಕ್ತದ ಗುಂಪು',
+      'allergies': 'ಅಲರ್ಜಿಗಳು',
+      'medical_conditions': 'ವೈದ್ಯಕೀಯ ಸ್ಥಿತಿಗಳು',
+      'contact_name': 'ಪ್ರಾಥಮಿಕ ಸಂಪರ್ಕ ಹೆಸರು',
+      'contact_phone': 'ಪ್ರಾಥಮಿಕ ಸಂಪರ್ಕ ಫೋನ್',
+      'relationship': 'ಸಂಬಂಧ',
+      'medications': 'ಪ್ರಸ್ತುತ ಔಷಧಗಳು',
+      'organ_donor': 'ಅಂಗ ದಾನಿ ಸ್ಥಿತಿ',
+      'good_morning': 'ಶುಭೋದಯ,',
+      'good_afternoon': 'ಶುಭ ಮಧ್ಯಾಹ್ನ,',
+      'good_evening': 'ಶುಭ ಸಂಜೆ,',
+      'hospitals': 'ಆಸ್ಪತ್ರೆಗಳು',
+      'visual_walkthrough': 'ದೃಶ್ಯ ಮಾರ್ಗದರ್ಶನ',
+      'lifeline': 'ಲೈಫ್‌ಲೈನ್',
+      'nav_home': 'ಹೋಮ್',
+      'nav_map': 'ನಕ್ಷೆ',
+      'nav_profile': 'ಪ್ರೊಫೈಲ್',
+      'step_prefix': 'ಹಂತ',
+      'highlights_steps': 'ಒಂದೊಂದಾಗಿ ಹಂತಗಳನ್ನು ತೋರಿಸುತ್ತದೆ',
+      'offline_mode': 'ಆಫ್‌ಲೈನ್ — ನೆಟ್‌ವರ್ಕ್ ಸಂಪರ್ಕ ಕಡಿತ',
+      'volunteer': 'ಸ್ವಯಂಸೇವಕ',
+      'unranked': 'ಶ್ರೇಣಿ ಇಲ್ಲ',
+      'live': 'ಲೈವ್',
+      'you': 'ನೀವು',
+      'saved': 'ಉಳಿಸಿದ',
+      'xp_responses': 'XP · {0} ಪ್ರತಿಕ್ರಿಯೆಗಳು',
+      'duty_monitoring': 'ನೀವು ಕರ್ತವ್ಯದಲ್ಲಿರುವಾಗ SOS ಪಾಪ್-ಅಪ್‌ಗಳು ಆನ್ ಆಗಿವೆ.',
+      'turn_on_duty_msg': 'SOS ಪಾಪ್-ಅಪ್‌ಗಳನ್ನು ಪಡೆಯಲು ಕರ್ತವ್ಯ ಆನ್ ಮಾಡಿ.',
+      'on_duty_snack': 'ಕರ್ತವ್ಯದಲ್ಲಿ — ನಿಮ್ಮ ಪ್ರದೇಶದಲ್ಲಿ ಘಟನೆಗಳನ್ನು ಮೇಲ್ವಿಚಾರಣೆ ಮಾಡಲಾಗುತ್ತಿದೆ...',
+      'off_duty_snack': 'ಸ್ಟ್ಯಾಂಡ್‌ಬೈ — ಕರ್ತವ್ಯ ಅವಧಿ ದಾಖಲಾಗಿದೆ.',
+      'leaderboard_offline': 'ಲೀಡರ್‌ಬೋರ್ಡ್ ಆಫ್‌ಲೈನ್',
+      'leaderboard_offline_sub': 'ಸಿಂಕ್ ನಿಲ್ಲಿಸಲಾಗಿದೆ. ಕ್ಯಾಶ್ ಸ್ಕೋರ್‌ಗಳು.',
+      'set_sos_pin_first': 'ಮೊದಲು SOS ಪಿನ್ ಸೆಟ್ ಮಾಡಿ',
+      'set_pin_safety_msg': 'ಸುರಕ್ಷತೆಗಾಗಿ, SOS ರಚಿಸುವ ಮೊದಲು ಪಿನ್ ಸೆಟ್ ಮಾಡಬೇಕು.',
+      'set_pin_now': 'ಈಗ ಪಿನ್ ಸೆಟ್ ಮಾಡಿ',
+      'later': 'ನಂತರ',
+    },
+
+    // ── Malayalam (മലയാളം) ─────────────────────────────────────────────────
+    'ml': {
+      'app_name': 'EmergencyOS',
+      'profile_title': 'പ്രൊഫൈൽ & മെഡിക്കൽ ഐഡി',
+      'language': 'ഭാഷ',
+      'save_medical_profile': 'മെഡിക്കൽ പ്രൊഫൈൽ സേവ് ചെയ്യുക',
+      'critical_medical_info': 'നിർണായക മെഡിക്കൽ വിവരങ്ങൾ',
+      'emergency_contacts': 'അടിയന്തര ബന്ധങ്ങൾ',
+      'golden_hour_details': 'ഗോൾഡൻ അവർ വിശദാംശങ്ങൾ',
+      'sos_lock': 'SOS ലോക്ക്',
+      'top_life_savers': 'മികച്ച ജീവൻ രക്ഷകർ',
+      'lives_saved': 'രക്ഷിച്ച ജീവനുകൾ',
+      'active_alerts': 'സജീവ അലേർട്ടുകൾ',
+      'rank': 'റാങ്ക്',
+      'on_duty': 'ഡ്യൂട്ടിയിൽ',
+      'standby': 'സ്റ്റാൻഡ്ബൈ',
+      'sos': 'SOS',
+      'call_now': 'ഇപ്പോൾ വിളിക്കുക',
+      'quick_guide': 'ദ്രുത ഗൈഡ്',
+      'detailed_instructions': 'വിശദമായ നിർദ്ദേശങ്ങൾ',
+      'red_flags': 'അപകട സൂചനകൾ',
+      'cautions': 'മുന്നറിയിപ്പുകൾ',
+      'voice_walkthrough': 'വോയ്‌സ് വഴികാട്ടി',
+      'playing': 'പ്ലേ ചെയ്യുന്നു...',
+      'swipe_next_guide': 'അടുത്ത ഗൈഡിലേക്ക് സ്വൈപ്പ് ചെയ്യുക',
+      'watch_video_guide': 'പൂർണ വീഡിയോ ഗൈഡ് കാണുക',
+      'emergency_grid_scan': 'അടിയന്തര ഗ്രിഡ് സ്കാൻ',
+      'area_telemetry': 'ഏരിയ ടെലിമെട്രി & അപകട സൂചിക',
+      'report_hazard': 'അപകടം റിപ്പോർട്ട് ചെയ്യുക',
+      'todays_duty': 'ഇന്നത്തെ ഡ്യൂട്ടി',
+      'blood_type': 'രക്ത ഗ്രൂപ്പ്',
+      'allergies': 'അലർജികൾ',
+      'medical_conditions': 'മെഡിക്കൽ അവസ്ഥകൾ',
+      'contact_name': 'പ്രാഥമിക ബന്ധപ്പെടേണ്ട പേര്',
+      'contact_phone': 'പ്രാഥമിക ബന്ധപ്പെടേണ്ട ഫോൺ',
+      'relationship': 'ബന്ധം',
+      'medications': 'നിലവിലെ മരുന്നുകൾ',
+      'organ_donor': 'അവയവ ദാന നില',
+      'good_morning': 'സുപ്രഭാതം,',
+      'good_afternoon': 'ശുഭ ഉച്ചയ്ക്ക്,',
+      'good_evening': 'ശുഭ സന്ധ്യ,',
+      'hospitals': 'ആശുപത്രികൾ',
+      'visual_walkthrough': 'വിഷ്വൽ വഴികാട്ടി',
+      'lifeline': 'ലൈഫ്‌ലൈൻ',
+      'nav_home': 'ഹോം',
+      'nav_map': 'മാപ്പ്',
+      'nav_profile': 'പ്രൊഫൈൽ',
+      'step_prefix': 'ഘട്ടം',
+      'highlights_steps': 'ഓരോന്നായി ഘട്ടങ്ങൾ കാണിക്കുന്നു',
+      'offline_mode': 'ഓഫ്‌ലൈൻ — നെറ്റ്‌വർക്ക് വിച്ഛേദിച്ചു',
+      'volunteer': 'സന്നദ്ധ പ്രവർത്തകൻ',
+      'unranked': 'റാങ്ക് ഇല്ല',
+      'live': 'ലൈവ്',
+      'you': 'നിങ്ങൾ',
+      'saved': 'രക്ഷിച്ചു',
+      'xp_responses': 'XP · {0} പ്രതികരണങ്ങൾ',
+      'duty_monitoring': 'നിങ്ങൾ ഡ്യൂട്ടിയിൽ ആയിരിക്കുമ്പോൾ SOS പോപ്പ്-അപ്പുകൾ ഓണാണ്.',
+      'turn_on_duty_msg': 'SOS പോപ്പ്-അപ്പുകൾ ലഭിക്കാൻ ഡ്യൂട്ടി ഓണാക്കുക.',
+      'on_duty_snack': 'ഡ്യൂട്ടിയിൽ — നിങ്ങളുടെ പ്രദേശത്ത് സംഭവങ്ങൾ നിരീക്ഷിക്കുന്നു...',
+      'off_duty_snack': 'സ്റ്റാൻഡ്ബൈ — ഡ്യൂട്ടി സെഷൻ രേഖപ്പെടുത്തി.',
+      'leaderboard_offline': 'ലീഡർബോർഡ് ഓഫ്‌ലൈൻ',
+      'leaderboard_offline_sub': 'സിങ്ക് നിർത്തി. കാഷ് സ്കോറുകൾ.',
+      'set_sos_pin_first': 'ആദ്യം SOS പിൻ സെറ്റ് ചെയ്യുക',
+      'set_pin_safety_msg': 'സുരക്ഷയ്ക്കായി, SOS സൃഷ്ടിക്കുന്നതിന് മുമ്പ് പിൻ സെറ്റ് ചെയ്യണം.',
+      'set_pin_now': 'ഇപ്പോൾ പിൻ സെറ്റ് ചെയ്യുക',
+      'later': 'പിന്നീട്',
+    },
+
+    // ── Bengali (বাংলা) ────────────────────────────────────────────────────
+    'bn': {
+      'app_name': 'EmergencyOS',
+      'profile_title': 'প্রোফাইল ও মেডিক্যাল আইডি',
+      'language': 'ভাষা',
+      'save_medical_profile': 'মেডিক্যাল প্রোফাইল সংরক্ষণ করুন',
+      'critical_medical_info': 'গুরুত্বপূর্ণ চিকিৎসা তথ্য',
+      'emergency_contacts': 'জরুরি যোগাযোগ',
+      'golden_hour_details': 'গোল্ডেন আওয়ার বিবরণ',
+      'sos_lock': 'SOS লক',
+      'top_life_savers': 'শীর্ষ জীবন রক্ষাকারী',
+      'lives_saved': 'উদ্ধারকৃত প্রাণ',
+      'active_alerts': 'সক্রিয় সতর্কতা',
+      'rank': 'র‍্যাঙ্ক',
+      'on_duty': 'ডিউটিতে',
+      'standby': 'স্ট্যান্ডবাই',
+      'sos': 'SOS',
+      'call_now': 'এখনই কল করুন',
+      'quick_guide': 'দ্রুত গাইড',
+      'detailed_instructions': 'বিস্তারিত নির্দেশনা',
+      'red_flags': 'বিপদ সংকেত',
+      'cautions': 'সতর্কতা',
+      'voice_walkthrough': 'ভয়েস গাইড',
+      'playing': 'চলছে...',
+      'swipe_next_guide': 'পরবর্তী গাইডের জন্য সোয়াইপ করুন',
+      'watch_video_guide': 'সম্পূর্ণ ভিডিও গাইড দেখুন',
+      'emergency_grid_scan': 'জরুরি গ্রিড স্ক্যান',
+      'area_telemetry': 'এলাকা টেলিমেট্রি ও ঝুঁকি সূচক',
+      'report_hazard': 'বিপদ রিপোর্ট করুন',
+      'todays_duty': 'আজকের দায়িত্ব',
+      'blood_type': 'রক্তের গ্রুপ',
+      'allergies': 'অ্যালার্জি',
+      'medical_conditions': 'চিকিৎসা অবস্থা',
+      'contact_name': 'প্রাথমিক যোগাযোগের নাম',
+      'contact_phone': 'প্রাথমিক যোগাযোগ ফোন',
+      'relationship': 'সম্পর্ক',
+      'medications': 'বর্তমান ওষুধ',
+      'organ_donor': 'অঙ্গ দাতা স্থিতি',
+      'good_morning': 'সুপ্রভাত,',
+      'good_afternoon': 'শুভ অপরাহ্ন,',
+      'good_evening': 'শুভ সন্ধ্যা,',
+      'hospitals': 'হাসপাতাল',
+      'visual_walkthrough': 'ভিজ্যুয়াল গাইড',
+      'lifeline': 'লাইফলাইন',
+      'nav_home': 'হোম',
+      'nav_map': 'ম্যাপ',
+      'nav_profile': 'প্রোফাইল',
+      'step_prefix': 'ধাপ',
+      'highlights_steps': 'একটি একটি করে ধাপ দেখায়',
+      'offline_mode': 'অফলাইন — নেটওয়ার্ক বিচ্ছিন্ন',
+      'volunteer': 'স্বেচ্ছাসেবক',
+      'unranked': 'র‍্যাঙ্কবিহীন',
+      'live': 'লাইভ',
+      'you': 'আপনি',
+      'saved': 'বাঁচানো',
+      'xp_responses': 'XP · {0} প্রতিক্রিয়া',
+      'duty_monitoring': 'আপনি ডিউটিতে থাকাকালীন SOS পপ-আপ চালু আছে।',
+      'turn_on_duty_msg': 'SOS পপ-আপ পেতে ডিউটি চালু করুন।',
+      'on_duty_snack': 'ডিউটিতে — আপনার এলাকায় ঘটনা পর্যবেক্ষণ করা হচ্ছে...',
+      'off_duty_snack': 'স্ট্যান্ডবাই — ডিউটি সেশন রেকর্ড হয়েছে।',
+      'leaderboard_offline': 'লিডারবোর্ড অফলাইন',
+      'leaderboard_offline_sub': 'সিংক বিরত। ক্যাশ স্কোর দেখানো হচ্ছে।',
+      'set_sos_pin_first': 'প্রথমে SOS পিন সেট করুন',
+      'set_pin_safety_msg': 'নিরাপত্তার জন্য, SOS তৈরি করার আগে পিন সেট করতে হবে।',
+      'set_pin_now': 'এখনই পিন সেট করুন',
+      'later': 'পরে',
+      'sos_screen_title': 'SOS',
+      'sos_hold_banner': 'পাঠাতে ৩ সেকেন্ড ধরে চেপে ধরুন।',
+      'sos_hold_button': 'SOS পাঠাতে চেপে ধরুন',
+      'sos_semantics_hold_hint': 'SOS। পাঠাতে তিন সেকেন্ড চেপে ধরুন।',
+      'home_duty_heading': 'আজকের দায়িত্ব',
+      'home_duty_progress': '{done}/{total} সম্পন্ন',
+      'home_map_semantics': 'আপনার এলাকা ও অবস্থান দেখানো মানচিত্র',
+      'home_recenter_map': 'মানচিত্র আপনার অবস্থানে কেন্দ্র করুন',
+      'home_sos_large_fab_hint': 'জরুরি সতর্কতার জন্য SOS কাউন্টডাউন খুলুন',
+      'home_sos_cancelled_snack': 'SOS বাতিল।',
+      'home_sos_sent_snack': 'SOS পাঠানো হয়েছে! জরুরি সেবা অবহিত।',
+      'quick_sos_title': 'দ্রুত SOS',
+      'quick_sos_subtitle': 'উত্তর দিন — বিবরণ দিলে সাহায্য দ্রুত আসে',
+      'quick_sos_practice_banner':
+          'অনুশীলন গাইডেড ইনটেক — জমা দিলে আসল SOS হবে না।',
+      'quick_sos_section_what': 'জরুরি কী?',
+      'quick_sos_section_someone_else': 'আপনি কি অন্যের জন্য SOS চালু করছেন?',
+      'quick_sos_send_now': 'এখনই SOS পাঠান',
+      'quick_sos_select_first': 'জরুরি নির্বাচন করুন ও নিশ্চিত করুন',
+      'quick_sos_section_victim': 'কর্তৃগত অবস্থা',
+      'quick_sos_victim_subtitle': 'উদ্ধারকারীদের সঠিক সরঞ্জাম প্রস্তুত করতে সাহায্য করে',
+      'quick_sos_section_people': 'কতজনের সাহায্য দরকার?',
+      'quick_sos_yes_someone_else': 'হ্যাঁ — অন্যের জন্য',
+      'quick_sos_no_for_me': 'না — আমার জন্য',
+      'quick_sos_other_hint': 'সংক্ষেপে আপনার পরিস্থিতি বর্ণনা করুন...',
+      'quick_sos_close': 'দ্রুত SOS বন্ধ করুন',
+      'quick_sos_drill_submit_disabled':
+          'অনুশীলন: জমা নিষ্ক্রিয়। ড্রিলের জন্য হোমে লাল SOS ৩ সে. চেপে ধরুন।',
+      'quick_sos_failed': 'SOS ব্যর্থ: {detail}',
+      'quick_sos_could_not_start': 'SOS শুরু করা যায়নি। আবার চেষ্টা করুন।',
+      'quick_sos_victim_conscious_q': 'ব্যক্তি সচেতন?',
+      'quick_sos_victim_breathing_q': 'ব্যক্তি শ্বাস নিচ্ছে?',
+      'quick_sos_label_yes': 'হ্যাঁ',
+      'quick_sos_label_no': 'না',
+      'quick_sos_label_unsure': 'নিশ্চিত নয়',
+      'quick_sos_person': 'ব্যক্তি',
+      'quick_sos_people': 'ব্যক্তি',
+      'quick_sos_people_three_plus': '৩+',
+      'login_tagline': 'প্রাণ বাঁচাই',
+      'login_subtitle':
+          'জরুরি রিপোর্ট করুন, স্বেচ্ছাসেবকদের সঙ্গে সমন্বয় করুন, গোল্ডেন আওয়ারে প্রাণ বাঁচান।',
+      'login_continue_google': 'Google দিয়ে চালিয়ে যান',
+      'login_continue_phone': 'ফোন দিয়ে চালিয়ে যান',
+      'login_send_code': 'যাচাইকরণ কোড পাঠান',
+      'login_verify_login': 'যাচাই করে লগ ইন',
+      'login_phone_label': 'ফোন নম্বর',
+      'login_phone_hint': '+8801XXXXXXXXX',
+      'login_otp_label': 'যাচাইকরণ কোড (OTP)',
+      'login_back_options': 'বিকল্পে ফিরুন',
+      'login_change_phone': 'ফোন নম্বর পরিবর্তন',
+      'login_drill_mode': 'ড্রিল মোড',
+      'login_drill_subtitle': 'অনুশীলনের জন্য ট্যাপ — আসল SOS নয়',
+      'login_drill_semantics': 'ড্রিল মোড, আসল জরুরি ছাড়া অনুশীলন',
+      'login_practise_victim': 'কর্তৃগত হিসেবে অনুশীলন',
+      'login_practise_volunteer': 'স্বেচ্ছাসেবক হিসেবে অনুশীলন',
+      'login_admin_note':
+          'মাস্টার কনসোল: আলাদা অ্যাকাউন্ট নেই — নিচে ট্যাপ করুন। লগ ইন না থাকলে হালকা বেনামি সেশন।',
+      'login_ems_dashboard': 'EMS ড্যাশবোর্ড',
+      'login_emergency_operator': 'জরুরি সেবা অপারেটর লগ ইন',
+      'ai_assist_practice_banner':
+          'অনুশীলন Lifeline — আসল ডিসপ্যাচে কিছু যায় না।',
+      'ai_assist_rail_semantics': 'Lifeline স্তর {n}: {title}',
+      'ai_assist_emergency_toggle_on': 'জরুরি মোড চালু, তাৎক্ষণিক গাইড',
+      'ai_assist_emergency_toggle_off': 'জরুরি মোড বন্ধ',
+      'dashboard_exit_drill_title': 'ড্রিল মোড থেকে বের হবেন?',
+      'dashboard_exit_drill_body':
+          'আপনি এই অনুশীলন সেশন থেকে সাইন আউট হয়ে লগইনে ফিরবেন।',
+      'dashboard_back_login_tooltip': 'লগইনে ফিরুন',
+      'dashboard_exit_drill_confirm': 'প্রস্থান',
+    },
+
+    // ── Marathi (मराठी) ────────────────────────────────────────────────────
+    'mr': {
+      'app_name': 'EmergencyOS',
+      'profile_title': 'प्रोफाइल आणि वैद्यकीय ओळख',
+      'language': 'भाषा',
+      'save_medical_profile': 'वैद्यकीय प्रोफाइल जतन करा',
+      'critical_medical_info': 'महत्त्वाची वैद्यकीय माहिती',
+      'emergency_contacts': 'आपत्कालीन संपर्क',
+      'golden_hour_details': 'गोल्डन अवर तपशील',
+      'sos_lock': 'SOS लॉक',
+      'top_life_savers': 'शीर्ष जीवनरक्षक',
+      'lives_saved': 'वाचवलेले जीव',
+      'active_alerts': 'सक्रिय सूचना',
+      'rank': 'रँक',
+      'on_duty': 'ड्युटीवर',
+      'standby': 'स्टँडबाय',
+      'sos': 'SOS',
+      'call_now': 'आत्ता कॉल करा',
+      'quick_guide': 'जलद मार्गदर्शक',
+      'detailed_instructions': 'तपशीलवार सूचना',
+      'red_flags': 'धोक्याचे संकेत',
+      'cautions': 'सावधगिरी',
+      'voice_walkthrough': 'व्हॉइस मार्गदर्शन',
+      'playing': 'प्ले होत आहे...',
+      'swipe_next_guide': 'पुढील मार्गदर्शकासाठी स्वाइप करा',
+      'watch_video_guide': 'संपूर्ण व्हिडिओ मार्गदर्शक पहा',
+      'emergency_grid_scan': 'आपत्कालीन ग्रिड स्कॅन',
+      'area_telemetry': 'क्षेत्र टेलिमेट्री आणि जोखीम निर्देशांक',
+      'report_hazard': 'धोका नोंदवा',
+      'todays_duty': 'आजची ड्युटी',
+      'blood_type': 'रक्तगट',
+      'allergies': 'ॲलर्जी',
+      'medical_conditions': 'वैद्यकीय स्थिती',
+      'contact_name': 'प्राथमिक संपर्क नाव',
+      'contact_phone': 'प्राथमिक संपर्क फोन',
+      'relationship': 'नाते',
+      'medications': 'सध्याची औषधे',
+      'organ_donor': 'अवयवदान स्थिती',
+      'good_morning': 'सुप्रभात,',
+      'good_afternoon': 'शुभ दुपार,',
+      'good_evening': 'शुभ संध्याकाळ,',
+      'hospitals': 'रुग्णालये',
+      'visual_walkthrough': 'दृश्य मार्गदर्शन',
+      'lifeline': 'लाइफलाइन',
+      'nav_home': 'होम',
+      'nav_map': 'नकाशा',
+      'nav_profile': 'प्रोफाइल',
+      'step_prefix': 'पायरी',
+      'highlights_steps': 'एक एक करून पायऱ्या दाखवतो',
+      'offline_mode': 'ऑफलाइन — नेटवर्क डिस्कनेक्ट',
+      'volunteer': 'स्वयंसेवक',
+      'unranked': 'रँक नाही',
+      'live': 'लाइव्ह',
+      'you': 'तुम्ही',
+      'saved': 'वाचवले',
+      'xp_responses': 'XP · {0} प्रतिसाद',
+      'duty_monitoring': 'तुम्ही ड्युटीवर असताना SOS पॉप-अप चालू आहेत.',
+      'turn_on_duty_msg': 'SOS पॉप-अप मिळवण्यासाठी ड्युटी चालू करा.',
+      'on_duty_snack': 'ड्युटीवर — तुमच्या परिसरातील घटनांचे निरीक्षण...',
+      'off_duty_snack': 'स्टँडबाय — ड्युटी सत्र नोंदवले.',
+      'leaderboard_offline': 'लीडरबोर्ड ऑफलाइन',
+      'leaderboard_offline_sub': 'सिंकिंग थांबले. कॅश्ड स्कोर.',
+      'set_sos_pin_first': 'प्रथम SOS पिन सेट करा',
+      'set_pin_safety_msg': 'सुरक्षिततेसाठी, SOS तयार करण्यापूर्वी पिन सेट करणे आवश्यक आहे.',
+      'set_pin_now': 'आत्ता पिन सेट करा',
+      'later': 'नंतर',
+    },
+
+    // ── Gujarati (ગુજરાતી) ─────────────────────────────────────────────────
+    'gu': {
+      'app_name': 'EmergencyOS',
+      'profile_title': 'પ્રોફાઇલ અને મેડિકલ આઈડી',
+      'language': 'ભાષા',
+      'save_medical_profile': 'મેડિકલ પ્રોફાઇલ સાચવો',
+      'critical_medical_info': 'મહત્વની તબીબી માહિતી',
+      'emergency_contacts': 'કટોકટી સંપર્કો',
+      'golden_hour_details': 'ગોલ્ડન અવર વિગતો',
+      'sos_lock': 'SOS લોક',
+      'top_life_savers': 'ટોચના જીવનરક્ષકો',
+      'lives_saved': 'બચાવેલા જીવ',
+      'active_alerts': 'સક્રિય ચેતવણીઓ',
+      'rank': 'રેન્ક',
+      'on_duty': 'ફરજ પર',
+      'standby': 'સ્ટેન્ડબાય',
+      'sos': 'SOS',
+      'call_now': 'હમણાં કૉલ કરો',
+      'quick_guide': 'ઝડપી માર્ગદર્શિકા',
+      'detailed_instructions': 'વિગતવાર સૂચનાઓ',
+      'red_flags': 'જોખમના સંકેતો',
+      'cautions': 'સાવચેતીઓ',
+      'voice_walkthrough': 'વૉઇસ માર્ગદર્શન',
+      'playing': 'ચાલુ છે...',
+      'swipe_next_guide': 'આગળની માર્ગદર્શિકા માટે સ્વાઇપ કરો',
+      'watch_video_guide': 'સંપૂર્ણ વીડિયો માર્ગદર્શિકા જુઓ',
+      'emergency_grid_scan': 'કટોકટી ગ્રિડ સ્કેન',
+      'area_telemetry': 'વિસ્તાર ટેલિમેટ્રી અને જોખમ સૂચકાંક',
+      'report_hazard': 'જોખમ રિપોર્ટ કરો',
+      'todays_duty': 'આજની ફરજ',
+      'blood_type': 'લોહીનો પ્રકાર',
+      'allergies': 'એલર્જી',
+      'medical_conditions': 'તબીબી સ્થિતિ',
+      'contact_name': 'પ્રાથમિક સંપર્ક નામ',
+      'contact_phone': 'પ્રાથમિક સંપર્ક ફોન',
+      'relationship': 'સંબંધ',
+      'medications': 'વર્તમાન દવાઓ',
+      'organ_donor': 'અંગ દાન સ્થિતિ',
+      'good_morning': 'સુપ્રભાત,',
+      'good_afternoon': 'શુભ બપોર,',
+      'good_evening': 'શુભ સાંજ,',
+      'hospitals': 'હોસ્પિટલો',
+      'visual_walkthrough': 'દ્રશ્ય માર્ગદર્શન',
+      'lifeline': 'લાઇફલાઇન',
+      'nav_home': 'હોમ',
+      'nav_map': 'નકશો',
+      'nav_profile': 'પ્રોફાઇલ',
+      'step_prefix': 'પગલું',
+      'highlights_steps': 'એક એક કરીને પગલાં બતાવે છે',
+      'offline_mode': 'ઓફલાઇન — નેટવર્ક ડિસ્કનેક્ટ',
+      'volunteer': 'સ્વયંસેવક',
+      'unranked': 'રેન્ક નથી',
+      'live': 'લાઇવ',
+      'you': 'તમે',
+      'saved': 'બચાવ્યા',
+      'xp_responses': 'XP · {0} પ્રતિભાવો',
+      'duty_monitoring': 'તમે ફરજ પર હોવ ત્યારે SOS પોપ-અપ ચાલુ છે.',
+      'turn_on_duty_msg': 'SOS પોપ-અપ મેળવવા માટે ફરજ ચાલુ કરો.',
+      'on_duty_snack': 'ફરજ પર — તમારા વિસ્તારમાં ઘટનાઓનું નિરીક્ષણ...',
+      'off_duty_snack': 'સ્ટેન્ડબાય — ફરજ સત્ર રેકોર્ડ થયું.',
+      'leaderboard_offline': 'લીડરબોર્ડ ઓફલાઇન',
+      'leaderboard_offline_sub': 'સિંક અટકી. કેશ્ડ સ્કોર.',
+      'set_sos_pin_first': 'પહેલા SOS પિન સેટ કરો',
+      'set_pin_safety_msg': 'સુરક્ષા માટે, SOS બનાવતા પહેલા પિન સેટ કરવો જરૂરી છે.',
+      'set_pin_now': 'હમણાં પિન સેટ કરો',
+      'later': 'પછી',
+    },
+
+    // ── Punjabi (ਪੰਜਾਬੀ) ──────────────────────────────────────────────────
+    'pa': {
+      'app_name': 'EmergencyOS',
+      'profile_title': 'ਪ੍ਰੋਫਾਈਲ ਅਤੇ ਮੈਡੀਕਲ ਆਈਡੀ',
+      'language': 'ਭਾਸ਼ਾ',
+      'save_medical_profile': 'ਮੈਡੀਕਲ ਪ੍ਰੋਫਾਈਲ ਸੇਵ ਕਰੋ',
+      'critical_medical_info': 'ਮਹੱਤਵਪੂਰਨ ਡਾਕਟਰੀ ਜਾਣਕਾਰੀ',
+      'emergency_contacts': 'ਐਮਰਜੈਂਸੀ ਸੰਪਰਕ',
+      'golden_hour_details': 'ਗੋਲਡਨ ਅਵਰ ਵੇਰਵੇ',
+      'sos_lock': 'SOS ਲਾਕ',
+      'top_life_savers': 'ਸਿਖਰਲੇ ਜੀਵਨ ਰੱਖਿਅਕ',
+      'lives_saved': 'ਬਚਾਈਆਂ ਜਾਨਾਂ',
+      'active_alerts': 'ਕਿਰਿਆਸ਼ੀਲ ਚੇਤਾਵਨੀਆਂ',
+      'rank': 'ਰੈਂਕ',
+      'on_duty': 'ਡਿਊਟੀ ਤੇ',
+      'standby': 'ਸਟੈਂਡਬਾਈ',
+      'sos': 'SOS',
+      'call_now': 'ਹੁਣੇ ਕਾਲ ਕਰੋ',
+      'quick_guide': 'ਤੇਜ਼ ਗਾਈਡ',
+      'detailed_instructions': 'ਵਿਸਤ੍ਰਿਤ ਹਿਦਾਇਤਾਂ',
+      'red_flags': 'ਖ਼ਤਰੇ ਦੇ ਸੰਕੇਤ',
+      'cautions': 'ਸਾਵਧਾਨੀਆਂ',
+      'voice_walkthrough': 'ਵੌਇਸ ਗਾਈਡ',
+      'playing': 'ਚੱਲ ਰਿਹਾ ਹੈ...',
+      'swipe_next_guide': 'ਅਗਲੀ ਗਾਈਡ ਲਈ ਸਵਾਈਪ ਕਰੋ',
+      'watch_video_guide': 'ਪੂਰੀ ਵੀਡੀਓ ਗਾਈਡ ਦੇਖੋ',
+      'emergency_grid_scan': 'ਐਮਰਜੈਂਸੀ ਗਰਿੱਡ ਸਕੈਨ',
+      'area_telemetry': 'ਖੇਤਰ ਟੈਲੀਮੈਟਰੀ ਅਤੇ ਖ਼ਤਰਾ ਸੂਚਕ',
+      'report_hazard': 'ਖ਼ਤਰੇ ਦੀ ਰਿਪੋਰਟ ਕਰੋ',
+      'todays_duty': 'ਅੱਜ ਦੀ ਡਿਊਟੀ',
+      'blood_type': 'ਖ਼ੂਨ ਦਾ ਗਰੁੱਪ',
+      'allergies': 'ਐਲਰਜੀ',
+      'medical_conditions': 'ਡਾਕਟਰੀ ਸਥਿਤੀ',
+      'contact_name': 'ਮੁੱਖ ਸੰਪਰਕ ਨਾਮ',
+      'contact_phone': 'ਮੁੱਖ ਸੰਪਰਕ ਫ਼ੋਨ',
+      'relationship': 'ਰਿਸ਼ਤਾ',
+      'medications': 'ਮੌਜੂਦਾ ਦਵਾਈਆਂ',
+      'organ_donor': 'ਅੰਗ ਦਾਨ ਸਥਿਤੀ',
+      'good_morning': 'ਸ਼ੁਭ ਸਵੇਰ,',
+      'good_afternoon': 'ਸ਼ੁਭ ਦੁਪਹਿਰ,',
+      'good_evening': 'ਸ਼ੁਭ ਸ਼ਾਮ,',
+      'hospitals': 'ਹਸਪਤਾਲ',
+      'visual_walkthrough': 'ਵਿਜ਼ੂਅਲ ਗਾਈਡ',
+      'lifeline': 'ਲਾਈਫ਼ਲਾਈਨ',
+      'nav_home': 'ਘਰ',
+      'nav_map': 'ਨਕਸ਼ਾ',
+      'nav_profile': 'ਪ੍ਰੋਫ਼ਾਈਲ',
+      'step_prefix': 'ਕਦਮ',
+      'highlights_steps': 'ਇੱਕ-ਇੱਕ ਕਰਕੇ ਕਦਮ ਦਿਖਾਉਂਦਾ ਹੈ',
+      'offline_mode': 'ਆਫ਼ਲਾਈਨ — ਨੈੱਟਵਰਕ ਕੱਟਿਆ',
+      'volunteer': 'ਵਲੰਟੀਅਰ',
+      'unranked': 'ਰੈਂਕ ਨਹੀਂ',
+      'live': 'ਲਾਈਵ',
+      'you': 'ਤੁਸੀਂ',
+      'saved': 'ਬਚਾਏ',
+      'xp_responses': 'XP · {0} ਜਵਾਬ',
+      'duty_monitoring': 'ਜਦੋਂ ਤੁਸੀਂ ਡਿਊਟੀ ਤੇ ਹੋ SOS ਪੌਪ-ਅੱਪ ਚਾਲੂ ਹਨ।',
+      'turn_on_duty_msg': 'SOS ਪੌਪ-ਅੱਪ ਪ੍ਰਾਪਤ ਕਰਨ ਲਈ ਡਿਊਟੀ ਚਾਲੂ ਕਰੋ।',
+      'on_duty_snack': 'ਡਿਊਟੀ ਤੇ — ਤੁਹਾਡੇ ਖੇਤਰ ਵਿੱਚ ਘਟਨਾਵਾਂ ਦੀ ਨਿਗਰਾਨੀ...',
+      'off_duty_snack': 'ਸਟੈਂਡਬਾਈ — ਡਿਊਟੀ ਸੈਸ਼ਨ ਰਿਕਾਰਡ ਕੀਤਾ।',
+      'leaderboard_offline': 'ਲੀਡਰਬੋਰਡ ਆਫ਼ਲਾਈਨ',
+      'leaderboard_offline_sub': 'ਸਿੰਕ ਰੁਕੀ। ਕੈਸ਼ ਸਕੋਰ।',
+      'set_sos_pin_first': 'ਪਹਿਲਾਂ SOS ਪਿੰਨ ਸੈੱਟ ਕਰੋ',
+      'set_pin_safety_msg': 'ਸੁਰੱਖਿਆ ਲਈ, SOS ਬਣਾਉਣ ਤੋਂ ਪਹਿਲਾਂ ਪਿੰਨ ਸੈੱਟ ਕਰਨਾ ਜ਼ਰੂਰੀ ਹੈ।',
+      'set_pin_now': 'ਹੁਣੇ ਪਿੰਨ ਸੈੱਟ ਕਰੋ',
+      'later': 'ਬਾਅਦ ਵਿੱਚ',
+    },
+
+    // ── Odia (ଓଡ଼ିଆ) ──────────────────────────────────────────────────────
+    'or': {
+      'app_name': 'EmergencyOS',
+      'profile_title': 'ପ୍ରୋଫାଇଲ ଏବଂ ମେଡିକାଲ ଆଇଡି',
+      'language': 'ଭାଷା',
+      'save_medical_profile': 'ମେଡିକାଲ ପ୍ରୋଫାଇଲ ସେଭ କରନ୍ତୁ',
+      'critical_medical_info': 'ଗୁରୁତ୍ୱପୂର୍ଣ୍ଣ ଚିକିତ୍ସା ତଥ୍ୟ',
+      'emergency_contacts': 'ଜରୁରୀ ଯୋଗାଯୋଗ',
+      'golden_hour_details': 'ଗୋଲ୍ଡେନ ଆୱାର ବିବରଣୀ',
+      'sos_lock': 'SOS ଲକ',
+      'top_life_savers': 'ସର୍ବୋଚ୍ଚ ଜୀବନ ରକ୍ଷାକାରୀ',
+      'lives_saved': 'ବଞ୍ଚାଯାଇଥିବା ଜୀବନ',
+      'active_alerts': 'ସକ୍ରିୟ ଆଲର୍ଟ',
+      'rank': 'ର୍ୟାଙ୍କ',
+      'on_duty': 'ଡ୍ୟୁଟିରେ',
+      'standby': 'ଷ୍ଟାଣ୍ଡବାଇ',
+      'sos': 'SOS',
+      'call_now': 'ଏବେ କଲ କରନ୍ତୁ',
+      'quick_guide': 'ଦ୍ରୁତ ଗାଇଡ',
+      'detailed_instructions': 'ବିସ୍ତୃତ ନିର୍ଦ୍ଦେଶ',
+      'red_flags': 'ବିପଦ ସଙ୍କେତ',
+      'cautions': 'ସତର୍କତା',
+      'voice_walkthrough': 'ଭଏସ ଗାଇଡ',
+      'playing': 'ଚାଲୁଛି...',
+      'swipe_next_guide': 'ପରବର୍ତ୍ତୀ ଗାଇଡ ପାଇଁ ସ୍ୱାଇପ କରନ୍ତୁ',
+      'watch_video_guide': 'ସମ୍ପୂର୍ଣ୍ଣ ଭିଡିଓ ଗାଇଡ ଦେଖନ୍ତୁ',
+      'emergency_grid_scan': 'ଜରୁରୀ ଗ୍ରିଡ ସ୍କାନ',
+      'area_telemetry': 'ଅଞ୍ଚଳ ଟେଲିମେଟ୍ରି ଏବଂ ବିପଦ ସୂଚକ',
+      'report_hazard': 'ବିପଦ ରିପୋର୍ଟ କରନ୍ତୁ',
+      'todays_duty': 'ଆଜିର ଡ୍ୟୁଟି',
+      'blood_type': 'ରକ୍ତ ଗ୍ରୁପ',
+      'allergies': 'ଆଲର୍ଜି',
+      'medical_conditions': 'ଚିକିତ୍ସା ଅବସ୍ଥା',
+      'contact_name': 'ପ୍ରାଥମିକ ଯୋଗାଯୋଗ ନାମ',
+      'contact_phone': 'ପ୍ରାଥମିକ ଯୋଗାଯୋଗ ଫୋନ',
+      'relationship': 'ସମ୍ପର୍କ',
+      'medications': 'ବର୍ତ୍ତମାନ ଔଷଧ',
+      'organ_donor': 'ଅଙ୍ଗ ଦାନ ସ୍ଥିତି',
+      'good_morning': 'ସୁପ୍ରଭାତ,',
+      'good_afternoon': 'ଶୁଭ ଅପରାହ୍ନ,',
+      'good_evening': 'ଶୁଭ ସନ୍ଧ୍ୟା,',
+      'hospitals': 'ଡାକ୍ତରଖାନା',
+      'visual_walkthrough': 'ଭିଜୁଆଲ ଗାଇଡ',
+      'lifeline': 'ଲାଇଫଲାଇନ',
+      'nav_home': 'ହୋମ',
+      'nav_map': 'ମ୍ୟାପ',
+      'nav_profile': 'ପ୍ରୋଫାଇଲ',
+      'step_prefix': 'ପଦକ୍ଷେପ',
+      'highlights_steps': 'ଗୋଟିଏ ଗୋଟିଏ କରି ପଦକ୍ଷେପ ଦେଖାଏ',
+      'offline_mode': 'ଅଫଲାଇନ — ନେଟୱାର୍କ ବିଚ୍ଛିନ୍ନ',
+      'volunteer': 'ସ୍ୱେଚ୍ଛାସେବୀ',
+      'unranked': 'ର୍ୟାଙ୍କ ନାହିଁ',
+      'live': 'ଲାଇଭ',
+      'you': 'ଆପଣ',
+      'saved': 'ବଞ୍ଚାଇଲେ',
+      'xp_responses': 'XP · {0} ପ୍ରତିକ୍ରିୟା',
+      'duty_monitoring': 'ଆପଣ ଡ୍ୟୁଟିରେ ଥିବାବେଳେ SOS ପପ-ଅପ ଚାଲୁ ଅଛି।',
+      'turn_on_duty_msg': 'SOS ପପ-ଅପ ପାଇବା ପାଇଁ ଡ୍ୟୁଟି ଚାଲୁ କରନ୍ତୁ।',
+      'on_duty_snack': 'ଡ୍ୟୁଟିରେ — ଆପଣଙ୍କ ଅଞ୍ଚଳରେ ଘଟଣା ନଜର ରଖୁଛି...',
+      'off_duty_snack': 'ଷ୍ଟାଣ୍ଡବାଇ — ଡ୍ୟୁଟି ସେସନ ରେକର୍ଡ ହେଲା।',
+      'leaderboard_offline': 'ଲୀଡରବୋର୍ଡ ଅଫଲାଇନ',
+      'leaderboard_offline_sub': 'ସିଙ୍କ ବନ୍ଦ। କ୍ୟାସ ସ୍କୋର।',
+      'set_sos_pin_first': 'ପ୍ରଥମେ SOS ପିନ ସେଟ କରନ୍ତୁ',
+      'set_pin_safety_msg': 'ସୁରକ୍ଷା ପାଇଁ, SOS ସୃଷ୍ଟି କରିବା ପୂର୍ବରୁ ପିନ ସେଟ କରିବା ଆବଶ୍ୟକ।',
+      'set_pin_now': 'ଏବେ ପିନ ସେଟ କରନ୍ତୁ',
+      'later': 'ପରେ',
+    },
+
+    // ── Urdu (اردو) ────────────────────────────────────────────────────────
+    'ur': {
+      'app_name': 'EmergencyOS',
+      'profile_title': 'پروفائل اور میڈیکل آئی ڈی',
+      'language': 'زبان',
+      'save_medical_profile': 'طبی پروفائل محفوظ کریں',
+      'critical_medical_info': 'اہم طبی معلومات',
+      'emergency_contacts': 'ایمرجنسی رابطے',
+      'golden_hour_details': 'گولڈن آور تفصیلات',
+      'sos_lock': 'SOS لاک',
+      'top_life_savers': 'سرفہرست جان بچانے والے',
+      'lives_saved': 'بچائی گئی جانیں',
+      'active_alerts': 'فعال الرٹس',
+      'rank': 'درجہ',
+      'on_duty': 'ڈیوٹی پر',
+      'standby': 'اسٹینڈبائی',
+      'sos': 'SOS',
+      'call_now': 'ابھی کال کریں',
+      'quick_guide': 'فوری رہنمائی',
+      'detailed_instructions': 'تفصیلی ہدایات',
+      'red_flags': 'خطرے کے اشارے',
+      'cautions': 'احتیاطیں',
+      'voice_walkthrough': 'وائس رہنمائی',
+      'playing': 'چل رہا ہے...',
+      'swipe_next_guide': 'اگلی رہنمائی کے لیے سوائپ کریں',
+      'watch_video_guide': 'مکمل ویڈیو گائیڈ دیکھیں',
+      'emergency_grid_scan': 'ایمرجنسی گرڈ سکین',
+      'area_telemetry': 'علاقائی ٹیلی میٹری اور خطرے کا اشاریہ',
+      'report_hazard': 'خطرے کی اطلاع دیں',
+      'todays_duty': 'آج کی ڈیوٹی',
+      'blood_type': 'خون کا گروپ',
+      'allergies': 'الرجی',
+      'medical_conditions': 'طبی حالت',
+      'contact_name': 'بنیادی رابطے کا نام',
+      'contact_phone': 'بنیادی رابطے کا فون',
+      'relationship': 'رشتہ',
+      'medications': 'موجودہ ادویات',
+      'organ_donor': 'عضو عطیہ کی حیثیت',
+      'good_morning': 'صبح بخیر،',
+      'good_afternoon': 'دوپہر بخیر،',
+      'good_evening': 'شام بخیر،',
+      'hospitals': 'ہسپتال',
+      'visual_walkthrough': 'بصری رہنمائی',
+      'lifeline': 'لائف لائن',
+      'nav_home': 'ہوم',
+      'nav_map': 'نقشہ',
+      'nav_profile': 'پروفائل',
+      'step_prefix': 'قدم',
+      'highlights_steps': 'ایک ایک کر کے قدم دکھاتا ہے',
+      'offline_mode': 'آف لائن — نیٹ ورک منقطع',
+      'volunteer': 'رضاکار',
+      'unranked': 'درجہ نہیں',
+      'live': 'لائیو',
+      'you': 'آپ',
+      'saved': 'بچائے',
+      'xp_responses': 'XP · {0} جوابات',
+      'duty_monitoring': 'جب آپ ڈیوٹی پر ہیں تو SOS پاپ اپ آن ہیں۔',
+      'turn_on_duty_msg': 'SOS پاپ اپ حاصل کرنے کے لیے ڈیوٹی آن کریں۔',
+      'on_duty_snack': 'ڈیوٹی پر — آپ کے علاقے میں واقعات کی نگرانی...',
+      'off_duty_snack': 'اسٹینڈبائی — ڈیوٹی سیشن ریکارڈ ہوا۔',
+      'leaderboard_offline': 'لیڈربورڈ آف لائن',
+      'leaderboard_offline_sub': 'سنک رکی۔ کیش سکور۔',
+      'set_sos_pin_first': 'پہلے SOS پن سیٹ کریں',
+      'set_pin_safety_msg': 'حفاظت کے لیے، SOS بنانے سے پہلے پن سیٹ کرنا ضروری ہے۔',
+      'set_pin_now': 'ابھی پن سیٹ کریں',
+      'later': 'بعد میں',
+      'sos_screen_title': 'SOS',
+      'sos_hold_banner': 'بھیجنے کے لیے 3 سیکنڈ دبائے رکھیں۔',
+      'sos_hold_button': 'SOS بھیجنے کے لیے دبائے رکھیں',
+      'sos_semantics_hold_hint': 'SOS۔ بھیجنے کے لیے تین سیکنڈ دبائے رکھیں۔',
+      'home_duty_heading': 'آج کی ڈیوٹی',
+      'home_duty_progress': '{done}/{total} مکمل',
+      'home_map_semantics': 'آپ کا علاقہ اور مقام دکھانے والا نقشہ',
+      'home_recenter_map': 'نقشہ اپنے مقام پر مرکز کریں',
+      'home_sos_large_fab_hint': 'ایمرجنسی الرٹ کے لیے SOS الٹی گنتی کھولیں',
+      'home_sos_cancelled_snack': 'SOS منسوخ۔',
+      'home_sos_sent_snack': 'SOS بھیجا گیا! ایمرجنسی سروسز کو مطلع کیا گیا۔',
+      'quick_sos_title': 'فوری SOS',
+      'quick_sos_subtitle': 'جواب دیں — تفصیلات سے مدد جلدی آتی ہے',
+      'quick_sos_practice_banner':
+          'مشق گائیڈڈ انٹیک — جمع کرنے سے اصلی SOS نہیں بنے گا۔',
+      'quick_sos_section_what': 'ایمرجنسی کیا ہے؟',
+      'quick_sos_section_someone_else': 'کیا آپ کسی اور کے لیے SOS چلا رہے ہیں؟',
+      'quick_sos_send_now': 'ابھی SOS بھیجیں',
+      'quick_sos_select_first': 'ایمرجنسی منتخب کریں اور تصدیق کریں',
+      'quick_sos_section_victim': 'متاثرہ کی حالت',
+      'quick_sos_victim_subtitle': 'جواب دہندگان کو صحیح سامان تیار کرنے میں مدد',
+      'quick_sos_section_people': 'کتنے لوگوں کو مدد درکار؟',
+      'quick_sos_yes_someone_else': 'ہاں — کسی اور کے لیے',
+      'quick_sos_no_for_me': 'نہیں — میرے لیے',
+      'quick_sos_other_hint': 'اپنی صورت حال مختصراً بیان کریں...',
+      'quick_sos_close': 'فوری SOS بند کریں',
+      'quick_sos_drill_submit_disabled':
+          'مشق: جمع کرانا غیر فعال۔ ڈرل کے لیے ہوم پر سرخ SOS 3 سیکنڈ دبائیں۔',
+      'quick_sos_failed': 'SOS ناکام: {detail}',
+      'quick_sos_could_not_start': 'SOS شروع نہیں ہو سکا۔ دوبارہ کوشش کریں۔',
+      'quick_sos_victim_conscious_q': 'کیا شخص ہوش میں ہے؟',
+      'quick_sos_victim_breathing_q': 'کیا شخص سانس لے رہا ہے؟',
+      'quick_sos_label_yes': 'ہاں',
+      'quick_sos_label_no': 'نہیں',
+      'quick_sos_label_unsure': 'یقین نہیں',
+      'quick_sos_person': 'شخص',
+      'quick_sos_people': 'افراد',
+      'quick_sos_people_three_plus': '۳+',
+      'login_tagline': 'جانیں بچائیں',
+      'login_subtitle':
+          'ایمرجنسی رپورٹ کریں، رضاکاروں سے رابطہ کریں، گولڈن آور میں جانیں بچائیں۔',
+      'login_continue_google': 'Google سے جاری رکھیں',
+      'login_continue_phone': 'فون سے جاری رکھیں',
+      'login_send_code': 'تصدیقی کوڈ بھیجیں',
+      'login_verify_login': 'تصدیق کریں اور لاگ ان',
+      'login_phone_label': 'فون نمبر',
+      'login_phone_hint': '+923001234567',
+      'login_otp_label': 'تصدیقی کوڈ (OTP)',
+      'login_back_options': 'اختیارات پر واپس',
+      'login_change_phone': 'فون نمبر بدلیں',
+      'login_drill_mode': 'ڈرل موڈ',
+      'login_drill_subtitle': 'مشق کے لیے ٹیپ — کوئی حقیقی SOS نہیں',
+      'login_drill_semantics': 'ڈرل موڈ، حقیقی ایمرجنسی کے بغیر مشق',
+      'login_practise_victim': 'متاثرہ کے طور پر مشق',
+      'login_practise_volunteer': 'رضاکار کے طور پر مشق',
+      'login_admin_note':
+          'ماسٹر کنسول: الگ اکاؤنٹ نہیں — نیچے ٹیپ کریں۔ لاگ ان نہ ہونے پر ہلکا گمنام سیشن۔',
+      'login_ems_dashboard': 'EMS ڈیش بورڈ',
+      'login_emergency_operator': 'ایمرجنسی سروس آپریٹر لاگ ان',
+      'ai_assist_practice_banner':
+          'مشق Lifeline — حقیقی ڈسپیچ پر کچھ نہیں جاتا۔',
+      'ai_assist_rail_semantics': 'Lifeline سطح {n}: {title}',
+      'ai_assist_emergency_toggle_on': 'ایمرجنسی موڈ آن، فوری رہنمائی',
+      'ai_assist_emergency_toggle_off': 'ایمرجنسی موڈ آف',
+      'dashboard_exit_drill_title': 'ڈرل موڈ سے باہر؟',
+      'dashboard_exit_drill_body':
+          'آپ مشق سیشن سے سائن آؤٹ ہو کر لاگ ان پر واپس جائیں گے۔',
+      'dashboard_back_login_tooltip': 'لاگ ان پر واپس',
+      'dashboard_exit_drill_confirm': 'باہر نکلیں',
+    },
+  };
+}
+
+class _AppLocalizationsDelegate
+    extends LocalizationsDelegate<AppLocalizations> {
+  const _AppLocalizationsDelegate();
+
+  @override
+  bool isSupported(Locale locale) =>
+      ['en', 'hi', 'ta', 'te', 'kn', 'ml', 'bn', 'mr', 'gu', 'pa', 'or', 'ur']
+          .contains(locale.languageCode);
+
+  @override
+  Future<AppLocalizations> load(Locale locale) async =>
+      AppLocalizations(locale);
+
+  @override
+  bool shouldReload(covariant LocalizationsDelegate<AppLocalizations> old) =>
+      false;
+}

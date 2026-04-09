@@ -1,0 +1,1864 @@
+import 'dart:async';
+import 'dart:math' as math;
+
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:cloud_functions/cloud_functions.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter/material.dart';
+import 'package:geolocator/geolocator.dart';
+import 'package:go_router/go_router.dart';
+import 'package:google_maps_flutter/google_maps_flutter.dart';
+import '../../../core/maps/eos_hybrid_map.dart';
+import '../../../core/maps/ops_map_controller.dart';
+import 'package:intl/intl.dart';
+import 'package:url_launcher/url_launcher.dart';
+
+import '../../../core/constants/app_constants.dart';
+import '../../../core/constants/india_ops_zones.dart';
+import '../../../core/theme/app_colors.dart';
+import '../../../core/widgets/shared_situation_brief_card.dart';
+import '../../../core/constants/station_unit_role.dart';
+import '../../../core/utils/fleet_map_icons.dart';
+import '../../../core/utils/ops_map_markers.dart';
+import '../../../core/utils/osrm_route_util.dart';
+import '../../../services/fleet_assignment_service.dart';
+import '../../../services/fleet_operator_auth_service.dart';
+import '../../../services/fleet_operator_session_service.dart';
+import '../../../services/fleet_unit_service.dart';
+import '../../../services/incident_service.dart';
+import '../../../services/station_unit_role_prefs.dart';
+import '../../ptt/data/ptt_service.dart';
+
+/// Mobile-first **unit driver** view: ambulance / EMS.
+/// Full dispatch stays in the admin command center — drivers only see incidents **allotted to them**.
+class EmergencyServicesPanelScreen extends StatefulWidget {
+  const EmergencyServicesPanelScreen({super.key, this.focusIncidentId});
+
+  final String? focusIncidentId;
+
+  @override
+  State<EmergencyServicesPanelScreen> createState() => _EmergencyServicesPanelScreenState();
+}
+
+enum _OperatorPhase { gate, dutyPrep, roster }
+
+class _EmergencyServicesPanelScreenState extends State<EmergencyServicesPanelScreen> {
+  static final _functionsUsEast1 = FirebaseFunctions.instanceFor(region: 'us-east1');
+
+  _OperatorPhase _phase = _OperatorPhase.gate;
+  bool _sessionReady = false;
+  bool _gateBusy = false;
+  StationUnitRole? _role;
+  StationUnitRole? _pendingRole;
+  final _fleetIdCtrl = TextEditingController();
+  final _passwordCtrl = TextEditingController();
+  String? _selectedIncidentId;
+  OpsMapController? _mapCtl;
+  OpsMapController? _standbyMapCtl;
+  Timer? _locTimer;
+  Timer? _dutyHeartbeatTimer;
+  Timer? _routeDebounce;
+  List<LatLng> _routeToVictim = [];
+  List<LatLng> _volunteerRouteToScene = [];
+  String _volunteerRouteOverlaySig = '';
+  Position? _lastSharePos;
+  Position? _lastDutyPos;
+  double _driverMapZoom = 14.0;
+
+  // ── Incoming assignment notification state ─────────────────────────────────
+  StreamSubscription<QuerySnapshot<Map<String, dynamic>>>? _assignmentSub;
+  List<QueryDocumentSnapshot<Map<String, dynamic>>> _pendingAssignmentDocs = [];
+
+  @override
+  void initState() {
+    super.initState();
+    final f = widget.focusIncidentId?.trim();
+    if (f != null && f.isNotEmpty) _selectedIncidentId = f;
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      await FleetOperatorSession.load();
+      await OpsMapMarkers.preload();
+      await FleetMapIcons.preload();
+      if (!context.mounted) return;
+      if (FleetOperatorSession.isVerified && FleetOperatorSession.isOnDuty) {
+        final r = await StationUnitRolePrefs.load();
+        if (r != null) {
+          setState(() {
+            _sessionReady = true;
+            _role = r;
+            _phase = _OperatorPhase.roster;
+          });
+          _startDutyHeartbeat();
+          WidgetsBinding.instance.addPostFrameCallback((_) => unawaited(_dutyHeartbeatTick()));
+        } else {
+          setState(() {
+            _sessionReady = true;
+            _phase = _OperatorPhase.dutyPrep;
+          });
+        }
+      } else if (FleetOperatorSession.isVerified) {
+        setState(() {
+          _sessionReady = true;
+          _phase = _OperatorPhase.dutyPrep;
+        });
+      } else {
+        setState(() => _sessionReady = true);
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _locTimer?.cancel();
+    _dutyHeartbeatTimer?.cancel();
+    _routeDebounce?.cancel();
+    _assignmentSub?.cancel();
+    _standbyMapCtl?.dispose();
+    _fleetIdCtrl.dispose();
+    _passwordCtrl.dispose();
+    super.dispose();
+  }
+
+  String? get _uid => FirebaseAuth.instance.currentUser?.uid;
+
+  /// Parses `EMS-<hospitalDocId>-A` / `-S` call signs → `ops_hospitals` doc id.
+  String? _stationedHospitalIdFromFleetCallSign(String? callSign) {
+    final s = (callSign ?? '').trim();
+    if (s.isEmpty) return null;
+    final m = RegExp(r'^EMS-(.+)-[AS]$', caseSensitive: false).firstMatch(s);
+    return m?.group(1)?.trim().toUpperCase();
+  }
+
+  bool _isAllotted(SosIncident e, String? uid, StationUnitRole role) {
+    if (uid == null || uid.isEmpty) return false;
+    if (e.status == IncidentStatus.resolved || e.status == IncidentStatus.blocked) return false;
+    return switch (role) {
+      StationUnitRole.medical => e.emsAcceptedBy == uid,
+      StationUnitRole.crane => e.craneUnitAcceptedBy == uid,
+    };
+  }
+
+  double? _bearingDegFromPositions(Position from, Position to) {
+    final lat1 = from.latitude * math.pi / 180;
+    final lat2 = to.latitude * math.pi / 180;
+    final dLng = (to.longitude - from.longitude) * math.pi / 180;
+    final y = math.sin(dLng) * math.cos(lat2);
+    final x = math.cos(lat1) * math.sin(lat2) - math.sin(lat1) * math.cos(lat2) * math.cos(dLng);
+    final br = math.atan2(y, x) * (180 / math.pi);
+    return (br + 360) % 360;
+  }
+
+  /// Maps Firestore `ops_fleet_accounts.vehicleType` to station role.
+  static StationUnitRole? _stationRoleFromFleetVehicleType(String vt) {
+    switch (vt.toLowerCase()) {
+      case 'medical':
+      case 'ambulance':
+        return StationUnitRole.medical;
+      case 'crane':
+      case 'recovery':
+        return StationUnitRole.crane;
+      default:
+        return null;
+    }
+  }
+
+  Future<void> _verifyGate() async {
+    // Normalize to upper-case to match Firestore document IDs (e.g. "POL-LKO-1").
+    final id = _fleetIdCtrl.text.trim().toUpperCase();
+    final pw = _passwordCtrl.text.trim();
+    if (id.isEmpty || pw.isEmpty) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Enter fleet ID and password.')),
+        );
+      }
+      return;
+    }
+    setState(() => _gateBusy = true);
+    try {
+      final vehicleType = await FleetOperatorAuthService.verifyCredentials(fleetId: id, password: pw);
+      if (!context.mounted) return;
+      if (vehicleType == null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'Unknown fleet ID or wrong password. Use the call sign and password issued for your unit (ops_fleet_accounts).',
+            ),
+          ),
+        );
+        return;
+      }
+      // Store the normalised ID so the session and call-sign match Firestore exactly.
+      await FleetOperatorSession.setVerifiedFleet(id, vehicleType: vehicleType);
+      await StationUnitRolePrefs.clear();
+      _passwordCtrl.clear();
+      final autoRole = _stationRoleFromFleetVehicleType(vehicleType);
+      setState(() {
+        _phase = _OperatorPhase.dutyPrep;
+        _pendingRole = autoRole;
+        _role = null;
+      });
+    } finally {
+      if (context.mounted) setState(() => _gateBusy = false);
+    }
+  }
+
+  Future<void> _goOnDuty() async {
+    final r = _pendingRole;
+    if (r == null) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Confirm medical or crane duty to continue.')),
+        );
+      }
+      return;
+    }
+    await StationUnitRolePrefs.save(r);
+    await FleetOperatorSession.setOnDuty(true);
+    if (!context.mounted) return;
+    setState(() {
+      _role = r;
+      _phase = _OperatorPhase.roster;
+      _selectedIncidentId = null;
+    });
+    _startDutyHeartbeat();
+    _startAssignmentListener();
+    WidgetsBinding.instance.addPostFrameCallback((_) => unawaited(_dutyHeartbeatTick()));
+  }
+
+  // ── Assignment notification listener ────────────────────────────────────────
+
+  void _startAssignmentListener() {
+    final fleetId = FleetOperatorSession.fleetId;
+    if (fleetId == null || fleetId.isEmpty) return;
+    _assignmentSub?.cancel();
+    _assignmentSub = FleetAssignmentService.watchPendingAssignments(fleetId).listen((snap) {
+      if (!context.mounted) return;
+      final docs = snap.docs;
+      setState(() {
+        _pendingAssignmentDocs = List<QueryDocumentSnapshot<Map<String, dynamic>>>.from(docs);
+      });
+    });
+  }
+
+  void _stopAssignmentListener() {
+    _assignmentSub?.cancel();
+    _assignmentSub = null;
+    if (context.mounted) setState(() => _pendingAssignmentDocs = []);
+  }
+
+  Future<void> _acceptAssignment(
+    QueryDocumentSnapshot<Map<String, dynamic>> doc,
+  ) async {
+    final data = doc.data();
+    final fleetId = FleetOperatorSession.fleetId ?? doc.id;
+    final incidentId = (data['incidentId'] as String?)?.trim() ?? '';
+    try {
+      await FleetAssignmentService.acceptAssignment(
+        fleetId: fleetId,
+        assignmentDocId: doc.id,
+      );
+      // Update the incident with this fleet unit's UID / call sign.
+      final uid = _uid ?? fleetId;
+      if (incidentId.isNotEmpty) {
+        final role = _role;
+        if (role != null) {
+          switch (role) {
+            case StationUnitRole.medical:
+              await IncidentService.adminAssignAmbulanceDriver(incidentId: incidentId, driverUid: uid);
+              final src = (data['source'] as String?)?.trim() ?? '';
+              if (src == 'hospital_accept_dispatch' || src == 'ambulance_dispatch_escalation') {
+                try {
+                  final callable = _functionsUsEast1.httpsCallable('acceptAmbulanceDispatch');
+                  await callable.call(<String, dynamic>{
+                    'incidentId': incidentId,
+                    'fleetId': fleetId.trim().toUpperCase(),
+                    'assignmentDocId': doc.id,
+                    'etaMinutes': 12,
+                  });
+                } catch (e) {
+                  debugPrint('[DriverPanel] acceptAmbulanceDispatch: $e');
+                }
+              }
+            case StationUnitRole.crane:
+              await IncidentService.assignCraneUnitDriver(incidentId: incidentId, driverUid: uid);
+          }
+        }
+      }
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Assignment accepted · Incident: ${incidentId.length > 12 ? incidentId.substring(0, 10) : incidentId}'),
+            backgroundColor: Colors.green.shade800,
+          ),
+        );
+        setState(() {
+          _selectedIncidentId = incidentId.isNotEmpty ? incidentId : null;
+          _pendingAssignmentDocs = [];
+        });
+      }
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Accept failed: $e'), backgroundColor: Colors.red.shade800),
+        );
+      }
+    }
+  }
+
+  Future<void> _rejectAssignment(
+    QueryDocumentSnapshot<Map<String, dynamic>> doc,
+  ) async {
+    final fleetId = FleetOperatorSession.fleetId ?? '';
+    try {
+      await FleetAssignmentService.rejectAssignment(
+        fleetId: fleetId,
+        assignmentDocId: doc.id,
+      );
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Assignment rejected — status: driver unavailable'),
+            backgroundColor: Colors.orange,
+          ),
+        );
+        setState(() => _pendingAssignmentDocs = []);
+      }
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Reject failed: $e'), backgroundColor: Colors.red.shade800),
+        );
+      }
+    }
+  }
+
+  Future<void> _endDutySession() async {
+    _stopAssignmentListener();
+    _stopDutyHeartbeat();
+    _locTimer?.cancel();
+    _locTimer = null;
+    await FleetUnitService.clearMyUnit();
+    await FleetOperatorSession.setOnDuty(false);
+    await StationUnitRolePrefs.clear();
+    if (!context.mounted) return;
+    setState(() {
+      _role = null;
+      _pendingRole = null;
+      _selectedIncidentId = null;
+      _routeToVictim = [];
+      _phase = _OperatorPhase.dutyPrep;
+    });
+  }
+
+  Future<void> _signOutFleetGate() async {
+    _stopAssignmentListener();
+    _stopDutyHeartbeat();
+    _locTimer?.cancel();
+    _locTimer = null;
+    await FleetUnitService.clearMyUnit();
+    await FleetOperatorSession.clearVerified();
+    await StationUnitRolePrefs.clear();
+    if (!context.mounted) return;
+    context.go('/login');
+  }
+
+  void _startDutyHeartbeat() {
+    _dutyHeartbeatTimer?.cancel();
+    if (!FleetOperatorSession.isOnDuty) return;
+    _dutyHeartbeatTimer = Timer.periodic(const Duration(seconds: 5), (_) => _dutyHeartbeatTick());
+  }
+
+  void _stopDutyHeartbeat() {
+    _dutyHeartbeatTimer?.cancel();
+    _dutyHeartbeatTimer = null;
+  }
+
+  Future<void> _dutyHeartbeatTick() async {
+    if (!context.mounted || !FleetOperatorSession.isOnDuty) return;
+    final role = _role;
+    if (role == null) return;
+    if (_selectedIncidentId != null) return;
+    if (_locTimer != null && _locTimer!.isActive) return;
+    try {
+      var p = await Geolocator.checkPermission();
+      if (p == LocationPermission.denied) {
+        p = await Geolocator.requestPermission();
+      }
+      if (p == LocationPermission.deniedForever || p == LocationPermission.denied) return;
+      final pos = await Geolocator.getCurrentPosition(
+        locationSettings: const LocationSettings(accuracy: LocationAccuracy.medium),
+      );
+      final heading = _lastDutyPos == null ? null : _bearingDegFromPositions(_lastDutyPos!, pos);
+      _lastDutyPos = pos;
+      await FleetUnitService.syncMyUnit(
+        vehicleType: role.fleetVehicleType,
+        lat: pos.latitude,
+        lng: pos.longitude,
+        available: true,
+        fleetCallSign: FleetOperatorSession.fleetId,
+        headingDeg: heading,
+        stationedHospitalId: _stationedHospitalIdFromFleetCallSign(FleetOperatorSession.fleetId),
+      );
+    } catch (e) {
+      debugPrint('[DriverPanel] duty heartbeat: $e');
+    }
+  }
+
+  Future<void> _openDirections(LatLng dest) async {
+    final u = Uri.parse(
+      'https://www.google.com/maps/dir/?api=1&destination=${dest.latitude},${dest.longitude}&travelmode=driving',
+    );
+    if (await canLaunchUrl(u)) {
+      await launchUrl(u, mode: LaunchMode.externalApplication);
+    }
+  }
+
+  Future<void> _refreshVolunteerRouteOverlay(SosIncident inc) async {
+    final v = inc.volunteerLiveLocation;
+    if (v == null) {
+      if (_volunteerRouteToScene.isNotEmpty && context.mounted) {
+        setState(() => _volunteerRouteToScene = []);
+      }
+      return;
+    }
+    final pin = inc.liveVictimPin;
+    final sig =
+        '${inc.id}:${v.latitude.toStringAsFixed(5)}:${v.longitude.toStringAsFixed(5)}:${pin.latitude.toStringAsFixed(5)}:${pin.longitude.toStringAsFixed(5)}';
+    if (sig == _volunteerRouteOverlaySig && _volunteerRouteToScene.length >= 2) return;
+    _volunteerRouteOverlaySig = sig;
+    final pts = await OsrmRouteUtil.drivingRoute(v, pin);
+    final path = pts.length >= 2 ? pts : OsrmRouteUtil.fallbackPolyline(v, pin);
+    if (!context.mounted) return;
+    setState(() => _volunteerRouteToScene = path);
+  }
+
+  void _scheduleRoute(SosIncident inc, double fromLat, double fromLng) {
+    _routeDebounce?.cancel();
+    final v = inc.liveVictimPin;
+    _routeDebounce = Timer(const Duration(milliseconds: 600), () async {
+      final pts = await OsrmRouteUtil.drivingRoute(LatLng(fromLat, fromLng), v);
+      if (!context.mounted) return;
+      setState(() => _routeToVictim = pts);
+    });
+  }
+
+  Future<void> _startLiveShare(SosIncident inc, StationUnitRole role) async {
+    var p = await Geolocator.checkPermission();
+    if (p == LocationPermission.denied) {
+      p = await Geolocator.requestPermission();
+    }
+    if (p == LocationPermission.deniedForever || p == LocationPermission.denied) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Turn on location to share your unit position.')),
+        );
+      }
+      return;
+    }
+
+    _lastSharePos = null;
+    _locTimer?.cancel();
+    _locTimer = Timer.periodic(const Duration(seconds: 5), (_) async {
+      if (!context.mounted || _selectedIncidentId != inc.id) return;
+      try {
+        final pos = await Geolocator.getCurrentPosition(
+          locationSettings: const LocationSettings(accuracy: LocationAccuracy.high),
+        );
+        final victim = inc.liveVictimPin;
+        final heading = _lastSharePos == null ? null : _bearingDegFromPositions(_lastSharePos!, pos);
+        _lastSharePos = pos;
+        await FleetUnitService.syncMyUnit(
+          vehicleType: role.fleetVehicleType,
+          lat: pos.latitude,
+          lng: pos.longitude,
+          available: false,
+          assignedIncidentId: inc.id,
+          headingDeg: heading,
+          fleetCallSign: FleetOperatorSession.fleetId,
+          stationedHospitalId: _stationedHospitalIdFromFleetCallSign(FleetOperatorSession.fleetId),
+        );
+        switch (role) {
+          case StationUnitRole.medical:
+            await IncidentService.emsPushUnitLocationWithProximity(
+              incidentId: inc.id,
+              unitLat: pos.latitude,
+              unitLng: pos.longitude,
+              victimLat: victim.latitude,
+              victimLng: victim.longitude,
+              headingDeg: heading,
+            );
+          case StationUnitRole.crane:
+            await IncidentService.pushCraneLiveLocation(
+              inc.id,
+              pos.latitude,
+              pos.longitude,
+              headingDeg: heading,
+            );
+        }
+        if (context.mounted) setState(() {});
+        _scheduleRoute(inc, pos.latitude, pos.longitude);
+        _mapCtl?.animateCamera(
+          CameraUpdate.newLatLngBounds(
+            LatLngBounds(
+              southwest: LatLng(
+                math.min(victim.latitude, pos.latitude) - 0.01,
+                math.min(victim.longitude, pos.longitude) - 0.01,
+              ),
+              northeast: LatLng(
+                math.max(victim.latitude, pos.latitude) + 0.01,
+                math.max(victim.longitude, pos.longitude) + 0.01,
+              ),
+            ),
+            40,
+          ),
+        );
+      } catch (e) {
+        debugPrint('[DriverPanel] location tick: $e');
+      }
+    });
+    if (context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Live location sharing on (every 5s) · fleet map')),
+      );
+    }
+  }
+
+  void _stopLiveShare() {
+    _locTimer?.cancel();
+    _locTimer = null;
+    _lastSharePos = null;
+    unawaited(FleetUnitService.clearMyUnit());
+    setState(() => _routeToVictim = []);
+    if (FleetOperatorSession.isOnDuty && _selectedIncidentId == null) {
+      _startDutyHeartbeat();
+    }
+  }
+
+  void _openOperationPtt(SosIncident inc) {
+    context.push(
+      '/ptt-channel/${Uri.encodeComponent(PttService.commandOperationsChannelId(inc.id))}'
+      '?type=${Uri.encodeComponent('command_operations')}',
+    );
+  }
+
+  void _openEmergencyPtt(SosIncident inc) {
+    context.push(
+      '/ptt-channel/${Uri.encodeComponent(inc.id)}?type=${Uri.encodeComponent(inc.type)}',
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (!_sessionReady) {
+      return const Scaffold(
+        backgroundColor: Color(0xFF0D1117),
+        body: Center(child: CircularProgressIndicator(color: Color(0xFF58A6FF))),
+      );
+    }
+
+    if (_phase == _OperatorPhase.gate) {
+      return Scaffold(
+        backgroundColor: const Color(0xFF0D1117),
+        appBar: AppBar(
+          backgroundColor: const Color(0xFF161B22),
+          title: const Text('Fleet operator gate'),
+          leading: IconButton(
+            icon: const Icon(Icons.arrow_back),
+            onPressed: () => unawaited(_signOutFleetGate()),
+          ),
+        ),
+        body: SafeArea(
+          child: ListView(
+            padding: const EdgeInsets.all(20),
+            children: [
+              const Text(
+                'Sign in with your unit call sign and the password stored in Firestore (ops_fleet_accounts). '
+                'Operations can view or reset credentials from the admin Fleet Management console.',
+                style: TextStyle(color: Colors.white70, fontSize: 14, height: 1.45),
+              ),
+              const SizedBox(height: 20),
+              TextField(
+                controller: _fleetIdCtrl,
+                style: const TextStyle(color: Colors.white),
+                decoration: _opFieldDeco('Fleet ID / call sign'),
+                textInputAction: TextInputAction.next,
+                autocorrect: false,
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: _passwordCtrl,
+                style: const TextStyle(color: Colors.white),
+                decoration: _opFieldDeco('Password'),
+                obscureText: true,
+                onSubmitted: (_) => unawaited(_verifyGate()),
+              ),
+              const SizedBox(height: 20),
+              FilledButton(
+                onPressed: _gateBusy ? null : () => unawaited(_verifyGate()),
+                style: FilledButton.styleFrom(backgroundColor: const Color(0xFF238636), padding: const EdgeInsets.symmetric(vertical: 14)),
+                child: _gateBusy
+                    ? const SizedBox(height: 22, width: 22, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                    : const Text('Verify & continue'),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    if (_phase == _OperatorPhase.dutyPrep) {
+      if (_pendingRole == null) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) setState(() => _pendingRole = StationUnitRole.medical);
+        });
+      }
+      return Scaffold(
+        backgroundColor: const Color(0xFF0D1117),
+        appBar: AppBar(
+          backgroundColor: const Color(0xFF161B22),
+          title: Text('Fleet · ${FleetOperatorSession.fleetId ?? ""}'),
+          leading: IconButton(
+            icon: const Icon(Icons.arrow_back),
+            onPressed: () => unawaited(_signOutFleetGate()),
+          ),
+        ),
+        body: SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.all(24),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                const Icon(Icons.medical_services_rounded, size: 56, color: Color(0xFF58A6FF)),
+                const SizedBox(height: 20),
+                const Text(
+                  'Ready for duty',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(color: Colors.white, fontWeight: FontWeight.w900, fontSize: 22),
+                ),
+                const SizedBox(height: 10),
+                const Text(
+                  'Command will see your unit on the fleet map once GPS is available. You will receive assignment notifications for active incidents.',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(color: Colors.white54, fontSize: 13, height: 1.5),
+                ),
+                const SizedBox(height: 40),
+                FilledButton(
+                  onPressed: () => unawaited(_goOnDuty()),
+                  style: FilledButton.styleFrom(
+                    backgroundColor: const Color(0xFF238636),
+                    padding: const EdgeInsets.symmetric(vertical: 16),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                  ),
+                  child: const Text('Go on duty', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
+                ),
+                const SizedBox(height: 14),
+                TextButton(
+                  onPressed: () => unawaited(_signOutFleetGate()),
+                  child: const Text('Sign out fleet ID', style: TextStyle(color: Colors.white38)),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+
+    final role = _role;
+    if (role == null) {
+      return const Scaffold(
+        backgroundColor: Color(0xFF0D1117),
+        body: Center(child: Text('Session error — reopen operator console.', style: TextStyle(color: Colors.white54))),
+      );
+    }
+
+    return Scaffold(
+      backgroundColor: const Color(0xFF0D1117),
+      appBar: AppBar(
+        backgroundColor: const Color(0xFF161B22),
+        title: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(role.shortLabel, style: const TextStyle(fontSize: 16)),
+            Text(
+              FleetOperatorSession.fleetId ?? '',
+              style: const TextStyle(fontSize: 11, color: Colors.white54, fontWeight: FontWeight.normal),
+            ),
+          ],
+        ),
+        actions: [
+          StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+            stream: FirebaseFirestore.instance.collection('sos_incidents').limit(200).snapshots(),
+            builder: (context, snap) {
+              if (!snap.hasData) return const SizedBox.shrink();
+              final uid = _uid;
+              final all = snap.data!.docs.map(SosIncident.fromFirestore).toList();
+              final mine = all.where((e) => _isAllotted(e, uid, role)).length;
+              if (mine < 2) return const SizedBox.shrink();
+              return Padding(
+                padding: const EdgeInsets.only(right: 6, top: 10, bottom: 10),
+                child: Container(
+                  alignment: Alignment.center,
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF238636).withValues(alpha: 0.25),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: const Color(0xFF79C0FF).withValues(alpha: 0.4)),
+                  ),
+                  child: Text(
+                    'Queue: $mine',
+                    style: const TextStyle(color: Color(0xFF79C0FF), fontSize: 11, fontWeight: FontWeight.w800),
+                  ),
+                ),
+              );
+            },
+          ),
+          TextButton(
+            onPressed: () => unawaited(_endDutySession()),
+            child: const Text('End duty', style: TextStyle(color: Colors.orangeAccent, fontSize: 13)),
+          ),
+        ],
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back),
+          onPressed: () {
+            if (_selectedIncidentId != null) {
+              setState(() {
+                _selectedIncidentId = null;
+                _volunteerRouteToScene = [];
+                _volunteerRouteOverlaySig = '';
+              });
+              if (FleetOperatorSession.isOnDuty) _startDutyHeartbeat();
+            } else {
+              unawaited(_signOutFleetGate());
+            }
+          },
+        ),
+      ),
+      body: Column(
+        children: [
+          // \u2500\u2500 Incoming assignment banner \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+          if (_pendingAssignmentDocs.isNotEmpty)
+            _AssignmentNotificationBanner(
+              doc: _pendingAssignmentDocs.first,
+              queueCount: _pendingAssignmentDocs.length,
+              onAccept: () => _acceptAssignment(_pendingAssignmentDocs.first),
+              onReject: () => _rejectAssignment(_pendingAssignmentDocs.first),
+            ),
+          Expanded(
+            child: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+              stream: FirebaseFirestore.instance.collection('sos_incidents').limit(200).snapshots(),
+              builder: (context, snap) {
+                if (snap.hasError) {
+                  return Center(child: Text('${snap.error}', style: const TextStyle(color: Colors.white70)));
+                }
+                if (!snap.hasData) {
+                  return const Center(child: CircularProgressIndicator(color: Color(0xFF58A6FF)));
+                }
+                final all = snap.data!.docs.map(SosIncident.fromFirestore).toList();
+                final uid = _uid;
+                final mine = all.where((e) => _isAllotted(e, uid, role)).toList()
+                  ..sort((a, b) => b.timestamp.compareTo(a.timestamp));
+
+                final sid = _selectedIncidentId;
+                SosIncident? selected;
+                if (sid != null) {
+                  for (final e in mine) {
+                    if (e.id == sid) {
+                      selected = e;
+                      break;
+                    }
+                  }
+                }
+
+                if (sid != null && selected == null && mine.isNotEmpty) {
+                  WidgetsBinding.instance.addPostFrameCallback((_) {
+                    if (mounted) setState(() => _selectedIncidentId = mine.first.id);
+                  });
+                }
+
+                if (mine.length == 1 && _selectedIncidentId == null) {
+                  WidgetsBinding.instance.addPostFrameCallback((_) {
+                    if (mounted) setState(() => _selectedIncidentId = mine.first.id);
+                  });
+                }
+
+                if (selected != null) {
+                  WidgetsBinding.instance.addPostFrameCallback((_) {
+                    if (context.mounted) unawaited(_refreshVolunteerRouteOverlay(selected!));
+                  });
+                  return _DriverDetailView(
+                    incident: selected,
+                    queue: mine,
+                    role: role,
+                    fleetCallSign: FleetOperatorSession.fleetId,
+                    fleetMapZoom: _driverMapZoom,
+                    onFleetCameraMove: (z) {
+                      if (FleetMapIcons.zoomTierChanged(_driverMapZoom, z)) {
+                        setState(() => _driverMapZoom = z);
+                      }
+                    },
+                    onMapCreated: (c) => _mapCtl = c,
+                    route: _routeToVictim,
+                    volunteerRouteToScene: _volunteerRouteToScene,
+                    onDirections: () => _openDirections(selected!.liveVictimPin),
+                    onOperationPtt: () => _openOperationPtt(selected!),
+                    onEmergencyPtt: () => _openEmergencyPtt(selected!),
+                    onStartLive: () => _startLiveShare(selected!, role),
+                    onStopLive: _stopLiveShare,
+                    isLive: _locTimer != null && _locTimer!.isActive,
+                    onSelectQueuedIncident: (id) => setState(() => _selectedIncidentId = id),
+                  );
+                }
+
+                if (mine.isEmpty) {
+                  final center = _lastDutyPos != null
+                      ? LatLng(_lastDutyPos!.latitude, _lastDutyPos!.longitude)
+                      : IndiaOpsZones.lucknow.center;
+                  final fb = BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueRed);
+                  return Column(
+                    children: [
+                      Expanded(
+                        flex: 5,
+                        child: Padding(
+                          padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
+                          child: ClipRRect(
+                            borderRadius: BorderRadius.circular(14),
+                            child: EosHybridMap(
+                              initialCameraPosition:
+                                  IndiaOpsZones.lucknowSafeCamera(center, preferZoom: _lastDutyPos != null ? 14 : 10.5),
+                              cameraTargetBounds: IndiaOpsZones.lucknowCameraTargetBounds,
+                              markers: {
+                                if (_lastDutyPos != null)
+                                  Marker(
+                                    markerId: const MarkerId('operator_standby'),
+                                    position: LatLng(_lastDutyPos!.latitude, _lastDutyPos!.longitude),
+                                    icon: OpsMapMarkers.ambulanceOr(fb),
+                                    infoWindow: InfoWindow(
+                                      title: FleetOperatorSession.fleetId ?? 'Your unit',
+                                      snippet: 'Standby — visible to command when GPS updates',
+                                    ),
+                                  ),
+                              },
+                              onMapCreated: (c) => _standbyMapCtl = c,
+                              zoomControlsEnabled: false,
+                              mapToolbarEnabled: false,
+                            ),
+                          ),
+                        ),
+                      ),
+                      Expanded(
+                        flex: 3,
+                        child: _StandbyDispatchPanel(
+                          role: role,
+                          fleetId: FleetOperatorSession.fleetId,
+                          hasGpsFix: _lastDutyPos != null,
+                        ),
+                      ),
+                    ],
+                  );
+                }
+
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
+                      child: _AssignmentMiniMap(incidents: mine),
+                    ),
+                    const SizedBox(height: 8),
+                    Expanded(
+                      child: _AssignmentList(
+                        incidents: mine,
+                        role: role,
+                        uid: uid,
+                        onTap: (id) => setState(() => _selectedIncidentId = id),
+                      ),
+                    ),
+                  ],
+                );
+              },
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Small overview map for all incidents allotted to this operator.
+class _AssignmentMiniMap extends StatefulWidget {
+  const _AssignmentMiniMap({required this.incidents});
+
+  final List<SosIncident> incidents;
+
+  @override
+  State<_AssignmentMiniMap> createState() => _AssignmentMiniMapState();
+}
+
+class _AssignmentMiniMapState extends State<_AssignmentMiniMap> {
+  OpsMapController? _ctl;
+
+  void _fitBounds() {
+    if (_ctl == null || widget.incidents.isEmpty) return;
+    final pts = widget.incidents.map((e) => e.liveVictimPin).toList();
+    var minLat = pts.first.latitude;
+    var maxLat = minLat;
+    var minLng = pts.first.longitude;
+    var maxLng = minLng;
+    for (final p in pts) {
+      minLat = math.min(minLat, p.latitude);
+      maxLat = math.max(maxLat, p.latitude);
+      minLng = math.min(minLng, p.longitude);
+      maxLng = math.max(maxLng, p.longitude);
+    }
+    const pad = 0.025;
+    _ctl!.animateCamera(
+      CameraUpdate.newLatLngBounds(
+        LatLngBounds(
+          southwest: LatLng(minLat - pad, minLng - pad),
+          northeast: LatLng(maxLat + pad, maxLng + pad),
+        ),
+        40,
+      ),
+    );
+  }
+
+  @override
+  void didUpdateWidget(covariant _AssignmentMiniMap oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.incidents.length != widget.incidents.length ||
+        oldWidget.incidents.map((e) => e.id).join() != widget.incidents.map((e) => e.id).join()) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => _fitBounds());
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (widget.incidents.isEmpty) return const SizedBox.shrink();
+    final fb = BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueOrange);
+    return SizedBox(
+      height: 180,
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(14),
+        child: EosHybridMap(
+          initialCameraPosition: CameraPosition(target: widget.incidents.first.liveVictimPin, zoom: 12),
+          cameraTargetBounds: IndiaOpsZones.lucknowCameraTargetBounds,
+          markers: {
+            for (final e in widget.incidents)
+              Marker(
+                markerId: MarkerId('asg_${e.id}'),
+                position: e.liveVictimPin,
+                icon: OpsMapMarkers.incidentOr(fb),
+                infoWindow: InfoWindow(title: e.type, snippet: 'Tap a run below'),
+              ),
+          },
+          onMapCreated: (c) {
+            _ctl = c;
+            WidgetsBinding.instance.addPostFrameCallback((_) => _fitBounds());
+          },
+          zoomControlsEnabled: false,
+          mapToolbarEnabled: false,
+        ),
+      ),
+    );
+  }
+}
+
+class _StandbyDispatchPanel extends StatefulWidget {
+  const _StandbyDispatchPanel({
+    required this.role,
+    required this.fleetId,
+    required this.hasGpsFix,
+  });
+
+  final StationUnitRole role;
+  final String? fleetId;
+  final bool hasGpsFix;
+
+  @override
+  State<_StandbyDispatchPanel> createState() => _StandbyDispatchPanelState();
+}
+
+class _StandbyDispatchPanelState extends State<_StandbyDispatchPanel> with SingleTickerProviderStateMixin {
+  late final AnimationController _pulse;
+
+  @override
+  void initState() {
+    super.initState();
+    _pulse = AnimationController(vsync: this, duration: const Duration(milliseconds: 1200))..repeat(reverse: true);
+  }
+
+  @override
+  void dispose() {
+    _pulse.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: const Color(0xFF161B22),
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(color: const Color(0xFF30363D)),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    FadeTransition(
+                      opacity: Tween<double>(begin: 0.35, end: 1).animate(
+                        CurvedAnimation(parent: _pulse, curve: Curves.easeInOut),
+                      ),
+                      child: const Icon(Icons.radar, color: Color(0xFF58A6FF), size: 28),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text(
+                            'Awaiting dispatch…',
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontWeight: FontWeight.w800,
+                              fontSize: 17,
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            widget.hasGpsFix
+                                ? 'You are on standby. Command sees your last GPS ping on the map above.'
+                                : 'Enable location so your unit appears on the Lucknow fleet map.',
+                            style: const TextStyle(color: Colors.white54, fontSize: 13, height: 1.35),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 14),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: [
+                    Chip(
+                      avatar: Icon(
+                        widget.role == StationUnitRole.medical ? Icons.medical_services : Icons.construction,
+                        size: 18,
+                        color: Colors.white70,
+                      ),
+                      label: Text(widget.role.shortLabel),
+                      backgroundColor: const Color(0xFF21262D),
+                      labelStyle: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600),
+                    ),
+                    if ((widget.fleetId ?? '').isNotEmpty)
+                      Chip(
+                        label: Text(widget.fleetId!),
+                        backgroundColor: const Color(0xFF238636).withValues(alpha: 0.25),
+                        labelStyle: const TextStyle(color: Color(0xFF7EE787), fontWeight: FontWeight.w700),
+                      ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                const LinearProgressIndicator(
+                  backgroundColor: Color(0xFF21262D),
+                  color: Color(0xFF58A6FF),
+                  minHeight: 3,
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+InputDecoration _opFieldDeco(String label) => InputDecoration(
+      labelText: label,
+      labelStyle: const TextStyle(color: Colors.white54),
+      filled: true,
+      fillColor: const Color(0xFF161B22),
+      border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+      enabledBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(12),
+        borderSide: BorderSide(color: Colors.white.withValues(alpha: 0.12)),
+      ),
+    );
+
+// ── Incoming assignment notification banner ───────────────────────────────────
+
+class _AssignmentNotificationBanner extends StatelessWidget {
+  const _AssignmentNotificationBanner({
+    required this.doc,
+    this.queueCount = 1,
+    required this.onAccept,
+    required this.onReject,
+  });
+
+  final QueryDocumentSnapshot<Map<String, dynamic>> doc;
+  final int queueCount;
+  final VoidCallback onAccept;
+  final VoidCallback onReject;
+
+  @override
+  Widget build(BuildContext context) {
+    final data = doc.data();
+    final incidentId = (data['incidentId'] as String?)?.trim() ?? 'Unknown';
+    final callSign = (data['callSign'] as String?)?.trim() ?? '';
+    final vehicleType = (data['vehicleType'] as String?)?.trim() ?? '';
+    final dispatchHosp = (data['dispatchingHospitalName'] as String?)?.trim() ?? '';
+    final dispatchHospId = (data['dispatchingHospitalId'] as String?)?.trim() ?? '';
+    final incType = (data['incidentType'] as String?)?.trim() ?? '';
+
+    final shortId = incidentId.length > 14 ? '${incidentId.substring(0, 12)}…' : incidentId;
+
+    return Container(
+      margin: const EdgeInsets.all(12),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: const Color(0xFF1A1A2E),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: Colors.orangeAccent, width: 1.5),
+        boxShadow: [
+          BoxShadow(color: Colors.orange.withValues(alpha: 0.2), blurRadius: 14, spreadRadius: 2),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.assignment_turned_in, color: Colors.orangeAccent, size: 22),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  queueCount > 1 ? 'Incoming assignments ($queueCount in queue)' : 'Incoming Assignment',
+                  style: const TextStyle(
+                    color: Colors.orangeAccent,
+                    fontWeight: FontWeight.bold,
+                    fontSize: 15,
+                  ),
+                ),
+              ),
+              if (queueCount > 1)
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: Colors.orangeAccent.withValues(alpha: 0.2),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Text(
+                    '$queueCount',
+                    style: const TextStyle(color: Colors.orangeAccent, fontWeight: FontWeight.w900, fontSize: 12),
+                  ),
+                ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          _BannerRow('Incident', shortId),
+          if (dispatchHosp.isNotEmpty)
+            _BannerRow('Dispatch from', dispatchHosp)
+          else if (dispatchHospId.isNotEmpty)
+            _BannerRow('Hospital', dispatchHospId),
+          if (incType.isNotEmpty) _BannerRow('Emergency type', incType),
+          if (vehicleType.isNotEmpty) _BannerRow('Vehicle type', vehicleType),
+          if (callSign.isNotEmpty) _BannerRow('Call sign', callSign),
+          const SizedBox(height: 14),
+          Row(
+            children: [
+              Expanded(
+                child: FilledButton.icon(
+                  style: FilledButton.styleFrom(
+                    backgroundColor: Colors.green.shade700,
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                  ),
+                  onPressed: onAccept,
+                  icon: const Icon(Icons.check, size: 18),
+                  label: const Text('Accept', style: TextStyle(fontWeight: FontWeight.bold)),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: FilledButton.icon(
+                  style: FilledButton.styleFrom(
+                    backgroundColor: Colors.red.shade800,
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                  ),
+                  onPressed: onReject,
+                  icon: const Icon(Icons.close, size: 18),
+                  label: const Text('Reject', style: TextStyle(fontWeight: FontWeight.bold)),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _BannerRow extends StatelessWidget {
+  const _BannerRow(this.label, this.value);
+
+  final String label;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 4),
+      child: Row(
+        children: [
+          SizedBox(
+            width: 90,
+            child: Text(label, style: const TextStyle(color: Colors.white54, fontSize: 12)),
+          ),
+          Text(value, style: const TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.w500)),
+        ],
+      ),
+    );
+  }
+}
+
+class _AssignmentList extends StatelessWidget {
+  const _AssignmentList({
+    required this.incidents,
+    required this.role,
+    required this.uid,
+    required this.onTap,
+  });
+
+  final List<SosIncident> incidents;
+  final StationUnitRole role;
+  final String? uid;
+  final ValueChanged<String> onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final fmt = DateFormat('MMM d · HH:mm');
+    if (uid == null || uid!.isEmpty) {
+      return const Center(
+        child: Padding(
+          padding: EdgeInsets.all(24),
+          child: Text('Sign in to see your allotments.', style: TextStyle(color: Colors.white54)),
+        ),
+      );
+    }
+    if (incidents.isEmpty) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                role == StationUnitRole.medical
+                    ? Icons.medical_services_outlined
+                    : Icons.construction_outlined,
+                size: 56,
+                color: Colors.white24,
+              ),
+              const SizedBox(height: 16),
+              Text(
+                'No active allotments for ${role.label}',
+                textAlign: TextAlign.center,
+                style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700, fontSize: 16),
+              ),
+              const SizedBox(height: 10),
+              const Text(
+                'Command assigns your unit in the admin panel. When you are allotted, the run appears here with victim details and map.',
+                textAlign: TextAlign.center,
+                style: TextStyle(color: Colors.white54, fontSize: 13, height: 1.4),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    return ListView.separated(
+      padding: const EdgeInsets.all(12),
+      itemCount: incidents.length,
+      separatorBuilder: (_, _) => const SizedBox(height: 8),
+      itemBuilder: (_, i) {
+        final e = incidents[i];
+        return Material(
+          color: const Color(0xFF161B22),
+          borderRadius: BorderRadius.circular(14),
+          child: InkWell(
+            borderRadius: BorderRadius.circular(14),
+            onTap: () => onTap(e.id),
+            child: Padding(
+              padding: const EdgeInsets.all(14),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          e.type,
+                          style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 15),
+                        ),
+                      ),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF238636).withValues(alpha: 0.25),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: const Text(
+                          'Allotted to you',
+                          style: TextStyle(color: Color(0xFF79C0FF), fontSize: 10, fontWeight: FontWeight.w800),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 6),
+                  Text(e.userDisplayName, style: const TextStyle(color: Colors.white60, fontSize: 13)),
+                  Text(fmt.format(e.timestamp.toLocal()), style: const TextStyle(color: Colors.white38, fontSize: 11)),
+                  if (role == StationUnitRole.medical && (e.emsWorkflowPhase ?? '').isNotEmpty)
+                    Text('EMS: ${e.emsWorkflowPhase}', style: const TextStyle(color: Colors.cyanAccent, fontSize: 11)),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
+
+/// Horizontal swipe pager when the operator has multiple simultaneous allotments.
+class _QueuedIncidentPager extends StatefulWidget {
+  const _QueuedIncidentPager({
+    required this.queue,
+    required this.currentId,
+    required this.onSelect,
+  });
+
+  final List<SosIncident> queue;
+  final String currentId;
+  final ValueChanged<String> onSelect;
+
+  @override
+  State<_QueuedIncidentPager> createState() => _QueuedIncidentPagerState();
+}
+
+class _QueuedIncidentPagerState extends State<_QueuedIncidentPager> {
+  late PageController _ctl;
+
+  int _indexFor(String id) {
+    final i = widget.queue.indexWhere((e) => e.id == id);
+    return i >= 0 ? i : 0;
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _ctl = PageController(initialPage: _indexFor(widget.currentId));
+  }
+
+  @override
+  void didUpdateWidget(covariant _QueuedIncidentPager oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.queue.length != oldWidget.queue.length) {
+      _ctl.dispose();
+      _ctl = PageController(initialPage: _indexFor(widget.currentId));
+      return;
+    }
+    if (widget.currentId != oldWidget.currentId) {
+      final ix = _indexFor(widget.currentId);
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted || !_ctl.hasClients) return;
+        final cur = _ctl.page?.round() ?? 0;
+        if (cur != ix) _ctl.jumpToPage(ix);
+      });
+    }
+  }
+
+  @override
+  void dispose() {
+    _ctl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final fmt = DateFormat('MMM d · HH:mm');
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Row(
+          children: [
+            const Icon(Icons.swap_horiz, color: Color(0xFF79C0FF), size: 18),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                'Swipe between ${widget.queue.length} active runs',
+                style: const TextStyle(color: Colors.white54, fontSize: 11, fontWeight: FontWeight.w600),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        SizedBox(
+          height: 92,
+          child: PageView.builder(
+            controller: _ctl,
+            itemCount: widget.queue.length,
+            onPageChanged: (i) {
+              final id = widget.queue[i].id;
+              if (id != widget.currentId) widget.onSelect(id);
+            },
+            itemBuilder: (_, i) {
+              final e = widget.queue[i];
+              final sel = e.id == widget.currentId;
+              return Padding(
+                padding: const EdgeInsets.only(right: 10),
+                child: Material(
+                  color: const Color(0xFF161B22),
+                  borderRadius: BorderRadius.circular(12),
+                  child: Padding(
+                    padding: const EdgeInsets.all(12),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Expanded(
+                              child: Text(
+                                e.type,
+                                style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 14),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                            if (sel)
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFF238636).withValues(alpha: 0.35),
+                                  borderRadius: BorderRadius.circular(6),
+                                ),
+                                child: const Text(
+                                  'VIEWING',
+                                  style: TextStyle(color: Color(0xFF69F0AE), fontSize: 9, fontWeight: FontWeight.w800),
+                                ),
+                              ),
+                          ],
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          e.userDisplayName,
+                          style: const TextStyle(color: Colors.white60, fontSize: 12),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        Text(
+                          fmt.format(e.timestamp.toLocal()),
+                          style: const TextStyle(color: Colors.white38, fontSize: 10),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              );
+            },
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _DriverDetailView extends StatelessWidget {
+  const _DriverDetailView({
+    required this.incident,
+    required this.queue,
+    required this.role,
+    required this.fleetCallSign,
+    required this.fleetMapZoom,
+    required this.onFleetCameraMove,
+    required this.onMapCreated,
+    required this.route,
+    required this.volunteerRouteToScene,
+    required this.onDirections,
+    required this.onOperationPtt,
+    required this.onEmergencyPtt,
+    required this.onStartLive,
+    required this.onStopLive,
+    required this.isLive,
+    required this.onSelectQueuedIncident,
+  });
+
+  final SosIncident incident;
+  final List<SosIncident> queue;
+  final StationUnitRole role;
+  final String? fleetCallSign;
+  final double fleetMapZoom;
+  final ValueChanged<double> onFleetCameraMove;
+  final void Function(OpsMapController) onMapCreated;
+  final List<LatLng> route;
+  final List<LatLng> volunteerRouteToScene;
+  final VoidCallback onDirections;
+  final VoidCallback onOperationPtt;
+  final VoidCallback onEmergencyPtt;
+  final VoidCallback onStartLive;
+  final VoidCallback onStopLive;
+  final bool isLive;
+  final ValueChanged<String> onSelectQueuedIncident;
+
+  @override
+  Widget build(BuildContext context) {
+    final victim = incident.liveVictimPin;
+    final fmt = DateFormat('MMM d, yyyy · HH:mm');
+    final fbRed = BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueRed);
+    final fbAz = BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueAzure);
+    final markers = <Marker>{
+      Marker(
+        markerId: const MarkerId('victim'),
+        position: victim,
+        zIndexInt: 2,
+        infoWindow: InfoWindow(title: incident.userDisplayName, snippet: 'Scene / victim pin'),
+        icon: OpsMapMarkers.sceneOr(fbRed),
+      ),
+    };
+
+    final amb = incident.ambulanceLiveLocation;
+    if (amb != null) {
+      markers.add(
+        Marker(
+          markerId: const MarkerId('amb'),
+          position: amb,
+          zIndexInt: 3,
+          icon: FleetMapIcons.ambulanceForZoom(fleetMapZoom, fbAz),
+          rotation: incident.ambulanceLiveHeadingDeg ?? 0,
+          flat: true,
+          anchor: const Offset(0.5, 0.5),
+        ),
+      );
+    }
+    final polylines = <Polyline>{};
+    if (route.length >= 2) {
+      polylines.add(
+        Polyline(
+          polylineId: const PolylineId('drv_route'),
+          points: route,
+          color: const Color(0xFF58A6FF).withValues(alpha: 0.9),
+          width: 5,
+        ),
+      );
+    }
+    if (volunteerRouteToScene.length >= 2) {
+      polylines.add(
+        Polyline(
+          polylineId: const PolylineId('volunteer_to_scene'),
+          points: volunteerRouteToScene,
+          color: AppColors.primarySafe,
+          width: 6,
+          zIndex: 2,
+          patterns: [PatternItem.dash(14), PatternItem.gap(8)],
+        ),
+      );
+    }
+
+    final triage = incident.triage;
+    final triageLine = triage == null || triage.isEmpty
+        ? 'No triage snapshot on file.'
+        : '${triage['category'] ?? "—"} · score ${triage['severityScore'] ?? "—"}';
+
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(12, 0, 12, 24),
+      children: [
+        if (queue.length > 1) ...[
+          _QueuedIncidentPager(
+            queue: queue,
+            currentId: incident.id,
+            onSelect: onSelectQueuedIncident,
+          ),
+          const SizedBox(height: 8),
+        ],
+        Container(
+          padding: const EdgeInsets.all(14),
+          decoration: BoxDecoration(
+            color: const Color(0xFF238636).withValues(alpha: 0.15),
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: const Color(0xFF238636).withValues(alpha: 0.45)),
+          ),
+          child: Row(
+            children: [
+              Icon(
+                role == StationUnitRole.medical
+                    ? Icons.medical_services_rounded
+                    : Icons.construction_rounded,
+                color: const Color(0xFF79C0FF),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  'You are allotted to this ${role.shortLabel.toLowerCase()} run. Proceed to scene; live victim GPS updates when available.',
+                  style: const TextStyle(color: Colors.white70, fontSize: 12, height: 1.35),
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 12),
+        SharedSituationBriefCard(
+          incidentId: incident.id,
+          accentColor: const Color(0xFF79C0FF),
+          compact: true,
+          showRefreshButton: true,
+        ),
+        const SizedBox(height: 12),
+        Text(incident.type, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w900, fontSize: 20)),
+        Text('${incident.userDisplayName} · ${incident.id}', style: const TextStyle(color: Colors.white54, fontSize: 12)),
+        Text('Reported ${fmt.format(incident.timestamp.toLocal())}', style: const TextStyle(color: Colors.white38, fontSize: 11)),
+        if ((fleetCallSign ?? '').trim().isNotEmpty)
+          Padding(
+            padding: const EdgeInsets.only(top: 6),
+            child: Text('Your call sign · $fleetCallSign', style: const TextStyle(color: Color(0xFF79C0FF), fontSize: 11)),
+          ),
+        const SizedBox(height: 8),
+        Wrap(
+          spacing: 8,
+          runSpacing: 6,
+          children: [
+            _StatusChip(label: 'Status', value: incident.status.name),
+            if (incident.smsRelayOrOrigin)
+              const _StatusChip(label: 'Path', value: 'SMS-linked'),
+            if (incident.geoSmsPatternRecognized) const _StatusChip(label: 'GeoSMS', value: 'parsed'),
+          ],
+        ),
+        const SizedBox(height: 10),
+        const Text('Published ETAs (victim app)', style: TextStyle(color: Colors.white54, fontSize: 11, fontWeight: FontWeight.w700)),
+        const SizedBox(height: 4),
+        Text(
+          'Ambulance: ${incident.ambulanceEta ?? "—"}',
+          style: const TextStyle(color: Colors.white70, fontSize: 12),
+        ),
+        if ((incident.medicalStatus ?? '').isNotEmpty)
+          Text('Medical line: ${incident.medicalStatus}', style: const TextStyle(color: Colors.tealAccent, fontSize: 12)),
+        if (role == StationUnitRole.medical && (incident.emsWorkflowPhase ?? '').isNotEmpty)
+          Text('EMS workflow: ${incident.emsWorkflowPhase}', style: const TextStyle(color: Colors.cyanAccent, fontSize: 12)),
+        const SizedBox(height: 10),
+        const Text('Victim GPS', style: TextStyle(color: Colors.white54, fontSize: 11, fontWeight: FontWeight.w700)),
+        Text('Pin · ${victim.latitude.toStringAsFixed(5)}, ${victim.longitude.toStringAsFixed(5)}',
+            style: const TextStyle(color: Colors.white38, fontSize: 11)),
+        if (incident.lastLocationAt != null)
+          Text('Last breadcrumb: ${DateFormat('MMM d HH:mm').format(incident.lastLocationAt!.toLocal())}',
+              style: const TextStyle(color: Colors.white30, fontSize: 10)),
+        if (incident.bloodType != null || incident.allergies != null || incident.medicalConditions != null)
+          Padding(
+            padding: const EdgeInsets.only(top: 8),
+            child: Text(
+              'Blood: ${incident.bloodType ?? "—"} · Allergies: ${incident.allergies ?? "—"} · Conditions: ${incident.medicalConditions ?? "—"}',
+              style: const TextStyle(color: Colors.orangeAccent, fontSize: 12, height: 1.35),
+            ),
+          ),
+        if (incident.emergencyContactPhone != null && incident.emergencyContactPhone!.isNotEmpty)
+          Text(
+            'Emergency contact: ${incident.emergencyContactPhone} (${incident.useEmergencyContactForSms ? "SMS on" : "SMS off"})',
+            style: const TextStyle(color: Colors.cyanAccent, fontSize: 11),
+          ),
+        if (incident.senderPhone != null && incident.senderPhone!.isNotEmpty)
+          Text('Relay phone: ${incident.senderPhone}', style: const TextStyle(color: Colors.amberAccent, fontSize: 10)),
+        const SizedBox(height: 8),
+        Text('Triage · $triageLine', style: const TextStyle(color: Colors.white60, fontSize: 12, height: 1.35)),
+        const SizedBox(height: 10),
+        const Text('Volunteer roster (same as consignment)', style: TextStyle(color: Colors.white54, fontSize: 11, fontWeight: FontWeight.w700)),
+        Text(
+          'Accepted ${incident.acceptedVolunteerIds.length} · On-scene ${incident.onSceneVolunteerIds.length}',
+          style: const TextStyle(color: Colors.white70, fontSize: 12),
+        ),
+        if (incident.volunteerUpdatedAt != null)
+          Text(
+            'Last volunteer GPS: ${DateFormat('MMM d HH:mm').format(incident.volunteerUpdatedAt!.toLocal())}',
+            style: const TextStyle(color: Colors.white38, fontSize: 10),
+          ),
+        ...incident.acceptedVolunteerIds.map((vid) {
+          final name = incident.responderNames[vid];
+          final onScene = incident.onSceneVolunteerIds.contains(vid);
+          return Padding(
+            padding: const EdgeInsets.only(top: 4),
+            child: Text(
+              '${name != null && name.isNotEmpty ? name : "Responder"} · ${onScene ? "ON SCENE" : "en route"} · $vid',
+              style: const TextStyle(color: Colors.greenAccent, fontSize: 11, height: 1.25),
+            ),
+          );
+        }),
+        if (incident.volunteerSceneReport != null && incident.volunteerSceneReport!.isNotEmpty) ...[
+          const SizedBox(height: 10),
+          const Text('Volunteer scene report (excerpt)', style: TextStyle(color: Colors.white54, fontSize: 11, fontWeight: FontWeight.w700)),
+          const SizedBox(height: 4),
+          Text(
+            _sceneReportExcerpt(incident.volunteerSceneReport!),
+            style: const TextStyle(color: Colors.white60, fontSize: 10, height: 1.35),
+          ),
+        ],
+        if ((incident.adminDispatchNote ?? '').trim().isNotEmpty)
+          Padding(
+            padding: const EdgeInsets.only(top: 8),
+            child: Text(
+              'Dispatch note: ${incident.adminDispatchNote}',
+              style: const TextStyle(color: Colors.amberAccent, fontSize: 12, height: 1.35),
+            ),
+          ),
+        const SizedBox(height: 10),
+        const Text('Live feed (victim / dispatch)', style: TextStyle(color: Colors.white54, fontSize: 11, fontWeight: FontWeight.w700)),
+        SizedBox(
+          height: 120,
+          child: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+            stream: FirebaseFirestore.instance
+                .collection('sos_incidents')
+                .doc(incident.id)
+                .collection('victim_activity')
+                .orderBy('createdAt', descending: true)
+                .limit(12)
+                .snapshots(),
+            builder: (context, snap) {
+              if (snap.hasError) {
+                return Text('Feed: ${snap.error}', style: const TextStyle(color: Colors.redAccent, fontSize: 10));
+              }
+              if (!snap.hasData) {
+                return const Center(child: SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2)));
+              }
+              final docs = snap.data!.docs;
+              if (docs.isEmpty) {
+                return const Text('No activity lines yet.', style: TextStyle(color: Colors.white38, fontSize: 11));
+              }
+              return ListView.separated(
+                itemCount: docs.length,
+                separatorBuilder: (_, _) => const Divider(height: 1, color: Colors.white10),
+                itemBuilder: (_, i) {
+                  final d = docs[i].data();
+                  final text = (d['text'] as String?) ?? '';
+                  DateTime? t;
+                  final c = d['createdAt'];
+                  if (c is Timestamp) t = c.toDate();
+                  final ts = t == null ? '' : DateFormat('HH:mm').format(t.toLocal());
+                  return Text('$ts · $text', style: const TextStyle(color: Colors.white70, fontSize: 10, height: 1.3));
+                },
+              );
+            },
+          ),
+        ),
+        const SizedBox(height: 14),
+        SizedBox(
+          height: 220,
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(14),
+            child: EosHybridMap(
+              cameraTargetBounds: IndiaOpsZones.lucknowCameraTargetBounds,
+              initialCameraPosition: IndiaOpsZones.lucknowSafeCamera(victim, preferZoom: 14),
+              onCameraMove: (CameraPosition p) => onFleetCameraMove(p.zoom),
+              markers: markers,
+              polylines: polylines,
+              mapType: MapType.normal,
+              mapId: AppConstants.googleMapsDarkMapId.isNotEmpty ? AppConstants.googleMapsDarkMapId : null,
+              myLocationEnabled: true,
+              myLocationButtonEnabled: true,
+              zoomControlsEnabled: false,
+              onMapCreated: onMapCreated,
+            ),
+          ),
+        ),
+        const SizedBox(height: 12),
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: [
+            FilledButton.icon(
+              onPressed: onDirections,
+              style: FilledButton.styleFrom(backgroundColor: const Color(0xFF238636)),
+              icon: const Icon(Icons.navigation_rounded, size: 20),
+              label: const Text('Turn-by-turn'),
+            ),
+            FilledButton.tonal(
+              onPressed: onOperationPtt,
+              child: const Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.headset_mic_rounded, size: 18),
+                  SizedBox(width: 6),
+                  Text('Operation channel'),
+                ],
+              ),
+            ),
+            FilledButton.tonal(
+              onPressed: onEmergencyPtt,
+              child: const Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.campaign_rounded, size: 18),
+                  SizedBox(width: 6),
+                  Text('Emergency channel'),
+                ],
+              ),
+            ),
+            if (!isLive)
+              OutlinedButton.icon(
+                onPressed: onStartLive,
+                style: OutlinedButton.styleFrom(foregroundColor: const Color(0xFF58A6FF)),
+                icon: const Icon(Icons.gps_fixed, size: 18),
+                label: const Text('Share unit location'),
+              )
+            else
+              OutlinedButton.icon(
+                onPressed: onStopLive,
+                style: OutlinedButton.styleFrom(foregroundColor: Colors.orangeAccent),
+                icon: const Icon(Icons.pause_circle_outline, size: 18),
+                label: const Text('Stop sharing'),
+              ),
+          ],
+        ),
+        const SizedBox(height: 12),
+        const Text(
+          'Full dispatch, ETAs to victim UI, and roster control are in the admin command center — this screen is for your run only.',
+          style: TextStyle(color: Colors.white30, fontSize: 10, height: 1.4),
+        ),
+      ],
+    );
+  }
+}
+
+String _sceneReportExcerpt(Map<String, dynamic> r) {
+  final s = r.toString();
+  if (s.length <= 480) return s;
+  return '${s.substring(0, 480)}…';
+}
+
+class _StatusChip extends StatelessWidget {
+  const _StatusChip({required this.label, required this.value});
+
+  final String label;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+      decoration: BoxDecoration(
+        color: const Color(0xFF21262D),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: Colors.white24),
+      ),
+      child: Text(
+        '$label: $value',
+        style: const TextStyle(color: Colors.white70, fontSize: 10, fontWeight: FontWeight.w600),
+      ),
+    );
+  }
+}
