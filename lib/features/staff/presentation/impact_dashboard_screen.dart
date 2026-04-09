@@ -76,122 +76,214 @@ class ImpactDashboardScreen extends StatelessWidget {
             volunteerPositions: const <LatLng>[],
           );
 
-          return SingleChildScrollView(
-            padding: const EdgeInsets.all(20),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Impact overview (${access.role.name})',
-                  style: const TextStyle(
-                    color: Colors.white70,
-                    fontSize: 14,
-                    fontWeight: FontWeight.w600,
-                  ),
+          final pendingC =
+              incidents.where((e) => e.status == IncidentStatus.pending).length;
+          final dispatchedC = incidents
+              .where((e) => e.status == IncidentStatus.dispatched)
+              .length;
+          final blockedC =
+              incidents.where((e) => e.status == IncidentStatus.blocked).length;
+          final last24h = incidents
+              .where(
+                (e) => now.difference(e.timestamp) <= const Duration(hours: 24),
+              )
+              .length;
+          final last7d = incidents
+              .where(
+                (e) => now.difference(e.timestamp) <= const Duration(days: 7),
+              )
+              .length;
+
+          final incidentMarkers = <Marker>{};
+          var mi = 0;
+          for (final e in incidents.take(56)) {
+            incidentMarkers.add(
+              Marker(
+                markerId: MarkerId('imp_$mi'),
+                position: e.liveVictimPin,
+                infoWindow: InfoWindow(
+                  title: e.type.isEmpty ? 'SOS' : e.type,
+                  snippet: e.status.name,
                 ),
-                const SizedBox(height: 16),
-                Wrap(
-                  spacing: 12,
-                  runSpacing: 12,
+              ),
+            );
+            mi++;
+          }
+
+          return Align(
+            alignment: Alignment.topCenter,
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 1120),
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.fromLTRB(16, 16, 16, 28),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.center,
                   children: [
-                    _KpiCard(
-                      title: 'Incidents handled',
-                      value: '$handled',
-                      subtitle: 'Resolved sos_incidents (all time)',
+                    Text(
+                      'Impact overview · ${access.role.name}',
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 18,
+                        fontWeight: FontWeight.w800,
+                      ),
                     ),
-                    _KpiCard(
-                      title: 'Mean response time',
-                      value: meanResp,
-                      subtitle: 'First acknowledgement from SOS',
+                    const SizedBox(height: 6),
+                    Text(
+                      '${IndiaOpsZones.lucknow.label} · ${incidents.length} incidents in sample',
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(
+                        color: Colors.white54,
+                        fontSize: 12,
+                      ),
                     ),
-                    _KpiCard(
-                      title: 'Lifeline completion',
-                      value: lifelineCompletion,
-                      subtitle: 'Completion from triage / training fields',
-                    ),
-                    _KpiCard(
-                      title: 'Active zones',
-                      value: '$activeZones',
-                      subtitle: 'Hex areas with recent load',
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 28),
-                LayoutBuilder(
-                  builder: (context, constraints) {
-                    final isNarrow = constraints.maxWidth < 900;
-                    return Column(
+                    const SizedBox(height: 20),
+                    Wrap(
+                      alignment: WrapAlignment.center,
+                      spacing: 12,
+                      runSpacing: 12,
                       children: [
-                        Flex(
-                          direction: isNarrow ? Axis.vertical : Axis.horizontal,
-                          crossAxisAlignment:
-                              isNarrow ? CrossAxisAlignment.stretch : CrossAxisAlignment.start,
-                          children: [
-                            Expanded(
-                              child: _ChartCard(
-                                title: 'Incident type breakdown',
-                                child: _PieFromMap(data: typeBuckets),
-                              ),
-                            ),
-                            const SizedBox(width: 16, height: 16),
-                            Expanded(
-                              child: _ChartCard(
-                                title: 'Incidents over time',
-                                child: _LineFromSeries(series: timeBuckets),
-                              ),
-                            ),
-                          ],
+                        _KpiCard(
+                          title: 'Open pipeline',
+                          value: '$active',
+                          subtitle: 'Pending + dispatched (sample)',
                         ),
-                        const SizedBox(height: 16),
-                        Flex(
-                          direction: isNarrow ? Axis.vertical : Axis.horizontal,
-                          crossAxisAlignment:
-                              isNarrow ? CrossAxisAlignment.stretch : CrossAxisAlignment.start,
-                          children: [
-                            Expanded(
-                              child: _ChartCard(
-                                title: 'Response time distribution',
-                                child: _BarFromBuckets(buckets: responseBuckets),
-                              ),
-                            ),
-                            const SizedBox(width: 16, height: 16),
-                            Expanded(
-                              child: _ChartCard(
-                                title: 'Status breakdown',
-                                child: _StackedStatusBar(buckets: statusBuckets),
-                              ),
-                            ),
-                          ],
+                        _KpiCard(
+                          title: 'Pending',
+                          value: '$pendingC',
+                          subtitle: 'Awaiting first response',
                         ),
-                        const SizedBox(height: 16),
-                        _ChartCard(
-                          title: 'Zone health map',
-                          child: SizedBox(
-                            height: 260,
-                            child: ClipRRect(
-                              borderRadius: BorderRadius.circular(12),
-                              child: CommandCenterMap(
-                                zone: IndiaOpsZones.lucknow,
-                                markers: const <Marker>{},
-                                polylines: const <Polyline>{},
-                                polygons: hexModel.polygons,
-                                showHexGrid: true,
-                                hexCoverRadiusM: hexModel.coverRadiusM,
-                                overlayCircles: const <Circle>{},
-                                initialPosition: hexCenter,
-                                initialZoom: 11,
-                                onCameraMove: (_) {},
-                                onMapCreated: (_) {},
-                                onTap: (_) {},
-                              ),
+                        _KpiCard(
+                          title: 'Dispatched',
+                          value: '$dispatchedC',
+                          subtitle: 'Resources assigned',
+                        ),
+                        _KpiCard(
+                          title: 'Resolved',
+                          value: '$handled',
+                          subtitle: 'Closed in sample',
+                        ),
+                        _KpiCard(
+                          title: 'Blocked',
+                          value: '$blockedC',
+                          subtitle: 'Needs manual attention',
+                        ),
+                        _KpiCard(
+                          title: 'Last 24h',
+                          value: '$last24h',
+                          subtitle: 'New activity (sample window)',
+                        ),
+                        _KpiCard(
+                          title: 'Last 7 days',
+                          value: '$last7d',
+                          subtitle: 'Volume in trailing week',
+                        ),
+                        _KpiCard(
+                          title: 'Mean response',
+                          value: meanResp,
+                          subtitle: 'First acknowledgement',
+                        ),
+                        _KpiCard(
+                          title: 'Lifeline data',
+                          value: lifelineCompletion,
+                          subtitle: 'Triage / training coverage',
+                        ),
+                        _KpiCard(
+                          title: 'Geo spread',
+                          value: '$activeZones',
+                          subtitle: 'Distinct ~1km buckets',
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 28),
+                    SizedBox(
+                      width: double.infinity,
+                      child: _ChartCard(
+                        title: 'Live load map · incidents + zone grid',
+                        child: SizedBox(
+                          height: 300,
+                          child: ClipRRect(
+                            borderRadius: BorderRadius.circular(12),
+                            child: CommandCenterMap(
+                              zone: IndiaOpsZones.lucknow,
+                              markers: incidentMarkers,
+                              polylines: const <Polyline>{},
+                              polygons: hexModel.polygons,
+                              showHexGrid: true,
+                              hexCoverRadiusM: hexModel.coverRadiusM,
+                              overlayCircles: const <Circle>{},
+                              initialPosition: hexCenter,
+                              initialZoom: 11,
+                              onCameraMove: (_) {},
+                              onMapCreated: (_) {},
+                              onTap: (_) {},
                             ),
                           ),
                         ),
-                      ],
-                    );
-                  },
+                      ),
+                    ),
+                    const SizedBox(height: 20),
+                    LayoutBuilder(
+                      builder: (context, constraints) {
+                        final isNarrow = constraints.maxWidth < 900;
+                        return Column(
+                          children: [
+                            Flex(
+                              direction:
+                                  isNarrow ? Axis.vertical : Axis.horizontal,
+                              crossAxisAlignment: isNarrow
+                                  ? CrossAxisAlignment.stretch
+                                  : CrossAxisAlignment.start,
+                              children: [
+                                Expanded(
+                                  child: _ChartCard(
+                                    title: 'Incident type breakdown',
+                                    child: _PieFromMap(data: typeBuckets),
+                                  ),
+                                ),
+                                const SizedBox(width: 16, height: 16),
+                                Expanded(
+                                  child: _ChartCard(
+                                    title: 'Incidents over time (24h)',
+                                    child: _LineFromSeries(series: timeBuckets),
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 16),
+                            Flex(
+                              direction:
+                                  isNarrow ? Axis.vertical : Axis.horizontal,
+                              crossAxisAlignment: isNarrow
+                                  ? CrossAxisAlignment.stretch
+                                  : CrossAxisAlignment.start,
+                              children: [
+                                Expanded(
+                                  child: _ChartCard(
+                                    title: 'Response time distribution',
+                                    child: _BarFromBuckets(
+                                      buckets: responseBuckets,
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(width: 16, height: 16),
+                                Expanded(
+                                  child: _ChartCard(
+                                    title: 'Status breakdown',
+                                    child: _StackedStatusBar(
+                                      buckets: statusBuckets,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ],
+                        );
+                      },
+                    ),
+                  ],
                 ),
-              ],
+              ),
             ),
           );
         },

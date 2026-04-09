@@ -1,6 +1,7 @@
 import 'package:cloud_functions/cloud_functions.dart';
 import 'package:livekit_client/livekit_client.dart';
 
+import '../core/utils/livekit_url.dart';
 import '../features/staff/domain/admin_panel_access.dart';
 
 /// Discord-style ops voice: command net (master) + per-incident Operation / Emergency channels.
@@ -40,7 +41,7 @@ abstract final class LivekitCommsBridgeService {
 
     final data = (res.data as Map?) ?? const {};
     final token = (data['token'] ?? '').toString();
-    final url = (data['url'] ?? '').toString();
+    final url = LivekitUrl.normalizeForClient((data['url'] ?? '').toString());
     final roomName = (data['roomName'] ?? '').toString();
 
     if (token.isEmpty || url.isEmpty || roomName.isEmpty) {

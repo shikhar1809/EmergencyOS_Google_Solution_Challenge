@@ -51,6 +51,16 @@ function liveKitEnv(secretFromBinding) {
   return { url, apiKey, apiSecret };
 }
 
+/** Flutter/web clients must receive `wss://` (not `https://`) or LiveKit reports invalid token / failed connect. */
+function livekitUrlForClients(envUrl) {
+  let u = (envUrl || "").trim();
+  if (!u) return u;
+  while (u.endsWith("/")) u = u.slice(0, -1);
+  if (u.startsWith("https://")) return `wss://${u.slice(8)}`;
+  if (u.startsWith("http://")) return `ws://${u.slice(7)}`;
+  return u;
+}
+
 function assertLiveKitConfigured(env) {
   if (!env.url || !env.apiKey || !env.apiSecret) {
     throw new HttpsError(
@@ -873,14 +883,16 @@ exports.getLivekitToken = onCall(
 
     const at = new AccessToken(env.apiKey, env.apiSecret, {
       identity,
-      ttl: "10m",
+      ttl: 6 * 60 * 60,
     });
 
+    // Always allow publish in the grant; clients mute the mic when needed. Some LiveKit
+    // builds reject tokens with canPublish: false while still subscribing.
     at.addGrant({
       roomJoin: true,
       room: roomName,
       canSubscribe: true,
-      canPublish: canPublishAudio,
+      canPublish: true,
       canPublishData: true,
     });
 
@@ -888,7 +900,7 @@ exports.getLivekitToken = onCall(
 
     return {
       token,
-      url: env.url,
+      url: livekitUrlForClients(env.url),
       roomName,
       identity,
       role,
@@ -916,14 +928,14 @@ exports.getCopilotLivekitToken = onCall(
 
     const at = new AccessToken(env.apiKey, env.apiSecret, {
       identity,
-      ttl: "10m",
+      ttl: 6 * 60 * 60,
     });
 
     at.addGrant({
       roomJoin: true,
       room: roomName,
       canSubscribe: true,
-      canPublish: canPublishAudio,
+      canPublish: true,
       canPublishData: true,
     });
 
@@ -931,7 +943,7 @@ exports.getCopilotLivekitToken = onCall(
 
     return {
       token,
-      url: env.url,
+      url: livekitUrlForClients(env.url),
       roomName,
       identity,
     };
@@ -1183,7 +1195,7 @@ exports.ensureCommsBridgeRooms = onCall({ secrets: [lkSecret] }, async (request)
   await ensureCommsLiveKitRoom(env, op);
   await ensureCommsLiveKitRoom(env, em);
 
-  return { operationRoom: op, emergencyRoom: em, url: env.url };
+  return { operationRoom: op, emergencyRoom: em, url: livekitUrlForClients(env.url) };
 });
 
 exports.getCommsBridgeLivekitToken = onCall({ secrets: [lkSecret] }, async (request) => {
@@ -1250,12 +1262,12 @@ exports.getCommsBridgeLivekitToken = onCall({ secrets: [lkSecret] }, async (requ
     roomJoin: true,
     room: roomName,
     canSubscribe: true,
-    canPublish: canPublishAudio,
+    canPublish: true,
     canPublishData: true,
   });
   const token = await at.toJwt();
 
-  return { token, url: env.url, roomName, identity, channel };
+  return { token, url: livekitUrlForClients(env.url), roomName, identity, channel };
 });
 
 // ─── Incident video → Gemini (accepted volunteers only) ─────────────────────

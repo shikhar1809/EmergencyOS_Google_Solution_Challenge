@@ -1,6 +1,7 @@
 import 'package:cloud_functions/cloud_functions.dart';
 import 'package:livekit_client/livekit_client.dart';
 
+import '../core/utils/livekit_url.dart';
 import '../features/staff/domain/admin_panel_access.dart';
 
 /// LiveKit room shared by master and hospital admin dashboards.
@@ -23,7 +24,7 @@ abstract final class LivekitAdminConsoleService {
 
     final data = (res.data as Map?) ?? const {};
     final token = (data['token'] ?? '').toString();
-    final url = (data['url'] ?? '').toString();
+    final url = LivekitUrl.normalizeForClient((data['url'] ?? '').toString());
     final roomName = (data['roomName'] ?? '').toString();
 
     if (token.isEmpty || url.isEmpty || roomName.isEmpty) {

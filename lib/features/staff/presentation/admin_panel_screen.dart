@@ -551,6 +551,7 @@ class _OpsDashboardScreenState extends State<OpsDashboardScreen> {
     required List<NavigationRailDestination> destinations,
     required int selectedIndex,
     required Color accent,
+    required DateTime sessionStartedAt,
   }) {
     return Material(
       color: const Color(0xFF1B2634),
@@ -564,23 +565,33 @@ class _OpsDashboardScreenState extends State<OpsDashboardScreen> {
           decoration: const BoxDecoration(
             border: Border(top: BorderSide(color: Colors.white12)),
           ),
-          child: Align(
-            alignment: Alignment.center,
-            child: SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  for (var i = 0; i < destinations.length; i++)
-                    _opsDockItem(
-                      destination: destinations[i],
-                      selected: i == selectedIndex,
-                      accent: accent,
-                      onTap: () => setState(() => _selectedIndex = i),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              Expanded(
+                child: Center(
+                  child: SingleChildScrollView(
+                    scrollDirection: Axis.horizontal,
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        for (var i = 0; i < destinations.length; i++)
+                          _opsDockItem(
+                            destination: destinations[i],
+                            selected: i == selectedIndex,
+                            accent: accent,
+                            onTap: () => setState(() => _selectedIndex = i),
+                          ),
+                      ],
                     ),
-                ],
+                  ),
+                ),
               ),
-            ),
+              OpsDashboardStatusBar(
+                sessionStartedAt: sessionStartedAt,
+                dockTray: true,
+              ),
+            ],
           ),
         ),
       ),
@@ -990,11 +1001,11 @@ class _OpsDashboardScreenState extends State<OpsDashboardScreen> {
             ),
           ),
           Expanded(child: ClipRect(child: _bodyForIndex(access, safeIndex))),
-          OpsDashboardStatusBar(sessionStartedAt: _dashboardSessionStarted),
           _opsTaskbarDock(
             destinations: destinations,
             selectedIndex: safeIndex,
             accent: railAccent,
+            sessionStartedAt: _dashboardSessionStarted,
           ),
         ],
       ),

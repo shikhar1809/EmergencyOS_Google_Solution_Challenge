@@ -3,6 +3,8 @@ import 'dart:convert';
 import 'package:cloud_functions/cloud_functions.dart';
 import 'package:livekit_client/livekit_client.dart';
 
+import '../core/utils/livekit_url.dart';
+
 /// WebRTC emergency voice bridge (victim, dispatch, contact, Lifeline agent in one room).
 ///
 /// Uses:
@@ -77,7 +79,7 @@ class LivekitEmergencyBridgeService {
 
     final data = (res.data as Map?) ?? const {};
     final token = (data['token'] ?? '').toString();
-    final url = (data['url'] ?? '').toString();
+    final url = LivekitUrl.normalizeForClient((data['url'] ?? '').toString());
     final roomName = (data['roomName'] ?? '').toString();
 
     if (token.isEmpty || url.isEmpty || roomName.isEmpty) {

@@ -413,6 +413,24 @@ class _MasterManagementMapWorkspaceState
             ),
           _kv('Updated', updatedStr),
           const SizedBox(height: 16),
+          OutlinedButton.icon(
+            onPressed: () {
+              showDialog<void>(
+                context: context,
+                builder: (ctx) => FleetCredentialsDialog(
+                  fleetCallSign: callSign,
+                  vehicleType: type,
+                ),
+              );
+            },
+            icon: const Icon(Icons.visibility_outlined, size: 18),
+            label: const Text('Show credentials'),
+            style: OutlinedButton.styleFrom(
+              foregroundColor: Colors.white70,
+              side: BorderSide(color: widget.accent.withValues(alpha: 0.5)),
+            ),
+          ),
+          const SizedBox(height: 8),
           FutureBuilder<bool>(
             key: ValueKey<String>('fleet-gate-$callSign'),
             future: FleetGateCredentialsService.gateAccountExists(callSign),
@@ -420,15 +438,17 @@ class _MasterManagementMapWorkspaceState
               final hasGate = snap.data ?? false;
               final label = hasGate ? 'Reset credentials' : 'Get credentials';
               return FilledButton.icon(
-                onPressed: () {
-                  showDialog<void>(
-                    context: context,
-                    builder: (ctx) => FleetCredentialsDialog(
-                      fleetCallSign: callSign,
-                      vehicleType: type,
-                    ),
-                  );
-                },
+                onPressed: snap.connectionState == ConnectionState.waiting
+                    ? null
+                    : () {
+                        showDialog<void>(
+                          context: context,
+                          builder: (ctx) => FleetCredentialsDialog(
+                            fleetCallSign: callSign,
+                            vehicleType: type,
+                          ),
+                        );
+                      },
                 icon: const Icon(Icons.edit_note_rounded, size: 18),
                 label: Text(
                   snap.connectionState == ConnectionState.waiting

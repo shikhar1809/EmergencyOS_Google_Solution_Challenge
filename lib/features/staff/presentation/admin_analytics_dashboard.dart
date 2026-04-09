@@ -22,7 +22,6 @@ import '../../../services/ops_incident_analytics_digest.dart';
 import '../domain/admin_panel_access.dart';
 import '../domain/command_center_accent.dart';
 import 'liveops_feedback_dashboard.dart';
-import 'widgets/command_center_shared_widgets.dart';
 import 'widgets/ops_analytics_trend_chart.dart';
 
 enum _AnalyticsCategory { sos, fleet, hospitals, volunteers, feedback }
@@ -228,6 +227,69 @@ class _AdminAnalyticsDashboardState extends State<AdminAnalyticsDashboard> {
     );
   }
 
+  Widget _analyticsCategoryChips() {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(4, 0, 4, 8),
+      child: Column(
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: _analyticsChip(
+                  _AnalyticsCategory.sos,
+                  'SOS',
+                  Icons.emergency_outlined,
+                ),
+              ),
+              const SizedBox(width: 6),
+              Expanded(
+                child: _analyticsChip(
+                  _AnalyticsCategory.fleet,
+                  'Fleet',
+                  Icons.local_shipping_outlined,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          Row(
+            children: [
+              Expanded(
+                child: _analyticsChip(
+                  _AnalyticsCategory.hospitals,
+                  'Hospitals',
+                  Icons.local_hospital_outlined,
+                ),
+              ),
+              const SizedBox(width: 6),
+              Expanded(
+                child: _analyticsChip(
+                  _AnalyticsCategory.volunteers,
+                  'Volunteers',
+                  Icons.groups_outlined,
+                ),
+              ),
+            ],
+          ),
+          if (widget.access.canUseLiveOpsFeedback) ...[
+            const SizedBox(height: 6),
+            Row(
+              children: [
+                Expanded(
+                  child: _analyticsChip(
+                    _AnalyticsCategory.feedback,
+                    'Feedback',
+                    Icons.feedback_outlined,
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
   Widget _analyticsStatusSection(int activeN, int inZoneN) {
     final hint = switch (_analyticsCategory) {
       _AnalyticsCategory.sos =>
@@ -242,10 +304,11 @@ class _AdminAnalyticsDashboardState extends State<AdminAnalyticsDashboard> {
         'Post-incident ratings and comments from resolved SOS flows.',
     };
     return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
+      crossAxisAlignment: CrossAxisAlignment.center,
       children: [
         Text(
           '$activeN active · $inZoneN in zone',
+          textAlign: TextAlign.center,
           style: const TextStyle(
             color: Colors.white54,
             fontWeight: FontWeight.w700,
@@ -255,6 +318,7 @@ class _AdminAnalyticsDashboardState extends State<AdminAnalyticsDashboard> {
         const SizedBox(height: 8),
         Text(
           hint,
+          textAlign: TextAlign.center,
           style: TextStyle(
             color: Colors.white.withValues(alpha: 0.38),
             fontSize: 11,
@@ -664,321 +728,406 @@ class _AdminAnalyticsDashboardState extends State<AdminAnalyticsDashboard> {
                 final showFeedbackPane =
                     cat == _AnalyticsCategory.feedback &&
                     widget.access.canUseLiveOpsFeedback;
+                final resolved7d = inZone
+                    .where(
+                      (e) =>
+                          e.status == IncidentStatus.resolved &&
+                          now.difference(e.timestamp) <=
+                              const Duration(days: 7),
+                    )
+                    .length;
+                final blockedNz = inZone
+                    .where((e) => e.status == IncidentStatus.blocked)
+                    .length;
+                final volume7d = inZone
+                    .where(
+                      (e) =>
+                          now.difference(e.timestamp) <=
+                          const Duration(days: 7),
+                    )
+                    .length;
+                final onSceneVol = active
+                    .where((e) => e.onSceneVolunteerIds.isNotEmpty)
+                    .length;
 
-                return Row(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    SizedBox(
-                      width: 368,
-                      child: ColoredBox(
-                        color: AppColors.slate800,
+                if (showFeedbackPane) {
+                  return LiveOpsFeedbackDashboard(
+                    access: widget.access,
+                    embedInParent: true,
+                  );
+                }
+
+                final mapCard = ClipRRect(
+                  borderRadius: BorderRadius.circular(16),
+                  child: SizedBox(
+                    height: 400,
+                    child: EosHybridMap(
+                      initialCameraPosition: CameraPosition(
+                        target: center,
+                        zoom: active.isEmpty ? zone.defaultZoom : 11,
+                      ),
+                      onCameraMove: (c) {
+                        final z = c.zoom;
+                        if ((z - _analyticsMapZoom).abs() > 0.12) {
+                          _analyticsMapZoom = z;
+                          setState(() {});
+                        }
+                      },
+                      cameraTargetBounds: CameraTargetBounds(zone.cameraBounds),
+                      minMaxZoomPreference:
+                          const MinMaxZoomPreference(5.5, 17),
+                      mapType: MapType.normal,
+                      mapId: AppConstants.googleMapsDarkMapId.isNotEmpty
+                          ? AppConstants.googleMapsDarkMapId
+                          : null,
+                      markers: markers,
+                      polylines: analyticsVolunteerPolylines,
+                      polygons: hexPolygons,
+                      zoomControlsEnabled: false,
+                      myLocationButtonEnabled: false,
+                      padding: EdgeInsets.zero,
+                    ),
+                  ),
+                );
+
+                final metricsBelowMap = Container(
+                  padding: const EdgeInsets.fromLTRB(10, 12, 10, 14),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF151A22),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(
+                      color: Colors.white.withValues(alpha: 0.08),
+                    ),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Row(
+                        children: [
+                          Icon(
+                            Icons.insights_rounded,
+                            size: 16,
+                            color:
+                                AppColors.accentBlue.withValues(alpha: 0.9),
+                          ),
+                          const SizedBox(width: 8),
+                          const Text(
+                            'Trends & breakdown',
+                            style: TextStyle(
+                              color: Colors.white70,
+                              fontSize: 13,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 12),
+                      OpsAnalyticsTrendChart(counts: trend7, now: now),
+                      const SizedBox(height: 12),
+                      const Text(
+                        'Hex overlay on the map: 48h density (blue → orange). Not a dispatch boundary.',
+                        style: TextStyle(
+                          color: Colors.white38,
+                          fontSize: 10,
+                          height: 1.3,
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      ..._metricsRailTail(
+                        cat: cat,
+                        bins48: bins48,
+                        zone: zone,
+                        inc48h: inc48h,
+                        active: active,
+                        pending: pending,
+                        dispatched: dispatched,
+                        h24: h24,
+                        withVol: withVol,
+                        smsN: smsN,
+                        triN: triN,
+                        triHigh: triHigh,
+                        topTypes: topTypes,
+                        emsAwait: emsAwait,
+                        emsInbound: emsInbound,
+                        emsScene: emsScene,
+                        hexSize: hexSize,
+                      ),
+                    ],
+                  ),
+                );
+
+                return Scrollbar(
+                  thumbVisibility: true,
+                  child: SingleChildScrollView(
+                    padding: const EdgeInsets.fromLTRB(12, 10, 12, 20),
+                    child: Align(
+                      alignment: Alignment.topCenter,
+                      child: ConstrainedBox(
+                        constraints: const BoxConstraints(maxWidth: 1240),
                         child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          crossAxisAlignment: CrossAxisAlignment.center,
                           children: [
-                            Padding(
-                              padding: const EdgeInsets.fromLTRB(8, 8, 8, 8),
-                              child: Column(
-                                children: [
-                                  Row(
-                                    children: [
-                                      Expanded(
-                                        child: _analyticsChip(
-                                          _AnalyticsCategory.sos,
-                                          'SOS',
-                                          Icons.emergency_outlined,
-                                        ),
-                                      ),
-                                      const SizedBox(width: 6),
-                                      Expanded(
-                                        child: _analyticsChip(
-                                          _AnalyticsCategory.fleet,
-                                          'Fleet',
-                                          Icons.local_shipping_outlined,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                  const SizedBox(height: 6),
-                                  Row(
-                                    children: [
-                                      Expanded(
-                                        child: _analyticsChip(
-                                          _AnalyticsCategory.hospitals,
-                                          'Hospitals',
-                                          Icons.local_hospital_outlined,
-                                        ),
-                                      ),
-                                      const SizedBox(width: 6),
-                                      Expanded(
-                                        child: _analyticsChip(
-                                          _AnalyticsCategory.volunteers,
-                                          'Volunteers',
-                                          Icons.groups_outlined,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                  if (widget.access.canUseLiveOpsFeedback) ...[
-                                    const SizedBox(height: 6),
-                                    Row(
-                                      children: [
-                                        Expanded(
-                                          child: _analyticsChip(
-                                            _AnalyticsCategory.feedback,
-                                            'Feedback',
-                                            Icons.feedback_outlined,
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                  ],
-                                ],
+                            ColoredBox(
+                              color: AppColors.slate800,
+                              child: Padding(
+                                padding:
+                                    const EdgeInsets.fromLTRB(12, 10, 12, 6),
+                                child: _analyticsCategoryChips(),
                               ),
                             ),
-                            Expanded(
-                              child: Scrollbar(
-                                thumbVisibility: true,
-                                child: SingleChildScrollView(
-                                  padding: const EdgeInsets.fromLTRB(
-                                    12,
-                                    0,
-                                    12,
-                                    20,
+                            const SizedBox(height: 12),
+                            _analyticsStatusSection(
+                              active.length,
+                              inZone.length,
+                            ),
+                            const SizedBox(height: 14),
+                            Wrap(
+                              alignment: WrapAlignment.center,
+                              spacing: 10,
+                              runSpacing: 10,
+                              children: [
+                                _statCard(
+                                  'Active now',
+                                  '${active.length}',
+                                  Icons.emergency,
+                                  Colors.orangeAccent,
+                                ),
+                                _statCard(
+                                  'Pending',
+                                  '$pending',
+                                  Icons.pending_actions,
+                                  Colors.amber,
+                                ),
+                                _statCard(
+                                  'Dispatched',
+                                  '$dispatched',
+                                  Icons.send,
+                                  AppColors.accentBlue,
+                                ),
+                                _statCard(
+                                  '24h in zone',
+                                  '$h24',
+                                  Icons.schedule,
+                                  Colors.cyanAccent,
+                                ),
+                                _statCard(
+                                  '7d volume',
+                                  '$volume7d',
+                                  Icons.date_range,
+                                  Colors.deepPurpleAccent,
+                                ),
+                                _statCard(
+                                  'Resolved (7d)',
+                                  '$resolved7d',
+                                  Icons.check_circle_outline,
+                                  Colors.greenAccent,
+                                ),
+                                _statCard(
+                                  'Blocked',
+                                  '$blockedNz',
+                                  Icons.block,
+                                  Colors.redAccent,
+                                ),
+                                _statCard(
+                                  '+Volunteers',
+                                  '$withVol',
+                                  Icons.groups,
+                                  Colors.lightGreenAccent,
+                                ),
+                                _statCard(
+                                  'On-scene vol',
+                                  '$onSceneVol',
+                                  Icons.front_hand,
+                                  Colors.limeAccent,
+                                ),
+                                _statCard(
+                                  'SMS-linked',
+                                  '$smsN',
+                                  Icons.sms,
+                                  Colors.tealAccent,
+                                ),
+                                _statCard(
+                                  'Feed (excl. demo)',
+                                  '${incidents.length}',
+                                  Icons.dataset_linked_outlined,
+                                  Colors.blueGrey,
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 16),
+                            Row(
+                              children: [
+                                _livePill(timeFmt.format(DateTime.now())),
+                                const SizedBox(width: 10),
+                                Expanded(
+                                  child: Text(
+                                    '${active.length} active · ${inZone.length} in zone · zoom ${(_analyticsMapZoom).toStringAsFixed(1)}',
+                                    textAlign: TextAlign.center,
+                                    style: const TextStyle(
+                                      color: Colors.white54,
+                                      fontSize: 12,
+                                    ),
                                   ),
-                                  child: Column(
+                                ),
+                                OutlinedButton.icon(
+                                  onPressed:
+                                      _aiLoading ? null : _runAutoSummary,
+                                  style: OutlinedButton.styleFrom(
+                                    foregroundColor: AppColors.accentBlue,
+                                  ),
+                                  icon: const Icon(Icons.auto_awesome, size: 18),
+                                  label: const Text('AI summary'),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 12),
+                            mapCard,
+                            const SizedBox(height: 18),
+                            LayoutBuilder(
+                              builder: (ctx, c) {
+                                final narrow = c.maxWidth < 880;
+                                if (narrow) {
+                                  return Column(
                                     crossAxisAlignment:
                                         CrossAxisAlignment.stretch,
                                     children: [
-                                      _analyticsStatusSection(
-                                        active.length,
-                                        inZone.length,
-                                      ),
-                                      if (!showFeedbackPane) ...[
-                                        const SizedBox(height: 16),
-                                        Container(
-                                          padding: const EdgeInsets.fromLTRB(
-                                            10,
-                                            12,
-                                            10,
-                                            14,
-                                          ),
-                                          decoration: BoxDecoration(
-                                            color: const Color(0xFF151A22),
-                                            borderRadius: BorderRadius.circular(
-                                              12,
-                                            ),
-                                            border: Border.all(
-                                              color: Colors.white.withValues(
-                                                alpha: 0.08,
-                                              ),
-                                            ),
-                                          ),
-                                          child: Column(
-                                            crossAxisAlignment:
-                                                CrossAxisAlignment.stretch,
-                                            children: [
-                                              Row(
-                                                children: [
-                                                  Icon(
-                                                    Icons.insights_rounded,
-                                                    size: 16,
-                                                    color: AppColors.accentBlue
-                                                        .withValues(alpha: 0.9),
-                                                  ),
-                                                  const SizedBox(width: 8),
-                                                  const Text(
-                                                    'Trends & metrics',
-                                                    style: TextStyle(
-                                                      color: Colors.white70,
-                                                      fontSize: 13,
-                                                      fontWeight:
-                                                          FontWeight.w700,
-                                                    ),
-                                                  ),
-                                                ],
-                                              ),
-                                              const SizedBox(height: 12),
-                                              OpsAnalyticsTrendChart(
-                                                counts: trend7,
-                                                now: now,
-                                              ),
-                                              const SizedBox(height: 12),
-                                              const Text(
-                                                'Hex overlay: 48h incident density (blue → orange = more incidents in that cell). Not a dispatch boundary.',
-                                                style: TextStyle(
-                                                  color: Colors.white38,
-                                                  fontSize: 10,
-                                                  height: 1.3,
-                                                ),
-                                              ),
-                                              const SizedBox(height: 12),
-                                              ..._metricsRailTail(
-                                                cat: cat,
-                                                bins48: bins48,
-                                                zone: zone,
-                                                inc48h: inc48h,
-                                                active: active,
-                                                pending: pending,
-                                                dispatched: dispatched,
-                                                h24: h24,
-                                                withVol: withVol,
-                                                smsN: smsN,
-                                                triN: triN,
-                                                triHigh: triHigh,
-                                                topTypes: topTypes,
-                                                emsAwait: emsAwait,
-                                                emsInbound: emsInbound,
-                                                emsScene: emsScene,
-                                                hexSize: hexSize,
-                                              ),
-                                            ],
-                                          ),
+                                      metricsBelowMap,
+                                      const SizedBox(height: 12),
+                                      OutlinedButton.icon(
+                                        onPressed: _aiLoading
+                                            ? null
+                                            : _runGeminiHotspot,
+                                        style: OutlinedButton.styleFrom(
+                                          foregroundColor: Colors.orangeAccent,
                                         ),
-                                      ],
+                                        icon: const Icon(
+                                          Icons.map_outlined,
+                                          size: 18,
+                                        ),
+                                        label: const Text('Ask AI: hotspots'),
+                                      ),
+                                      const SizedBox(height: 8),
+                                      OutlinedButton.icon(
+                                        onPressed: _aiLoading
+                                            ? null
+                                            : _runGeminiTrend,
+                                        style: OutlinedButton.styleFrom(
+                                          foregroundColor:
+                                              Colors.lightGreenAccent,
+                                        ),
+                                        icon: const Icon(
+                                          Icons.show_chart,
+                                          size: 18,
+                                        ),
+                                        label: const Text('Ask AI: 7d trend'),
+                                      ),
                                     ],
+                                  );
+                                }
+                                return Row(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Expanded(flex: 5, child: metricsBelowMap),
+                                    const SizedBox(width: 16),
+                                    Expanded(
+                                      flex: 4,
+                                      child: Column(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.stretch,
+                                        children: [
+                                          OutlinedButton.icon(
+                                            onPressed: _aiLoading
+                                                ? null
+                                                : _runGeminiHotspot,
+                                            style: OutlinedButton.styleFrom(
+                                              foregroundColor:
+                                                  Colors.orangeAccent,
+                                            ),
+                                            icon: const Icon(
+                                              Icons.map_outlined,
+                                              size: 18,
+                                            ),
+                                            label: const Text('Ask AI: hotspots'),
+                                          ),
+                                          const SizedBox(height: 8),
+                                          OutlinedButton.icon(
+                                            onPressed: _aiLoading
+                                                ? null
+                                                : _runGeminiTrend,
+                                            style: OutlinedButton.styleFrom(
+                                              foregroundColor:
+                                                  Colors.lightGreenAccent,
+                                            ),
+                                            icon: const Icon(
+                                              Icons.show_chart,
+                                              size: 18,
+                                            ),
+                                            label: const Text('Ask AI: 7d trend'),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ],
+                                );
+                              },
+                            ),
+                            const SizedBox(height: 16),
+                            Material(
+                              color: const Color(0xFF1B2634),
+                              borderRadius: BorderRadius.circular(12),
+                              clipBehavior: Clip.antiAlias,
+                              child: Column(
+                                crossAxisAlignment:
+                                    CrossAxisAlignment.stretch,
+                                children: [
+                                  ListTile(
+                                    onTap: () => setState(
+                                      () => _analyticsAiOpen =
+                                          !_analyticsAiOpen,
+                                    ),
+                                    leading: Icon(
+                                      Icons.psychology_outlined,
+                                      color: AppColors.accentBlue,
+                                    ),
+                                    title: const Text(
+                                      'Analytics AI',
+                                      style: TextStyle(
+                                        color: Colors.white,
+                                        fontWeight: FontWeight.w800,
+                                      ),
+                                    ),
+                                    subtitle: Text(
+                                      _analyticsAiOpen
+                                          ? 'Tap to collapse'
+                                          : 'Gemini Q&A on the same live feed as these metrics',
+                                      style: const TextStyle(
+                                        color: Colors.white38,
+                                        fontSize: 11,
+                                      ),
+                                    ),
+                                    trailing: Icon(
+                                      _analyticsAiOpen
+                                          ? Icons.expand_less
+                                          : Icons.expand_more,
+                                      color: Colors.white54,
+                                    ),
                                   ),
-                                ),
+                                  if (_analyticsAiOpen)
+                                    SizedBox(
+                                      height: 320,
+                                      child: ColoredBox(
+                                        color: const Color(0xFF161B22),
+                                        child: _buildAiAssistantPanel(),
+                                      ),
+                                    ),
+                                ],
                               ),
                             ),
                           ],
                         ),
                       ),
                     ),
-                    const VerticalDivider(
-                      width: 1,
-                      thickness: 1,
-                      color: Colors.white12,
-                    ),
-                    Expanded(
-                      child: showFeedbackPane
-                          ? LiveOpsFeedbackDashboard(
-                              access: widget.access,
-                              embedInParent: true,
-                            )
-                          : Row(
-                              crossAxisAlignment: CrossAxisAlignment.stretch,
-                              children: [
-                                Expanded(
-                                  child: Column(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.stretch,
-                                    children: [
-                                      Padding(
-                                        padding: const EdgeInsets.fromLTRB(
-                                          14,
-                                          10,
-                                          14,
-                                          6,
-                                        ),
-                                        child: Row(
-                                          children: [
-                                            _livePill(
-                                              timeFmt.format(DateTime.now()),
-                                            ),
-                                            const SizedBox(width: 10),
-                                            Expanded(
-                                              child: Text(
-                                                '${active.length} active · ${inZone.length} in zone · ${incidents.length} in feed',
-                                                style: const TextStyle(
-                                                  color: Colors.white54,
-                                                  fontSize: 12,
-                                                ),
-                                              ),
-                                            ),
-                                            OutlinedButton.icon(
-                                              onPressed: _aiLoading
-                                                  ? null
-                                                  : _runAutoSummary,
-                                              style: OutlinedButton.styleFrom(
-                                                foregroundColor:
-                                                    AppColors.accentBlue,
-                                              ),
-                                              icon: const Icon(
-                                                Icons.auto_awesome,
-                                                size: 18,
-                                              ),
-                                              label: const Text('AI summary'),
-                                            ),
-                                          ],
-                                        ),
-                                      ),
-                                      Expanded(
-                                        child: Padding(
-                                          padding: const EdgeInsets.fromLTRB(
-                                            14,
-                                            0,
-                                            14,
-                                            10,
-                                          ),
-                                          child: ClipRRect(
-                                            borderRadius: BorderRadius.circular(
-                                              16,
-                                            ),
-                                            child: EosHybridMap(
-                                              initialCameraPosition:
-                                                  CameraPosition(
-                                                    target: center,
-                                                    zoom: active.isEmpty
-                                                        ? zone.defaultZoom
-                                                        : 11,
-                                                  ),
-                                              onCameraMove: (c) {
-                                                final z = c.zoom;
-                                                if ((z - _analyticsMapZoom)
-                                                        .abs() >
-                                                    0.12) {
-                                                  _analyticsMapZoom = z;
-                                                  setState(() {});
-                                                }
-                                              },
-                                              cameraTargetBounds:
-                                                  CameraTargetBounds(
-                                                    zone.cameraBounds,
-                                                  ),
-                                              minMaxZoomPreference:
-                                                  const MinMaxZoomPreference(
-                                                    5.5,
-                                                    17,
-                                                  ),
-                                              mapType: MapType.normal,
-                                              mapId:
-                                                  AppConstants
-                                                      .googleMapsDarkMapId
-                                                      .isNotEmpty
-                                                  ? AppConstants
-                                                        .googleMapsDarkMapId
-                                                  : null,
-                                              markers: markers,
-                                              polylines:
-                                                  analyticsVolunteerPolylines,
-                                              polygons: hexPolygons,
-                                              zoomControlsEnabled: false,
-                                              myLocationButtonEnabled: false,
-                                              // AI panel is a [Row] sibling — no extra map inset (avoids right gap).
-                                              padding: EdgeInsets.zero,
-                                            ),
-                                          ),
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                                OpsCollapsibleDetailPanel(
-                                  expanded: _analyticsAiOpen,
-                                  onToggleExpanded: () => setState(
-                                    () => _analyticsAiOpen = !_analyticsAiOpen,
-                                  ),
-                                  accent: AppColors.accentBlue,
-                                  title: 'Analytics AI',
-                                  body: ColoredBox(
-                                    color: const Color(0xFF161B22),
-                                    child: _buildAiAssistantPanel(),
-                                  ),
-                                ),
-                              ],
-                            ),
-                    ),
-                  ],
+                  ),
                 );
               },
             ),

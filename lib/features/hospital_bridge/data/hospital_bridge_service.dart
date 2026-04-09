@@ -6,6 +6,7 @@ import 'package:flutter/foundation.dart';
 import 'package:livekit_client/livekit_client.dart';
 
 import '../../../core/utils/livekit_ui_sounds.dart';
+import '../../../core/utils/livekit_url.dart';
 import '../domain/bridge_voice_state.dart';
 
 class HospitalBridgeService extends ChangeNotifier {
@@ -46,7 +47,7 @@ class HospitalBridgeService extends ChangeNotifier {
 
     final data = (res.data as Map?) ?? const {};
     final token = (data['token'] ?? '').toString();
-    final url = (data['url'] ?? '').toString();
+    final url = LivekitUrl.normalizeForClient((data['url'] ?? '').toString());
     final roomName = (data['roomName'] ?? '').toString();
 
     if (token.isEmpty || url.isEmpty || roomName.isEmpty) {

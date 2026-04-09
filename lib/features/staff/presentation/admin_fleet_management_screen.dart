@@ -140,7 +140,7 @@ class _AdminFleetManagementScreenState extends State<AdminFleetManagementScreen>
                       Expanded(
                         child: Text(
                           '${visibleDocs.length} units (one card per call sign). '
-                          'Track opens the live map. Credentials reads or resets the operator password in ops_fleet_accounts.',
+                          'Track opens the live map. Show credentials opens the gate password; Get/Reset creates or rotates ops_fleet_accounts.',
                           style: const TextStyle(color: Colors.white70, fontSize: 13),
                         ),
                       ),
@@ -179,7 +179,7 @@ class _AdminFleetManagementScreenState extends State<AdminFleetManagementScreen>
     };
 
     return Container(
-      width: 340,
+      width: 380,
       decoration: BoxDecoration(
         color: AppColors.slate800,
         borderRadius: BorderRadius.circular(12),
@@ -261,7 +261,37 @@ class _AdminFleetManagementScreenState extends State<AdminFleetManagementScreen>
                     onTap: () => _showTrackSheet(context, data, docId),
                   ),
                 ),
-                const SizedBox(width: 8),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: OutlinedButton.icon(
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: Colors.white70,
+                      side: const BorderSide(color: Colors.white24),
+                      padding: const EdgeInsets.symmetric(vertical: 8),
+                    ),
+                    onPressed: () {
+                      showDialog<void>(
+                        context: context,
+                        builder: (ctx) => FleetCredentialsDialog(
+                          fleetCallSign: callSign,
+                          vehicleType: type,
+                        ),
+                      );
+                    },
+                    icon: Icon(Icons.visibility_outlined, color: _accent, size: 16),
+                    label: Text(
+                      'Show credentials',
+                      textAlign: TextAlign.center,
+                      maxLines: 2,
+                      style: TextStyle(
+                        color: _accent,
+                        fontSize: 9,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 6),
                 Expanded(
                   child: FutureBuilder<bool>(
                     key: ValueKey<String>('fleet-mgmt-gate-$callSign'),

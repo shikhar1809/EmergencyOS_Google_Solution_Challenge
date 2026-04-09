@@ -8,6 +8,7 @@ import 'package:flutter_riverpod/legacy.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../core/constants/copilot_prefs.dart';
+import '../core/utils/livekit_url.dart';
 
 /// EmergencyOS: CopilotAgentSosCallback in lib/services/copilot_livekit_service.dart.
 typedef CopilotAgentSosCallback = void Function(String reason, String nonce);
@@ -53,7 +54,7 @@ class CopilotLivekitController extends ChangeNotifier {
 
       final data = (res.data as Map?) ?? const {};
       final token = (data['token'] ?? '').toString();
-      final url = (data['url'] ?? '').toString();
+      final url = LivekitUrl.normalizeForClient((data['url'] ?? '').toString());
       if (token.isEmpty || url.isEmpty) {
         throw StateError('Copilot token response missing fields.');
       }
