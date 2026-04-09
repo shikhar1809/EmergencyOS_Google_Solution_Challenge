@@ -168,7 +168,7 @@ class _SosScreenState extends ConsumerState<SosScreen> {
             type: 'Rapid SOS',
             incidentId: createdId,
             victimCount: 1,
-            freeText: 'EmergencyOS in-app SOS',
+            freeText: 'emergencyOS in-app SOS',
           ),
         );
       } else {
@@ -179,7 +179,7 @@ class _SosScreenState extends ConsumerState<SosScreen> {
             type: 'Rapid SOS',
             incidentId: createdId,
             victimCount: 1,
-            freeText: 'EmergencyOS in-app SOS',
+            freeText: 'emergencyOS in-app SOS',
           ),
         );
       }

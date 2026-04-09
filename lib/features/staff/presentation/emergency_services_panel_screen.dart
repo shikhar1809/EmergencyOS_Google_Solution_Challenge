@@ -1668,11 +1668,19 @@ class _DriverDetailView extends StatelessWidget {
               style: const TextStyle(color: Colors.orangeAccent, fontSize: 12, height: 1.35),
             ),
           ),
-        if (incident.emergencyContactPhone != null && incident.emergencyContactPhone!.isNotEmpty)
-          Text(
-            'Emergency contact: ${incident.emergencyContactPhone} (${incident.useEmergencyContactForSms ? "SMS on" : "SMS off"})',
-            style: const TextStyle(color: Colors.cyanAccent, fontSize: 11),
-          ),
+        if ((incident.emergencyContactPhone ?? '').isNotEmpty ||
+            (incident.emergencyContactEmail ?? '').isNotEmpty) ...[
+          if ((incident.emergencyContactPhone ?? '').isNotEmpty)
+            Text(
+              'Emergency contact phone: ${incident.emergencyContactPhone} (${incident.useEmergencyContactForSms ? "SMS on" : "SMS off"})',
+              style: const TextStyle(color: Colors.cyanAccent, fontSize: 11),
+            ),
+          if ((incident.emergencyContactEmail ?? '').isNotEmpty)
+            Text(
+              'Emergency contact email: ${incident.emergencyContactEmail}',
+              style: const TextStyle(color: Colors.cyanAccent, fontSize: 11),
+            ),
+        ],
         if (incident.senderPhone != null && incident.senderPhone!.isNotEmpty)
           Text('Relay phone: ${incident.senderPhone}', style: const TextStyle(color: Colors.amberAccent, fontSize: 10)),
         const SizedBox(height: 8),

@@ -18,7 +18,6 @@ import '../../../../services/fleet_gate_credentials_service.dart';
 import '../../../../services/fleet_unit_service.dart';
 import '../../../../services/ops_hospital_service.dart';
 import '../../domain/admin_panel_access.dart';
-import '../admin_fleet_management_screen.dart';
 import '../admin_volunteers_screen.dart';
 import 'command_center_shared_widgets.dart';
 import 'fleet_credentials_dialog.dart';
@@ -1053,27 +1052,6 @@ class _MasterManagementMapWorkspaceState
                                     ],
                                   ),
                                 ),
-                              ),
-                            ),
-                          if (_category == _MgmtCategory.fleet)
-                            Positioned(
-                              left: 12,
-                              bottom: 12,
-                              child: FloatingActionButton.extended(
-                                heroTag: 'mgmt_new_fleet',
-                                backgroundColor: widget.accent,
-                                onPressed: () {
-                                  Navigator.of(context).push(
-                                    MaterialPageRoute<void>(
-                                      builder: (_) =>
-                                          AdminFleetManagementScreen(
-                                            access: widget.access,
-                                          ),
-                                    ),
-                                  );
-                                },
-                                icon: const Icon(Icons.add_rounded),
-                                label: const Text('New unit'),
                               ),
                             ),
                         ],

@@ -23,6 +23,7 @@ class _MedicalDetailsScreenState extends ConsumerState<MedicalDetailsScreen> {
   final _conditionsController = TextEditingController();
   final _contactNameController = TextEditingController();
   final _contactPhoneController = TextEditingController();
+  final _contactEmailController = TextEditingController();
   final _relationshipController = TextEditingController();
   final _medicationsController = TextEditingController();
   final _donorController = TextEditingController();
@@ -47,6 +48,7 @@ class _MedicalDetailsScreenState extends ConsumerState<MedicalDetailsScreen> {
       _conditionsController,
       _contactNameController,
       _contactPhoneController,
+      _contactEmailController,
       _relationshipController,
       _medicationsController,
       _donorController,
@@ -67,6 +69,7 @@ class _MedicalDetailsScreenState extends ConsumerState<MedicalDetailsScreen> {
       _conditionsController,
       _contactNameController,
       _contactPhoneController,
+      _contactEmailController,
       _relationshipController,
       _medicationsController,
       _donorController,
@@ -104,6 +107,7 @@ class _MedicalDetailsScreenState extends ConsumerState<MedicalDetailsScreen> {
         _conditionsController.text = data['conditions'] ?? '';
         _contactNameController.text = data['contactName'] ?? '';
         _contactPhoneController.text = data['contactPhone'] ?? '';
+        _contactEmailController.text = data['contactEmail'] ?? '';
         _relationshipController.text = data['relationship'] ?? '';
         _medicationsController.text = data['medications'] ?? '';
         _donorController.text = data['donorStatus'] ?? '';
@@ -141,6 +145,7 @@ class _MedicalDetailsScreenState extends ConsumerState<MedicalDetailsScreen> {
             'conditions': _conditionsController.text.trim(),
             'contactName': _contactNameController.text.trim(),
             'contactPhone': _contactPhoneController.text.trim(),
+            'contactEmail': _contactEmailController.text.trim(),
             'relationship': _relationshipController.text.trim(),
             'medications': _medicationsController.text.trim(),
             'donorStatus': _donorController.text.trim(),
@@ -307,6 +312,14 @@ class _MedicalDetailsScreenState extends ConsumerState<MedicalDetailsScreen> {
                         icon: Icons.phone,
                       ),
                       const Divider(height: 1, color: Colors.white10),
+                      _buildTextField(
+                        _contactEmailController,
+                        l.contactEmail,
+                        l.profileHintContactEmail,
+                        icon: Icons.email_outlined,
+                        keyboardType: TextInputType.emailAddress,
+                      ),
+                      const Divider(height: 1, color: Colors.white10),
                       SwitchListTile(
                         contentPadding: EdgeInsets.zero,
                         title: Text(
@@ -445,11 +458,13 @@ class _MedicalDetailsScreenState extends ConsumerState<MedicalDetailsScreen> {
     String label,
     String hint, {
     required IconData icon,
+    TextInputType? keyboardType,
   }) {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 8),
       child: TextField(
         controller: controller,
+        keyboardType: keyboardType,
         style: const TextStyle(color: Colors.white, fontSize: 14),
         decoration: InputDecoration(
           labelText: label,

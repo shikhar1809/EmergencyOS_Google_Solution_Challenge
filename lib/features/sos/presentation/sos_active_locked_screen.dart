@@ -32,7 +32,7 @@ import '../../../features/ptt/domain/ptt_models.dart';
 import '../../../core/utils/ptt_voice_playback.dart';
 import '../../../services/connectivity_service.dart';
 import '../../../services/livekit_emergency_bridge_service.dart';
-import '../../../services/voice_comms_service.dart' show VoiceCommsService, kSosActiveOpeningGuidance;
+import '../../../services/voice_comms_service.dart' show VoiceCommsService;
 import '../../../core/providers/drill_session_provider.dart'
     show clearDrillSessionDashboardDemoFromRoot, clearDrillVictimPracticeShellFromRoot;
 import '../../../services/incident_service.dart';
@@ -89,6 +89,7 @@ class _SosActiveLockedScreenState extends ConsumerState<SosActiveLockedScreen> {
   String? _incidentStatus;
   bool _useEmergencyContactForSms = false;
   String? _emergencyContactPhone;
+  String? _emergencyContactEmail;
   /// Incident-driven TTS (volunteer, ETAs, etc.) held until QA prompts are idle.
   final List<String> _deferredIncidentVoiceLines = [];
 
@@ -176,8 +177,10 @@ class _SosActiveLockedScreenState extends ConsumerState<SosActiveLockedScreen> {
   int _interviewStep = -1; // -1 = not started, 0+ = question index
   /// Captured when the interview starts so step indices stay stable.
   List<Map<String, String>>? _frozenInterviewFlow;
-  /// Chip-style interview options (context questions).
+  /// Chip-style interview options (context questions) — canonical English for Firestore / triage.
   List<String> _chipOptionsForInterview = [];
+  /// Parallel display labels (localized); same length as [_chipOptionsForInterview] when set.
+  List<String> _chipLabelsForInterview = [];
   String? _currentChipQuestionKey;
   String? _incidentTypeFirestore;
   StreamSubscription<List<PttMessage>>? _pttCommsAnnounceSub;
@@ -929,6 +932,7 @@ class _SosActiveLockedScreenState extends ConsumerState<SosActiveLockedScreen> {
         }
         _useEmergencyContactForSms = (data['useEmergencyContactForSms'] as bool?) ?? false;
         _emergencyContactPhone = (data['emergencyContactPhone'] as String?)?.trim();
+        _emergencyContactEmail = (data['emergencyContactEmail'] as String?)?.trim();
         if (lat != null && lng != null) _victimLatLng = LatLng(lat, lng);
         if (triage != null) {
           _triageCategory = (triage['category'] as String?) ?? _triageCategory;
@@ -1239,7 +1243,7 @@ class _SosActiveLockedScreenState extends ConsumerState<SosActiveLockedScreen> {
     await Future<void>.delayed(const Duration(milliseconds: 100));
     if (!context.mounted || _userStoppedAllQuestions) return;
     // Do not await opening TTS — a stalled Web Speech callback would block the whole questionnaire.
-    _speakGuidance(kSosActiveOpeningGuidance);
+    _speakGuidance(AppLocalizations.of(context).get('sos_tts_opening_guidance'));
     if (!context.mounted || _userStoppedAllQuestions) return;
     await Future.delayed(const Duration(milliseconds: 400));
     if (!context.mounted) return;
@@ -1372,6 +1376,7 @@ class _SosActiveLockedScreenState extends ConsumerState<SosActiveLockedScreen> {
     _interviewStep = -1;
     _interviewCompleted = true;
     _chipOptionsForInterview = [];
+    _chipLabelsForInterview = [];
     _currentChipQuestionKey = null;
 
     if (wasInterview && _interviewAnswers.isNotEmpty) {
@@ -1505,8 +1510,11 @@ class _SosActiveLockedScreenState extends ConsumerState<SosActiveLockedScreen> {
     if (markUnresponsive) {
       _scheduleFlushDeferredIncidentVoice();
     } else {
-      final msg =
-          'No answer. Consciousness check attempt $nextCount of $kConsciousVoiceMissesRequired. We will ask again in one minute.';
+      final l10n = AppLocalizations.of(context);
+      final msg = l10n
+          .get('sos_tts_conscious_no_answer_attempt')
+          .replaceAll('{n}', '$nextCount')
+          .replaceAll('{max}', '$kConsciousVoiceMissesRequired');
       unawaited(
         _announceAndWait(msg).then((_) {
           if (context.mounted) _flushDeferredIncidentVoiceIfQuiet();
@@ -1517,9 +1525,11 @@ class _SosActiveLockedScreenState extends ConsumerState<SosActiveLockedScreen> {
 
   void _startInterview() {
     if (_userStoppedAllQuestions) return;
-    _frozenInterviewFlow = EmergencyVoiceInterviewQuestions.fixedInterviewFlow();
+    _frozenInterviewFlow =
+        EmergencyVoiceInterviewQuestions.localizedFlow(AppLocalizations.of(context));
     _interviewStep = 0;
     _chipOptionsForInterview = [];
+    _chipLabelsForInterview = [];
     _currentChipQuestionKey = null;
     _askNextInterviewQuestion();
   }
@@ -1542,6 +1552,7 @@ class _SosActiveLockedScreenState extends ConsumerState<SosActiveLockedScreen> {
     }
     setState(() {
       _chipOptionsForInterview = [];
+      _chipLabelsForInterview = [];
       _currentChipQuestionKey = null;
     });
     unawaited(_askYesNo(prompt, questionKey: key));
@@ -1559,6 +1570,12 @@ class _SosActiveLockedScreenState extends ConsumerState<SosActiveLockedScreen> {
         .map((s) => s.trim())
         .where((s) => s.isNotEmpty)
         .toList();
+    final labelParts = (q['labels'] ?? '')
+        .split('|')
+        .map((s) => s.trim())
+        .where((s) => s.isNotEmpty)
+        .toList();
+    final labels = labelParts.length == opts.length ? labelParts : opts;
     final key = q['key']!;
     final prompt = q['prompt']!;
     setState(() {
@@ -1566,6 +1583,7 @@ class _SosActiveLockedScreenState extends ConsumerState<SosActiveLockedScreen> {
       _qaPrompt = prompt;
       _qaPromptHeard = true;
       _chipOptionsForInterview = opts;
+      _chipLabelsForInterview = labels;
       _currentChipQuestionKey = key;
       _responseCountdown = 120;
     });
@@ -1619,6 +1637,7 @@ class _SosActiveLockedScreenState extends ConsumerState<SosActiveLockedScreen> {
     setState(() {
       _isQaRunning = false;
       _chipOptionsForInterview = [];
+      _chipLabelsForInterview = [];
       _currentChipQuestionKey = null;
       _qaPrompt = 'Got it. ${_interviewStep < flowLen - 1 ? "Next question..." : "Thank you. All information sent to responders."}';
     });
@@ -1657,13 +1676,10 @@ class _SosActiveLockedScreenState extends ConsumerState<SosActiveLockedScreen> {
       _qaPrompt = 'All vital information collected. Responders have been updated. We will check your consciousness every 60 seconds.';
     });
     unawaited(() async {
-      await _speakGuidanceAndWait(
-        'All victim interview data has been saved. Responders now have detailed information. Consciousness checks will continue every 60 seconds.',
-      );
+      final l10n = AppLocalizations.of(context);
+      await _speakGuidanceAndWait(l10n.get('sos_tts_interview_saved'));
       if (!context.mounted) return;
-      await _speakGuidanceAndWait(
-        'Open the map tab for colored routes: red ambulance and green volunteer, with times when available. Stay on the emergency voice channel so responders can hear you.',
-      );
+      await _speakGuidanceAndWait(l10n.get('sos_tts_map_routes'));
       if (context.mounted) _scheduleFlushDeferredIncidentVoice();
     }());
   }
@@ -2355,6 +2371,38 @@ class _SosActiveLockedScreenState extends ConsumerState<SosActiveLockedScreen> {
     return '•••• ${p.substring(p.length - 4)}';
   }
 
+  String? _maskedEmergencyContactEmailDisplay() {
+    final e = _emergencyContactEmail;
+    if (e == null || e.isEmpty) return null;
+    final at = e.indexOf('@');
+    if (at <= 0 || at >= e.length - 1) return '••••';
+    final domain = e.substring(at + 1);
+    return '••••@$domain';
+  }
+
+  String? _emergencyContactNotifySubtitle() {
+    final phoneMask = _maskedEmergencyContactSuffix();
+    final emailMask = _maskedEmergencyContactEmailDisplay();
+    if (phoneMask == null && emailMask == null) return null;
+    final buf = StringBuffer();
+    if (phoneMask != null) {
+      buf.write(
+        _useEmergencyContactForSms
+            ? 'Profile number $phoneMask · SMS relay enabled for key updates.'
+            : 'Profile number $phoneMask on file for this SOS.',
+      );
+    }
+    if (emailMask != null) {
+      if (buf.isNotEmpty) buf.write(' ');
+      if (phoneMask == null) {
+        buf.write('Profile email $emailMask on file for this SOS.');
+      } else {
+        buf.write('Email $emailMask on file.');
+      }
+    }
+    return buf.toString();
+  }
+
   Widget _liveUpdateRow(IconData icon, Color color, String title, String? subtitle) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 6),
@@ -2510,15 +2558,13 @@ class _SosActiveLockedScreenState extends ConsumerState<SosActiveLockedScreen> {
         'Nearby volunteers receive this incident in real time.',
       ));
 
-      final masked = _maskedEmergencyContactSuffix();
-      if (masked != null) {
+      final contactSub = _emergencyContactNotifySubtitle();
+      if (contactSub != null) {
         rows.add(_liveUpdateRow(
           Icons.contact_phone_rounded,
           AppColors.primaryInfo,
           'Emergency contacts notified',
-          _useEmergencyContactForSms
-              ? 'Profile number $masked · SMS relay enabled for key updates.'
-              : 'Profile number $masked on file for this SOS.',
+          contactSub,
         ));
       }
     }
@@ -3439,10 +3485,14 @@ class _SosActiveLockedScreenState extends ConsumerState<SosActiveLockedScreen> {
                                       spacing: 8,
                                       runSpacing: 8,
                                       alignment: WrapAlignment.center,
-                                      children: _chipOptionsForInterview.map((o) {
+                                      children: List<Widget>.generate(_chipOptionsForInterview.length, (i) {
+                                        final canonical = _chipOptionsForInterview[i];
+                                        final display = i < _chipLabelsForInterview.length
+                                            ? _chipLabelsForInterview[i]
+                                            : canonical;
                                         return ActionChip(
                                           label: Text(
-                                            o,
+                                            display,
                                             style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13),
                                           ),
                                           onPressed: (_isQaRunning && _qaPromptHeard)
@@ -3455,15 +3505,17 @@ class _SosActiveLockedScreenState extends ConsumerState<SosActiveLockedScreen> {
                                                           : null);
                                                   if (k == null) return;
                                                   if (k == EmergencyVoiceInterviewQuestions.q1EmergencyTypeKey &&
-                                                      o == EmergencyVoiceInterviewQuestions.otherEmergencyTypeChipLabel) {
+                                                      canonical ==
+                                                          EmergencyVoiceInterviewQuestions
+                                                              .otherEmergencyTypeChipLabel) {
                                                     _showOtherEmergencyTypeDialog();
                                                     return;
                                                   }
-                                                  _handleInterviewAnswer(k, o);
+                                                  _handleInterviewAnswer(k, canonical);
                                                 }
                                               : null,
                                         );
-                                      }).toList(),
+                                      }),
                                     )
                                   else
                                     Row(

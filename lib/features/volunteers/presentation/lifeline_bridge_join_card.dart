@@ -267,6 +267,17 @@ class _LifelineBridgeJoinCardState extends ConsumerState<LifelineBridgeJoinCard>
               incPhone == userPhone) {
             return LiveKitBridgeRole.emergencyContact;
           }
+          final incEmail =
+              (inc['emergencyContactEmail'] as String?)?.trim().toLowerCase();
+          final authEmail =
+              FirebaseAuth.instance.currentUser?.email?.trim().toLowerCase();
+          if (incEmail != null &&
+              incEmail.isNotEmpty &&
+              authEmail != null &&
+              authEmail.isNotEmpty &&
+              incEmail == authEmail) {
+            return LiveKitBridgeRole.emergencyContact;
+          }
         }
       } catch (_) {}
     }

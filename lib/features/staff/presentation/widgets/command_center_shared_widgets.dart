@@ -165,6 +165,8 @@ class OpsCollapsibleDetailPanel extends StatelessWidget {
     required this.accent,
     required this.body,
     this.title = 'Details',
+    this.openWidth = widthOpen,
+    this.shutWidth = widthShut,
   });
 
   static const double widthOpen = 300;
@@ -175,10 +177,12 @@ class OpsCollapsibleDetailPanel extends StatelessWidget {
   final Color accent;
   final Widget body;
   final String title;
+  final double openWidth;
+  final double shutWidth;
 
   @override
   Widget build(BuildContext context) {
-    final w = expanded ? widthOpen : widthShut;
+    final w = expanded ? openWidth : shutWidth;
     return AnimatedContainer(
       duration: const Duration(milliseconds: 220),
       curve: Curves.easeOutCubic,

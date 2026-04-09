@@ -50,6 +50,7 @@ class AppLocalizations {
   String get medicalConditions => get('medical_conditions');
   String get contactName => get('contact_name');
   String get contactPhone => get('contact_phone');
+  String get contactEmail => get('contact_email');
   String get relationship => get('relationship');
   String get medications => get('medications');
   String get organDonor => get('organ_donor');
@@ -227,6 +228,7 @@ class AppLocalizations {
   String get profileHintContactName => get('profile_hint_contact_name');
   String get profileHintRelationship => get('profile_hint_relationship');
   String get profileHintPhone => get('profile_hint_phone');
+  String get profileHintContactEmail => get('profile_hint_contact_email');
   String get profileHintMedications => get('profile_hint_medications');
   String get profileHintDonor => get('profile_hint_donor');
 
@@ -333,6 +335,7 @@ class AppLocalizations {
       'medical_conditions': 'Medical Conditions',
       'contact_name': 'Primary Contact Name',
       'contact_phone': 'Primary Contact Phone',
+      'contact_email': 'Primary Contact Email',
       'relationship': 'Relationship',
       'medications': 'Current Medications',
       'organ_donor': 'Organ Donor Status',
@@ -436,6 +439,42 @@ class AppLocalizations {
       'sos_other_emergency_value_other': 'Other',
       'sos_other_emergency_value_other_with_detail': 'Other: {detail}',
       'sos_are_you_conscious': 'Are you conscious? Please answer yes or no.',
+      'sos_tts_opening_guidance':
+          'Your SOS is active. Help is on the way. Follow the spoken prompts and tap to answer.',
+      'sos_interview_q1_prompt': 'What is happening? (type of emergency)',
+      'sos_interview_q2_prompt': 'Are you safe? How serious is it?',
+      'sos_interview_q3_prompt': 'How many people are involved?',
+      'sos_chip_cat_accident': 'Accident',
+      'sos_chip_cat_medical': 'Medical',
+      'sos_chip_cat_hazard': 'Hazard (fire, drowning, etc.)',
+      'sos_chip_cat_assault': 'Assault',
+      'sos_chip_cat_other': 'Other',
+      'sos_chip_safe_critical': 'Critical (life-threatening)',
+      'sos_chip_safe_injured': 'Injured but stable',
+      'sos_chip_safe_danger': 'Not injured but in danger',
+      'sos_chip_safe_safe_now': 'Safe now',
+      'sos_chip_people_me': 'Only me',
+      'sos_chip_people_two': 'Two',
+      'sos_chip_people_many': 'More than two',
+      'sos_tts_interview_saved':
+          'All victim interview data has been saved. Responders now have detailed information. Consciousness checks will continue every 60 seconds.',
+      'sos_tts_map_routes':
+          'Open the map tab for colored routes: red ambulance and green volunteer, with times when available. Stay on the emergency voice channel so responders can hear you.',
+      'sos_tts_conscious_no_answer_attempt':
+          'No answer. Consciousness check attempt {n} of {max}. We will ask again in one minute.',
+      'volunteer_victim_medical_card': 'Victim medical card',
+      'volunteer_victim_medical_offline_hint':
+          'From SOS packet — available from device cache when offline.',
+      'volunteer_victim_consciousness_title': 'Consciousness',
+      'volunteer_victim_three_questions': 'Initial victim answers',
+      'volunteer_major_updates_log': 'Major updates only',
+      'volunteer_more_triage_details': 'More triage & vitals',
+      'volunteer_more_victim_details': 'More victim details',
+      'volunteer_sos_intake_title': 'SOS intake (victim app)',
+      'volunteer_show_full_qa': 'Show full Q&A',
+      'volunteer_full_qa_sheet_title': 'Victim safety Q&A (full)',
+      'volunteer_victim_label_conscious': 'Conscious',
+      'volunteer_victim_label_breathing': 'Breathing',
       'volunteer_dispatch_escalating_tier_trying_hospital':
           'Escalating to tier {tier}. Trying hospital {hospital}.',
       'volunteer_dispatch_trying_hospital': 'Trying hospital {hospital}.',
@@ -525,6 +564,7 @@ class AppLocalizations {
       'profile_hint_contact_name': 'John Doe',
       'profile_hint_relationship': 'e.g. Spouse, Parent',
       'profile_hint_phone': '+1 234 567 8900',
+      'profile_hint_contact_email': 'name@example.com',
       'profile_hint_medications': 'e.g. Insulin, Blood Thinners',
       'profile_hint_donor': 'Yes / No',
       'home_duty_heading': "Today's Duty",
@@ -731,6 +771,42 @@ class AppLocalizations {
       'sos_other_emergency_value_other': 'अन्य',
       'sos_other_emergency_value_other_with_detail': 'अन्य: {detail}',
       'sos_are_you_conscious': 'क्या आप होश में हैं? कृपया हाँ या ना में जवाब दें।',
+      'sos_tts_opening_guidance':
+          'आपका SOS सक्रिय है। मदद रास्ते में है। बोले गए संकेतों का पालन करें और जवाब देने के लिए टैप करें।',
+      'sos_interview_q1_prompt': 'क्या हो रहा है? (आपातकाल का प्रकार)',
+      'sos_interview_q2_prompt': 'क्या आप सुरक्षित हैं? यह कितना गंभीर है?',
+      'sos_interview_q3_prompt': 'कितने लोग शामिल हैं?',
+      'sos_chip_cat_accident': 'दुर्घटना',
+      'sos_chip_cat_medical': 'चिकित्सा',
+      'sos_chip_cat_hazard': 'खतरा (आग, डूबना, आदि)',
+      'sos_chip_cat_assault': 'हमला',
+      'sos_chip_cat_other': 'अन्य',
+      'sos_chip_safe_critical': 'गंभीर (जानलेवा)',
+      'sos_chip_safe_injured': 'घायल लेकिन स्थिर',
+      'sos_chip_safe_danger': 'घायल नहीं लेकिन खतरे में',
+      'sos_chip_safe_safe_now': 'अब सुरक्षित',
+      'sos_chip_people_me': 'केवल मैं',
+      'sos_chip_people_two': 'दो',
+      'sos_chip_people_many': 'दो से अधिक',
+      'sos_tts_interview_saved':
+          'सभी पीड़ित साक्षात्कार डेटा सहेज लिया गया। बचावकर्ताओं के पास विस्तृत जानकारी है। हर 60 सेकंड में चेतना जांच जारी रहेगी।',
+      'sos_tts_map_routes':
+          'रंगीन मार्गों के लिए मानचित्र टैब खोलें: लाल एम्बुलेंस और हरा स्वयंसेवक, जहाँ उपलब्ध हो समय के साथ। आपातकालीन आवाज़ चैनल पर बने रहें ताकि बचावकर्ता आपको सुन सकें।',
+      'sos_tts_conscious_no_answer_attempt':
+          'कोई जवाब नहीं। चेतना जांच प्रयास {n} में से {max}। हम एक मिनट में फिर पूछेंगे।',
+      'volunteer_victim_medical_card': 'पीड़ित चिकित्सा कार्ड',
+      'volunteer_victim_medical_offline_hint':
+          'SOS पैकेट से — ऑफ़लाइन होने पर डिवाइस कैश से उपलब्ध।',
+      'volunteer_victim_consciousness_title': 'चेतना',
+      'volunteer_victim_three_questions': 'प्रारंभिक पीड़ित उत्तर',
+      'volunteer_major_updates_log': 'केवल प्रमुख अपडेट',
+      'volunteer_more_triage_details': 'अधिक ट्रायेज और वाइटल्स',
+      'volunteer_more_victim_details': 'अधिक पीड़ित विवरण',
+      'volunteer_sos_intake_title': 'SOS इनटेक (पीड़ित ऐप)',
+      'volunteer_show_full_qa': 'पूर्ण Q&A देखें',
+      'volunteer_full_qa_sheet_title': 'पीड़ित सुरक्षा Q&A (पूर्ण)',
+      'volunteer_victim_label_conscious': 'चेतना',
+      'volunteer_victim_label_breathing': 'साँस',
       'volunteer_dispatch_escalating_tier_trying_hospital':
           'टियर {tier} तक बढ़ा रहे हैं। अस्पताल {hospital} आज़मा रहे हैं।',
       'volunteer_dispatch_trying_hospital': 'अस्पताल {hospital} आज़मा रहे हैं।',
@@ -944,6 +1020,37 @@ class AppLocalizations {
       'quick_sos_failed': 'SOS தோல்வி: {detail}',
       'quick_sos_could_not_start': 'SOS தொடங்க முடியவில்லை. மீண்டும் முயலவும்.',
       'quick_sos_victim_conscious_q': 'அந்த நபர் உணர்வுடன் உள்ளாரா?',
+      'sos_are_you_conscious':
+          'நீங்கள் உணர்வுடன் உள்ளீர்களா? தயவுசெய்து ஆம் அல்லது இல்லை என்று பதிலளிக்கவும்.',
+      'sos_tts_opening_guidance':
+          'உங்கள் SOS செயலில் உள்ளது. உதவி வருகிறது. பேசும் வழிமுறைகளைப் பின்பற்றி பதிலளிக்க தட்டவும்.',
+      'sos_interview_q1_prompt': 'என்ன நடக்கிறது? (அவசர வகை)',
+      'sos_interview_q2_prompt': 'நீங்கள் பாதுகாப்பாக உள்ளீர்களா? எவ்வளவு serious?',
+      'sos_interview_q3_prompt': 'எத்தனை பேர் ஈடுபட்டுள்ளனர்?',
+      'sos_chip_cat_accident': 'விபத்து',
+      'sos_chip_cat_medical': 'மருத்துவ',
+      'sos_chip_cat_hazard': 'அபாயம் (தீ, மூழ்குதல், முதலியன)',
+      'sos_chip_cat_assault': 'தாக்குதல்',
+      'sos_chip_cat_other': 'மற்றவை',
+      'sos_chip_safe_critical': 'மிக மோசமான (உயிருக்கு ஆபத்து)',
+      'sos_chip_safe_injured': 'காயம்; நிலையானது',
+      'sos_chip_safe_danger': 'காயமில்லை; ஆனால் ஆபத்தில்',
+      'sos_chip_safe_safe_now': 'இப்போது பாதுகாப்பு',
+      'sos_chip_people_me': 'நான் மட்டும்',
+      'sos_chip_people_two': 'இருவர்',
+      'sos_chip_people_many': 'இருவருக்கு மேல்',
+      'sos_tts_interview_saved':
+          'பாதிக்கப்பட்டவர் பேட்டி தரவு அனைத்தும் சேமிக்கப்பட்டது. மீட்பவர்களுக்கு விவரங்கள் உள்ளன. ஒவ்வொரு 60 வினாடியிலும் உணர்வு சோதனை தொடரும்.',
+      'sos_tts_map_routes':
+          'வண்ண வழிகளுக்கு வரைபடத் தாவலைத் திறக்கவும்: சிவப்பு ஆம்புலன்ஸ் மற்றும் பச்சை தன்னார்வலர். அவசர குரல் சேனலில் இருங்கள்.',
+      'sos_tts_conscious_no_answer_attempt':
+          'பதில் இல்லை. உணர்வு சோதனை {max} இல் {n}. ஒரு நிமிடத்தில் மீண்டும் கேட்கிறோம்.',
+      'volunteer_victim_medical_card': 'பாதிக்கப்பட்டவர் மருத்துவ அட்டை',
+      'volunteer_victim_medical_offline_hint':
+          'SOS பாக்கெட்டிலிருந்து — ஆஃப்லைனில் சாதன கேச் மூலம்.',
+      'volunteer_victim_consciousness_title': 'உணர்வு',
+      'volunteer_victim_three_questions': 'ஆரம்ப பாதிக்கப்பட்டவர் பதில்கள்',
+      'volunteer_major_updates_log': 'முக்கியமான புதுப்பிப்புகள் மட்டும்',
       'quick_sos_victim_breathing_q': 'அந்த நபர் சுவாசிக்கிறாரா?',
       'quick_sos_label_yes': 'ஆம்',
       'quick_sos_label_no': 'இல்லை',
@@ -1049,6 +1156,37 @@ class AppLocalizations {
       'set_pin_safety_msg': 'భద్రత కోసం, SOS సృష్టించే ముందు పిన్ సెట్ చేయాలి.',
       'set_pin_now': 'ఇప్పుడు పిన్ సెట్ చేయండి',
       'later': 'తర్వాత',
+      'sos_are_you_conscious':
+          'మీరు అవగాహనలో ఉన్నారా? దయచేసి అవును లేదా కాదు అని సమాధానం ఇవ్వండి.',
+      'sos_tts_opening_guidance':
+          'మీ SOS సక్రియంగా ఉంది. సహాయం మార్గంలో ఉంది. మాటల సూచనలను అనుసరించి స్పందించడానికి టాప్ చేయండి.',
+      'sos_interview_q1_prompt': 'ఏమి జరుగుతోంది? (అత్యవసర రకం)',
+      'sos_interview_q2_prompt': 'మీరు సురక్షితంగా ఉన్నారా? ఎంత తీవ్రం?',
+      'sos_interview_q3_prompt': 'ఎంత మంది పాల్గొన్నారు?',
+      'sos_chip_cat_accident': 'ప్రమాదం',
+      'sos_chip_cat_medical': 'వైద్యం',
+      'sos_chip_cat_hazard': 'అపాయం (నిప్పు, మునిగిపోవడం మొదలైనవి)',
+      'sos_chip_cat_assault': 'దాడి',
+      'sos_chip_cat_other': 'ఇతర',
+      'sos_chip_safe_critical': 'తీవ్ర (ప్రాణాంతకం)',
+      'sos_chip_safe_injured': 'గాయపడింది కానీ స్థిరం',
+      'sos_chip_safe_danger': 'గాయం లేదు కానీ ప్రమాదంలో',
+      'sos_chip_safe_safe_now': 'ఇప్పుడు సురక్షితం',
+      'sos_chip_people_me': 'నేను మాత్రమే',
+      'sos_chip_people_two': 'ఇద్దరు',
+      'sos_chip_people_many': 'ఇద్దరికంటే ఎక్కువ',
+      'sos_tts_interview_saved':
+          'బాధిత ఇంటర్వ్యూ డేటా అంతా సేవ్ చేయబడింది. రెస్పాండర్లకు వివరాలు ఉన్నాయి. ప్రతి 60 సెకన్లకు అవగాహన తనిఖీ కొనసాగుతుంది.',
+      'sos_tts_map_routes':
+          'రంగు మార్గాల కోసం మ్యాప్ ట్యాబ్ తెరవండి: ఎరుపు అంబులెన్స్ మరియు ఆకుపచ్చ వాలంటీర్. అత్యవసర వాయిస్ ఛానెల్‌లో ఉండండి.',
+      'sos_tts_conscious_no_answer_attempt':
+          'సమాధానం లేదు. అవగాహన తనిఖీ {max}లో {n}. ఒక నిమిషంలో మళ్లీ అడుగుతాము.',
+      'volunteer_victim_medical_card': 'బాధిత వైద్య కార్డ్',
+      'volunteer_victim_medical_offline_hint':
+          'SOS ప్యాకెట్ నుండి — ఆఫ్‌లైన్‌లో పరికర కాష్ నుండి అందుబాటులో.',
+      'volunteer_victim_consciousness_title': 'అవగాహన',
+      'volunteer_victim_three_questions': 'ప్రారంభ బాధిత సమాధానాలు',
+      'volunteer_major_updates_log': 'ప్రధాన అప్‌డేట్‌లు మాత్రమే',
     },
 
     // ── Kannada (ಕನ್ನಡ) ────────────────────────────────────────────────────
@@ -1117,6 +1255,36 @@ class AppLocalizations {
       'set_pin_safety_msg': 'ಸುರಕ್ಷತೆಗಾಗಿ, SOS ರಚಿಸುವ ಮೊದಲು ಪಿನ್ ಸೆಟ್ ಮಾಡಬೇಕು.',
       'set_pin_now': 'ಈಗ ಪಿನ್ ಸೆಟ್ ಮಾಡಿ',
       'later': 'ನಂತರ',
+      'sos_are_you_conscious':
+          'ನೀವು ಪ್ರಜ್ಞೆಯಲ್ಲಿದ್ದೀರಾ? ದಯವಿಟ್ಟು ಹೌದು ಅಥವಾ ಇಲ್ಲ ಎಂದು ಉತ್ತರಿಸಿ.',
+      'sos_tts_opening_guidance':
+          'ನಿಮ್ಮ SOS ಸಕ್ರಿಯವಾಗಿದೆ. ಸಹಾಯ ಬರುತ್ತಿದೆ. ಮಾತಿನ ಸೂಚನೆಗಳನ್ನು ಅನುಸರಿಸಿ ಮತ್ತು ಉತ್ತರಿಸಲು ಟ್ಯಾಪ್ ಮಾಡಿ.',
+      'sos_interview_q1_prompt': 'ಏನಾಗುತ್ತಿದೆ? (ತುರ್ತು ಪ್ರಕಾರ)',
+      'sos_interview_q2_prompt': 'ನೀವು ಸುರಕ್ಷಿತರೇ? ಎಷ್ಟು ಗಂಭೀರ?',
+      'sos_interview_q3_prompt': 'ಎಷ್ಟು ಜನರು ಒಳಗೊಂಡಿದ್ದಾರೆ?',
+      'sos_chip_cat_accident': 'ಅಪಘಾತ',
+      'sos_chip_cat_medical': 'ವೈದ್ಯಕೀಯ',
+      'sos_chip_cat_hazard': 'ಅಪಾಯ (ಬೆಂಕಿ, ಮುಳುಗುವಿಕೆ ಇತ್ಯಾದಿ)',
+      'sos_chip_cat_assault': 'ದಾಳಿ',
+      'sos_chip_cat_other': 'ಇತರ',
+      'sos_chip_safe_critical': 'ಗಂಭೀರ (ಜೀವಕ್ಕೆ ಅಪಾಯ)',
+      'sos_chip_safe_injured': 'ಗಾಯ, ಸ್ಥಿರ',
+      'sos_chip_safe_danger': 'ಗಾಯವಿಲ್ಲ; ಆದರೆ ಅಪಾಯದಲ್ಲಿ',
+      'sos_chip_safe_safe_now': 'ಈಗ ಸುರಕ್ಷಿತ',
+      'sos_chip_people_me': 'ನಾನು ಮಾತ್ರ',
+      'sos_chip_people_two': 'ಇಬ್ಬರು',
+      'sos_chip_people_many': 'ಇಬ್ಬರಿಗಿಂತ ಹೆಚ್ಚು',
+      'sos_tts_interview_saved':
+          'ಬಾಧಿತ ಸಂದರ್ಶನ ಡೇಟಾ ಉಳಿಸಲಾಗಿದೆ. ಪ್ರತಿಕ್ರಿಯಿಸುವವರಿಗೆ ವಿವರಗಳಿವೆ. ಪ್ರತಿ 60 ಸೆಕೆಂಡುಗಳಿಗೆ ಪ್ರಜ್ಞೆ ಪರಿಶೀಲನೆ ಮುಂದುವರಿಯುತ್ತದೆ.',
+      'sos_tts_map_routes':
+          'ಬಣ್ಣದ ಮಾರ್ಗಗಳಿಗೆ ನಕ್ಷೆ ಟ್ಯಾಬ್ ತೆರೆಯಿರಿ. ತುರ್ತು ಧ್ವನಿ ಚಾನೆಲ್‌ನಲ್ಲಿ ಇರಿ.',
+      'sos_tts_conscious_no_answer_attempt':
+          'ಉತ್ತರವಿಲ್ಲ. ಪ್ರಜ್ಞೆ ಪರಿಶೀಲನೆ {max}ರಲ್ಲಿ {n}. ಒಂದು ನಿಮಿಷದಲ್ಲಿ ಮತ್ತೆ ಕೇಳುತ್ತೇವೆ.',
+      'volunteer_victim_medical_card': 'ಬಾಧಿತ ವೈದ್ಯಕೀಯ ಕಾರ್ಡ್',
+      'volunteer_victim_medical_offline_hint': 'SOS ಪ್ಯಾಕೆಟ್‌ನಿಂದ — ಆಫ್‌ಲೈನ್‌ನಲ್ಲಿ ಕ್ಯಾಶ್‌ನಿಂದ.',
+      'volunteer_victim_consciousness_title': 'ಪ್ರಜ್ಞೆ',
+      'volunteer_victim_three_questions': 'ಆರಂಭಿಕ ಉತ್ತರಗಳು',
+      'volunteer_major_updates_log': 'ಪ್ರಮುಖ ನವೀಕರಣಗಳು ಮಾತ್ರ',
     },
 
     // ── Malayalam (മലയാളം) ─────────────────────────────────────────────────
@@ -1185,6 +1353,36 @@ class AppLocalizations {
       'set_pin_safety_msg': 'സുരക്ഷയ്ക്കായി, SOS സൃഷ്ടിക്കുന്നതിന് മുമ്പ് പിൻ സെറ്റ് ചെയ്യണം.',
       'set_pin_now': 'ഇപ്പോൾ പിൻ സെറ്റ് ചെയ്യുക',
       'later': 'പിന്നീട്',
+      'sos_are_you_conscious':
+          'നിങ്ങൾ ബോധമുണ്ടോ? ദയവായി അതെ അല്ലെങ്കിൽ ഇല്ല എന്ന് മറുപടി പറയുക.',
+      'sos_tts_opening_guidance':
+          'നിങ്ങളുടെ SOS സജീവമാണ്. സഹായം വരുന്നു. സംസാര നിർദ്ദേശങ്ങൾ പാലിച്ച് മറുപടി നൽകാൻ ടാപ്പ് ചെയ്യുക.',
+      'sos_interview_q1_prompt': 'എന്താണ് സംഭവിക്കുന്നത്? (അടിയന്തര തരം)',
+      'sos_interview_q2_prompt': 'നിങ്ങൾ സുരക്ഷിതരാണോ? എത്ര ഗുരുതരം?',
+      'sos_interview_q3_prompt': 'എത്ര പേർ ഉൾപ്പെട്ടിരിക്കുന്നു?',
+      'sos_chip_cat_accident': 'അപകടം',
+      'sos_chip_cat_medical': 'വൈദ്യം',
+      'sos_chip_cat_hazard': 'അപായം (തീ, മുങ്ങൽ മുതലായവ)',
+      'sos_chip_cat_assault': 'ആക്രമണം',
+      'sos_chip_cat_other': 'മറ്റുള്ളവ',
+      'sos_chip_safe_critical': 'ഗുരുതരം (ജീവന് ഭീഷണി)',
+      'sos_chip_safe_injured': 'പരിക്ക്; സ്ഥിരം',
+      'sos_chip_safe_danger': 'പരിക്കില്ല; അപായത്തിൽ',
+      'sos_chip_safe_safe_now': 'ഇപ്പോൾ സുരക്ഷിതം',
+      'sos_chip_people_me': 'ഞാൻ മാത്രം',
+      'sos_chip_people_two': 'ഇരുവർ',
+      'sos_chip_people_many': 'ഇരുവരിൽ കൂടുതൽ',
+      'sos_tts_interview_saved':
+          'ബാധിത ഇന്റർവ്യൂ ഡാറ്റ സേവ് ചെയ്തു. പ്രതികരിക്കുന്നവർക്ക് വിശദാംശങ്ങൾ ഉണ്ട്.',
+      'sos_tts_map_routes':
+          'നിറമാർഗ്ഗങ്ങൾക്ക് മാപ്പ് ടാബ് തുറക്കുക. അടിയന്തര വോയ്സ് ചാനലിൽ തുടരുക.',
+      'sos_tts_conscious_no_answer_attempt':
+          'മറുപടിയില്ല. ബോധ പരിശോധന {max}ൽ {n}. ഒരു മിനിറ്റിന് ശേഷം വീണ്ടും ചോദിക്കും.',
+      'volunteer_victim_medical_card': 'ബാധിത മെഡിക്കൽ കാർഡ്',
+      'volunteer_victim_medical_offline_hint': 'SOS പാക്കറ്റിൽ നിന്ന് — ഓഫ്‌ലൈനിൽ കാഷിൽ.',
+      'volunteer_victim_consciousness_title': 'ബോധം',
+      'volunteer_victim_three_questions': 'ആദ്യ മറുപടികൾ',
+      'volunteer_major_updates_log': 'പ്രധാന അപ്‌ഡേറ്റുകൾ മാത്രം',
     },
 
     // ── Bengali (বাংলা) ────────────────────────────────────────────────────
@@ -1284,6 +1482,36 @@ class AppLocalizations {
       'quick_sos_failed': 'SOS ব্যর্থ: {detail}',
       'quick_sos_could_not_start': 'SOS শুরু করা যায়নি। আবার চেষ্টা করুন।',
       'quick_sos_victim_conscious_q': 'ব্যক্তি সচেতন?',
+      'sos_are_you_conscious':
+          'আপনি সচেতন? দয়া করে হ্যাঁ বা না উত্তর দিন।',
+      'sos_tts_opening_guidance':
+          'আপনার SOS সক্রিয়। সাহায্য আসছে। বলা নির্দেশাবলী অনুসরণ করুন এবং উত্তর দিতে ট্যাপ করুন।',
+      'sos_interview_q1_prompt': 'কী হচ্ছে? (জরুরি ধরন)',
+      'sos_interview_q2_prompt': 'আপনি কি নিরাপদ? কতটা গুরুতর?',
+      'sos_interview_q3_prompt': 'কতজন জড়িত?',
+      'sos_chip_cat_accident': 'দুর্ঘটনা',
+      'sos_chip_cat_medical': 'চিকিৎসা',
+      'sos_chip_cat_hazard': 'বিপদ (আগুন, ডুবি ইত্যাদি)',
+      'sos_chip_cat_assault': 'আক্রমণ',
+      'sos_chip_cat_other': 'অন্যান্য',
+      'sos_chip_safe_critical': 'গুরুতর (জীবনঘাতী)',
+      'sos_chip_safe_injured': 'আহত কিন্তু স্থিতিশীল',
+      'sos_chip_safe_danger': 'আহত নয় কিন্তু বিপদে',
+      'sos_chip_safe_safe_now': 'এখন নিরাপদ',
+      'sos_chip_people_me': 'শুধু আমি',
+      'sos_chip_people_two': 'দুজন',
+      'sos_chip_people_many': 'দুজনের বেশি',
+      'sos_tts_interview_saved':
+          'সব ভুক্তভোগী সাক্ষাৎকার ডেটা সংরক্ষিত। উদ্ধারকারীদের বিস্তারিত আছে।',
+      'sos_tts_map_routes':
+          'রঙিন রুটের জন্য মানচিত্র ট্যাব খুলুন। জরুরি ভয়েস চ্যানেলে থাকুন।',
+      'sos_tts_conscious_no_answer_attempt':
+          'উত্তর নেই। সচেতনতা পরীক্ষা {max} এর {n}। এক মিনিট পর আবার জিজ্ঞাসা করব।',
+      'volunteer_victim_medical_card': 'ভুক্তভোগী মেডিকেল কার্ড',
+      'volunteer_victim_medical_offline_hint': 'SOS প্যাকেট থেকে — অফলাইনে ক্যাশে।',
+      'volunteer_victim_consciousness_title': 'সচেতনতা',
+      'volunteer_victim_three_questions': 'প্রাথমিক উত্তর',
+      'volunteer_major_updates_log': 'শুধু গুরুত্বপূর্ণ আপডেট',
       'quick_sos_victim_breathing_q': 'ব্যক্তি শ্বাস নিচ্ছে?',
       'quick_sos_label_yes': 'হ্যাঁ',
       'quick_sos_label_no': 'না',
@@ -1390,6 +1618,36 @@ class AppLocalizations {
       'set_pin_safety_msg': 'सुरक्षिततेसाठी, SOS तयार करण्यापूर्वी पिन सेट करणे आवश्यक आहे.',
       'set_pin_now': 'आत्ता पिन सेट करा',
       'later': 'नंतर',
+      'sos_are_you_conscious':
+          'तुम्ही होशीत आहात? कृपया होय किंवा नाही उत्तर द्या.',
+      'sos_tts_opening_guidance':
+          'तुमचे SOS सक्रिय आहे. मदत येत आहे. बोललेले सूचना पाळा आणि उत्तर देण्यास टॅप करा.',
+      'sos_interview_q1_prompt': 'काय घडत आहे? (आपत्कालीन प्रकार)',
+      'sos_interview_q2_prompt': 'तुम्ही सुरक्षित आहात? किती गंभीर?',
+      'sos_interview_q3_prompt': 'किती लोक सामील आहेत?',
+      'sos_chip_cat_accident': 'अपघात',
+      'sos_chip_cat_medical': 'वैद्यकीय',
+      'sos_chip_cat_hazard': 'धोका (आग, बुडणे इ.)',
+      'sos_chip_cat_assault': 'हल्ला',
+      'sos_chip_cat_other': 'इतर',
+      'sos_chip_safe_critical': 'गंभीर (जीवाला धोका)',
+      'sos_chip_safe_injured': 'जखमी पण स्थिर',
+      'sos_chip_safe_danger': 'जखमी नाही पण धोक्यात',
+      'sos_chip_safe_safe_now': 'आता सुरक्षित',
+      'sos_chip_people_me': 'फक्त मी',
+      'sos_chip_people_two': 'दोघे',
+      'sos_chip_people_many': 'दोघांपेक्षा जास्त',
+      'sos_tts_interview_saved':
+          'सर्व मुलाखत डेटा जतन केला. प्रतिसादकर्त्यांना तपशील आहेत.',
+      'sos_tts_map_routes':
+          'रंगीत मार्गांसाठी नकाशा टॅब उघडा. आपत्कालीन आवाज चॅनेलवर रहा.',
+      'sos_tts_conscious_no_answer_attempt':
+          'उत्तर नाही. होश तपासणी {max} पैकी {n}. एका मिनिटात पुन्हा विचारू.',
+      'volunteer_victim_medical_card': 'बाधित वैद्यकीय कार्ड',
+      'volunteer_victim_medical_offline_hint': 'SOS पॅकेटमधून — ऑफलाइन कॅशमधून.',
+      'volunteer_victim_consciousness_title': 'होश',
+      'volunteer_victim_three_questions': 'सुरुवातीची उत्तरे',
+      'volunteer_major_updates_log': 'फक्त मुख्य अपडेट',
     },
 
     // ── Gujarati (ગુજરાતી) ─────────────────────────────────────────────────
@@ -1458,6 +1716,36 @@ class AppLocalizations {
       'set_pin_safety_msg': 'સુરક્ષા માટે, SOS બનાવતા પહેલા પિન સેટ કરવો જરૂરી છે.',
       'set_pin_now': 'હમણાં પિન સેટ કરો',
       'later': 'પછી',
+      'sos_are_you_conscious':
+          'તમે સચેત છો? કૃપા કરીને હા અથવા ના જવાબ આપો.',
+      'sos_tts_opening_guidance':
+          'તમારું SOS સક્રિય છે. મદદ આવી રહી છે. બોલાતા સૂચનો અનુસરો અને જવાબ આપવા ટૅપ કરો.',
+      'sos_interview_q1_prompt': 'શું થઈ રહ્યું છે? (કટોકટી પ્રકાર)',
+      'sos_interview_q2_prompt': 'તમે સુરક્ષિત છો? કેટલું ગંભીર?',
+      'sos_interview_q3_prompt': 'કેટલા લોકો સામેલ છે?',
+      'sos_chip_cat_accident': 'અકસ્માત',
+      'sos_chip_cat_medical': 'તબીબી',
+      'sos_chip_cat_hazard': 'જોખમ (આગ, ડૂબવું વગેરે)',
+      'sos_chip_cat_assault': 'હુમલો',
+      'sos_chip_cat_other': 'અન્ય',
+      'sos_chip_safe_critical': 'ગંભીર (જીવલેણ)',
+      'sos_chip_safe_injured': 'ઇજા પણ સ્થિર',
+      'sos_chip_safe_danger': 'ઇજા નહીં પણ જોખમમાં',
+      'sos_chip_safe_safe_now': 'હવે સુરક્ષિત',
+      'sos_chip_people_me': 'ફક્ત હું',
+      'sos_chip_people_two': 'બે',
+      'sos_chip_people_many': 'બે કરતાં વધુ',
+      'sos_tts_interview_saved':
+          'બધો ઇન્ટરવ્યૂ ડેટા સાચવ્યો. પ્રતિસાદકર્તાઓ પાસે વિગતો છે.',
+      'sos_tts_map_routes':
+          'રંગીન માર્ગો માટે નકશો ટૅબ ખોલો. કટોકટી અવાજ ચેનલ પર રહો.',
+      'sos_tts_conscious_no_answer_attempt':
+          'જવાબ નહીં. સચેત તપાસ {max} માંથી {n}. એક મિનિટ પછી ફરી પૂછીશું.',
+      'volunteer_victim_medical_card': 'પીડિત તબીબી કાર્ડ',
+      'volunteer_victim_medical_offline_hint': 'SOS પેકેટમાંથી — ઑફલાઇન કેશમાંથી.',
+      'volunteer_victim_consciousness_title': 'સચેતતા',
+      'volunteer_victim_three_questions': 'પ્રારંભિક જવાબો',
+      'volunteer_major_updates_log': 'ફક્ત મુખ્ય અપડેટ',
     },
 
     // ── Punjabi (ਪੰਜਾਬੀ) ──────────────────────────────────────────────────
@@ -1526,6 +1814,36 @@ class AppLocalizations {
       'set_pin_safety_msg': 'ਸੁਰੱਖਿਆ ਲਈ, SOS ਬਣਾਉਣ ਤੋਂ ਪਹਿਲਾਂ ਪਿੰਨ ਸੈੱਟ ਕਰਨਾ ਜ਼ਰੂਰੀ ਹੈ।',
       'set_pin_now': 'ਹੁਣੇ ਪਿੰਨ ਸੈੱਟ ਕਰੋ',
       'later': 'ਬਾਅਦ ਵਿੱਚ',
+      'sos_are_you_conscious':
+          'ਕੀ ਤੁਸੀਂ ਹੋਸ਼ ਵਿੱਚ ਹੋ? ਕਿਰਪਾ ਕਰਕੇ ਹਾਂ ਜਾਂ ਨਾਂ ਜਵਾਬ ਦਿਓ।',
+      'sos_tts_opening_guidance':
+          'ਤੁਹਾਡਾ SOS ਸਰਗਰਮ ਹੈ। ਮਦਦ ਆ ਰਹੀ ਹੈ। ਬੋਲੇ ਗਏ ਨਿਰਦੇਸ਼ਾਂ ਦੀ ਪਾਲਣਾ ਕਰੋ ਅਤੇ ਜਵਾਬ ਦੇਣ ਲਈ ਟੈਪ ਕਰੋ।',
+      'sos_interview_q1_prompt': 'ਕੀ ਹੋ ਰਿਹਾ ਹੈ? (ਐਮਰਜੈਂਸੀ ਕਿਸਮ)',
+      'sos_interview_q2_prompt': 'ਕੀ ਤੁਸੀਂ ਸੁਰੱਖਿਤ ਹੋ? ਕਿੰਨਾ ਗੰਭੀਰ?',
+      'sos_interview_q3_prompt': 'ਕਿੰਨੇ ਲੋਕ ਸ਼ਾਮਲ ਹਨ?',
+      'sos_chip_cat_accident': 'ਦੁਰਘਟਨਾ',
+      'sos_chip_cat_medical': 'ਤਬੀਬੀ',
+      'sos_chip_cat_hazard': 'ਖਤਰਾ (ਅੱਗ, ਡੁੱਬਣਾ ਆਦਿ)',
+      'sos_chip_cat_assault': 'ਹਮਲਾ',
+      'sos_chip_cat_other': 'ਹੋਰ',
+      'sos_chip_safe_critical': 'ਗੰਭੀਰ (ਜਾਨਲੇਵਾ)',
+      'sos_chip_safe_injured': 'ਜ਼ਖਮੀ ਪਰ ਸਥਿਰ',
+      'sos_chip_safe_danger': 'ਜ਼ਖਮੀ ਨਹੀਂ ਪਰ ਖਤਰੇ ਵਿੱਚ',
+      'sos_chip_safe_safe_now': 'ਹੁਣ ਸੁਰੱਖਿਤ',
+      'sos_chip_people_me': 'ਸਿਰਫ ਮੈਂ',
+      'sos_chip_people_two': 'ਦੋ',
+      'sos_chip_people_many': 'ਦੋ ਤੋਂ ਵੱਧ',
+      'sos_tts_interview_saved':
+          'ਸਾਰਾ ਇੰਟਰਵਿਊ ਡੇਟਾ ਸੁਰੱਖਿਤ। ਜਵਾਬਦੇਹਾਂ ਕੋਲ ਵਿਸਤਾਰ ਹੈ।',
+      'sos_tts_map_routes':
+          'ਰੰਗੀਨ ਰਸਤਿਆਂ ਲਈ ਨਕਸ਼ਾ ਟੈਬ ਖੋਲ੍ਹੋ। ਐਮਰਜੈਂਸੀ ਵੌਇਸ ਚੈਨਲ ਤੇ ਰਹੋ।',
+      'sos_tts_conscious_no_answer_attempt':
+          'ਕੋਈ ਜਵਾਬ ਨਹੀਂ। ਹੋਸ਼ ਜਾਂਚ {max} ਵਿੱਚੋਂ {n}। ਇੱਕ ਮਿੰਟ ਬਾਅਦ ਫਿਰ ਪੁੱਛਾਂਗੇ।',
+      'volunteer_victim_medical_card': 'ਪੀੜਤ ਮੈਡੀਕਲ ਕਾਰਡ',
+      'volunteer_victim_medical_offline_hint': 'SOS ਪੈਕੇਟ ਤੋਂ — ਔਫਲਾਈਨ ਕੈਸ਼ ਤੋਂ।',
+      'volunteer_victim_consciousness_title': 'ਹੋਸ਼',
+      'volunteer_victim_three_questions': 'ਸ਼ੁਰੂਆਤੀ ਜਵਾਬ',
+      'volunteer_major_updates_log': 'ਸਿਰਫ਼ ਮੁੱਖ ਅੱਪਡੇਟ',
     },
 
     // ── Odia (ଓଡ଼ିଆ) ──────────────────────────────────────────────────────
@@ -1594,6 +1912,36 @@ class AppLocalizations {
       'set_pin_safety_msg': 'ସୁରକ୍ଷା ପାଇଁ, SOS ସୃଷ୍ଟି କରିବା ପୂର୍ବରୁ ପିନ ସେଟ କରିବା ଆବଶ୍ୟକ।',
       'set_pin_now': 'ଏବେ ପିନ ସେଟ କରନ୍ତୁ',
       'later': 'ପରେ',
+      'sos_are_you_conscious':
+          'ଆପଣ ସଚେତ ଅଛନ୍ତି କି? ଦୟାକରି ହଁ କିମ୍ବା ନା ଉତ୍ତର ଦିଅନ୍ତୁ।',
+      'sos_tts_opening_guidance':
+          'ଆପଣଙ୍କ SOS ସକ୍ରିୟ। ସାହାଯ୍ୟ ଆସୁଛି। କୁହାଯାଇଥିବା ନିର୍ଦ୍ଦେଶ ଅନୁସରଣ କରନ୍ତୁ ଏବଂ ଉତ୍ତର ଦେବାକୁ ଟ୍ୟାପ୍ କରନ୍ତୁ।',
+      'sos_interview_q1_prompt': 'କଣ ହେଉଛି? (ଜରୁରୀ ପ୍ରକାର)',
+      'sos_interview_q2_prompt': 'ଆପଣ ସୁରକ୍ଷିତ କି? କେତେ ଗୁରୁତର?',
+      'sos_interview_q3_prompt': 'କେତେ ଜଣ ଜଡିତ?',
+      'sos_chip_cat_accident': 'ଦୁର୍ଘଟଣା',
+      'sos_chip_cat_medical': 'ଚିକିତ୍ସା',
+      'sos_chip_cat_hazard': 'ବିପଦ (ଅଗ୍ନି, ବୁଡିବା ଇତ୍ୟାଦି)',
+      'sos_chip_cat_assault': 'ଆକ୍ରମଣ',
+      'sos_chip_cat_other': 'ଅନ୍ୟ',
+      'sos_chip_safe_critical': 'ଗୁରୁତର (ଜୀବନ ବିପଦ)',
+      'sos_chip_safe_injured': 'ଆଘାତ କିନ୍ତୁ ସ୍ଥିର',
+      'sos_chip_safe_danger': 'ଆଘାତ ନାହିଁ କିନ୍ତୁ ବିପଦରେ',
+      'sos_chip_safe_safe_now': 'ଏବେ ସୁରକ୍ଷିତ',
+      'sos_chip_people_me': 'କେବଳ ମୁଁ',
+      'sos_chip_people_two': 'ଦୁଇଜଣ',
+      'sos_chip_people_many': 'ଦୁଇଠାରୁ ଅଧିକ',
+      'sos_tts_interview_saved':
+          'ସମସ୍ତ ସାକ୍ଷାତକାର ଡାଟା ସେଭ୍ ହେଲା। ପ୍ରତିକ୍ରିୟାକାରୀଙ୍କ ପାଖରେ ବିବରଣୀ ଅଛି।',
+      'sos_tts_map_routes':
+          'ରଙ୍ଗୀନ ରାସ୍ତା ପାଇଁ ମ୍ୟାପ୍ ଟ୍ୟାବ୍ ଖୋଲନ୍ତୁ। ଜରୁରୀ ଭଏସ୍ ଚ୍ୟାନେଲରେ ରୁହନ୍ତୁ।',
+      'sos_tts_conscious_no_answer_attempt':
+          'ଉତ୍ତର ନାହିଁ। ସଚେତନତା ଯାଞ୍ଚ {max} ରେ {n}। ଏକ ମିନିଟ୍ ପରେ ପୁନଃ ପଚାରିବୁ।',
+      'volunteer_victim_medical_card': 'ପୀଡିତ ମେଡିକାଲ୍ କାର୍ଡ',
+      'volunteer_victim_medical_offline_hint': 'SOS ପ୍ୟାକେଟ୍ ଠାରୁ — ଅଫଲାଇନ୍ କ୍ୟାଶରୁ।',
+      'volunteer_victim_consciousness_title': 'ସଚେତନତା',
+      'volunteer_victim_three_questions': 'ଆରମ୍ଭିକ ଉତ୍ତର',
+      'volunteer_major_updates_log': 'କେବଳ ମୁଖ୍ୟ ଅପଡେଟ୍',
     },
 
     // ── Urdu (اردو) ────────────────────────────────────────────────────────
@@ -1693,6 +2041,36 @@ class AppLocalizations {
       'quick_sos_failed': 'SOS ناکام: {detail}',
       'quick_sos_could_not_start': 'SOS شروع نہیں ہو سکا۔ دوبارہ کوشش کریں۔',
       'quick_sos_victim_conscious_q': 'کیا شخص ہوش میں ہے؟',
+      'sos_are_you_conscious':
+          'کیا آپ ہوش میں ہیں؟ براہ کرم ہاں یا نہیں جواب دیں۔',
+      'sos_tts_opening_guidance':
+          'آپ کا SOS فعال ہے۔ مدد آ رہی ہے۔ بولے گئے اشاروں کی پیروی کریں اور جواب دینے کے لیے ٹیپ کریں۔',
+      'sos_interview_q1_prompt': 'کیا ہو رہا ہے؟ (ایمرجنسی کی قسم)',
+      'sos_interview_q2_prompt': 'کیا آپ محفوظ ہیں؟ کتنا سنگین؟',
+      'sos_interview_q3_prompt': 'کتنے لوگ شامل ہیں؟',
+      'sos_chip_cat_accident': 'حادثہ',
+      'sos_chip_cat_medical': 'طبی',
+      'sos_chip_cat_hazard': 'خطرہ (آگ، ڈوبنا وغیرہ)',
+      'sos_chip_cat_assault': 'حملہ',
+      'sos_chip_cat_other': 'دیگر',
+      'sos_chip_safe_critical': 'سنگین (جان لیوا)',
+      'sos_chip_safe_injured': 'زخمی مگر مستحکم',
+      'sos_chip_safe_danger': 'زخمی نہیں مگر خطرے میں',
+      'sos_chip_safe_safe_now': 'اب محفوظ',
+      'sos_chip_people_me': 'صرف میں',
+      'sos_chip_people_two': 'دو',
+      'sos_chip_people_many': 'دو سے زیادہ',
+      'sos_tts_interview_saved':
+          'متاثرہ انٹرویو ڈیٹا محفوظ۔ جواب دہندگان کے پاس تفصیل ہے۔',
+      'sos_tts_map_routes':
+          'رنگین راستوں کے لیے نقشہ ٹیب کھولیں۔ ایمرجنسی وائس چینل پر رہیں۔',
+      'sos_tts_conscious_no_answer_attempt':
+          'کوئی جواب نہیں۔ ہوش کی جانچ {max} میں سے {n}۔ ایک منٹ بعد پھر پوچھیں گے۔',
+      'volunteer_victim_medical_card': 'متاثرہ میڈیکل کارڈ',
+      'volunteer_victim_medical_offline_hint': 'SOS پیکٹ سے — آف لائن کیش سے۔',
+      'volunteer_victim_consciousness_title': 'ہوش',
+      'volunteer_victim_three_questions': 'ابتدائی جوابات',
+      'volunteer_major_updates_log': 'صرف اہم اپ ڈیٹس',
       'quick_sos_victim_breathing_q': 'کیا شخص سانس لے رہا ہے؟',
       'quick_sos_label_yes': 'ہاں',
       'quick_sos_label_no': 'نہیں',

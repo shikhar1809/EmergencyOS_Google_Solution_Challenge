@@ -218,7 +218,7 @@ class AreaInfoPage extends StatelessWidget {
       'icon': Icons.battery_alert_rounded,
       'color': Colors.green,
       'text':
-          'Keep your phone charged. EmergencyOS works offline for critical features.',
+          'Keep your phone charged. emergencyOS works offline for critical features.',
     });
 
     return Container(

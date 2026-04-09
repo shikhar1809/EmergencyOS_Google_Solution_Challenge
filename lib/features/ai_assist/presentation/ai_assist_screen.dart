@@ -17,6 +17,7 @@ import '../../../core/theme/app_colors.dart';
 import '../../../services/voice_comms_service.dart';
 import '../domain/lifeline_training_levels.dart';
 import 'widgets/guide_detail_page.dart';
+import 'widgets/lifeline_agent_heartbeat.dart';
 
 class AIAssistScreen extends StatefulWidget {
   final String? openAid;
@@ -179,6 +180,11 @@ class _AIAssistScreenState extends State<AIAssistScreen> {
                 ),
               ),
             ],
+          ),
+          LifelineAgentHeartbeatOverlay(
+            activeLevelIndex: _activePage,
+            activeLevelTitle: _levels[_activePage].title,
+            safePadding: safePad,
           ),
         ],
       ),

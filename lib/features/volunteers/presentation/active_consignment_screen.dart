@@ -2150,9 +2150,9 @@ class _ActiveConsignmentScreenState extends ConsumerState<ActiveConsignmentScree
                               drillVoiceQa: widget.isDrillMode ? Map<String, String>.from(_drillVoiceQa) : const {},
                             ),
                             const SizedBox(height: 8),
-                            const Text(
-                              'Live triage log',
-                              style: TextStyle(color: Colors.white, fontWeight: FontWeight.w900, fontSize: 14),
+                            Text(
+                              AppLocalizations.of(context).get('volunteer_major_updates_log'),
+                              style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w900, fontSize: 14),
                             ),
                             const SizedBox(height: 6),
                             Container(
@@ -2197,6 +2197,34 @@ class _ActiveConsignmentScreenState extends ConsumerState<ActiveConsignmentScree
   }
 }
 
+
+/// Volunteer Triage tab: only victim pulse lines + dispatch/ambulance/hospital style updates.
+bool _isMajorVictimActivityLineForVolunteer(String raw) {
+  final text = raw.trim();
+  if (text.isEmpty) return false;
+  final low = text.toLowerCase();
+  if (low.startsWith('victim update')) return true;
+  if (low.contains('ambulance')) return true;
+  if (low.contains('hospital') &&
+      (low.contains('accept') ||
+          low.contains('assigned') ||
+          low.contains('trying') ||
+          low.contains('tier') ||
+          low.contains('notified'))) {
+    return true;
+  }
+  if (low.contains('ems')) return true;
+  if (low.contains('en route') || low.contains('en-route')) return true;
+  if (low.contains('police') && low.contains('dispatch')) return true;
+  if (low.contains('conscious') || low.contains('unresponsive') || low.contains('unconscious')) {
+    return true;
+  }
+  if (low.startsWith('voice interview:')) return false;
+  if (low.contains('stopped automated')) return false;
+  if (low.contains('arrived at scene pin')) return false;
+  if (low.contains('geofence')) return false;
+  return false;
+}
 
 class _VictimLiveUpdatesSection extends StatelessWidget {
   final String incidentId;
@@ -2267,12 +2295,17 @@ class _VictimLiveUpdatesSection extends StatelessWidget {
           return const Center(child: Padding(padding: EdgeInsets.all(24), child: CircularProgressIndicator(strokeWidth: 2)));
         }
         final docs = snap.data?.docs ?? [];
-        if (docs.isEmpty) {
+        final filtered = docs
+            .where((d) => _isMajorVictimActivityLineForVolunteer(
+                  (d.data()['text'] as String?) ?? '',
+                ))
+            .toList();
+        if (filtered.isEmpty) {
           return const Center(
             child: Padding(
               padding: EdgeInsets.all(20),
               child: Text(
-                'No live updates yet.\nConsciousness check-ins and triage changes from the victim appear here in real time.',
+                'No major victim or dispatch updates yet.\nAmbulance, hospital routing, and victim consciousness summaries appear here.',
                 textAlign: TextAlign.center,
                 style: TextStyle(color: Colors.white54, fontSize: 12, height: 1.35),
               ),
@@ -2281,10 +2314,10 @@ class _VictimLiveUpdatesSection extends StatelessWidget {
         }
         return ListView.separated(
           padding: const EdgeInsets.symmetric(vertical: 8),
-          itemCount: docs.length,
+          itemCount: filtered.length,
           separatorBuilder: (context, _) => const Divider(height: 1, color: Colors.white10),
           itemBuilder: (ctx, i) {
-            final d = docs[i].data();
+            final d = filtered[i].data();
             final text = (d['text'] as String?) ?? '';
             DateTime? t;
             final c = d['createdAt'];
@@ -2805,6 +2838,7 @@ class _VictimInfoSection extends StatelessWidget {
     required Map<String, dynamic>? voiceInterview,
     required String categoryPick,
     required String incidentType,
+    AppLocalizations? l10n,
   }) {
     if (voiceInterview == null || voiceInterview.isEmpty) return const [];
 
@@ -2876,8 +2910,11 @@ class _VictimInfoSection extends StatelessWidget {
             ),
             const SizedBox(height: 10),
             ...entries.map((e) {
-              final prompt = EmergencyVoiceInterviewQuestions.promptForAnswerKey(e.key) ??
-                  'Question (code: ${e.key})';
+              final prompt = l10n != null
+                  ? (EmergencyVoiceInterviewQuestions.promptForAnswerKeyWithL10n(e.key, l10n) ??
+                      'Question (code: ${e.key})')
+                  : (EmergencyVoiceInterviewQuestions.promptForAnswerKey(e.key) ??
+                      'Question (code: ${e.key})');
               final ans = _formatVictimVoiceAnswer(e.value);
               final lower = ans.toLowerCase();
               final yes = lower == 'yes';
@@ -2927,6 +2964,67 @@ class _VictimInfoSection extends StatelessWidget {
     if (lower == 'no response') return 'No response';
     if (s == 'NOT SAFE') return 'No / not safe';
     return s;
+  }
+
+  /// First three chip questions only (type, safety, headcount) for volunteer triage hero.
+  static List<Widget> _threeInitialVictimAnswers(
+    Map<String, dynamic>? voiceInterview,
+    AppLocalizations l,
+  ) {
+    if (voiceInterview == null) return const [];
+    const keys = <String>[
+      EmergencyVoiceInterviewQuestions.q1EmergencyTypeKey,
+      EmergencyVoiceInterviewQuestions.q2SafetySeriousKey,
+      EmergencyVoiceInterviewQuestions.q3PeopleCountKey,
+    ];
+    final rows = <Widget>[];
+    for (final k in keys) {
+      final v = voiceInterview[k];
+      if (v == null || '$v'.trim().isEmpty) continue;
+      final prompt = EmergencyVoiceInterviewQuestions.promptForAnswerKeyWithL10n(k, l) ??
+          EmergencyVoiceInterviewQuestions.promptForAnswerKey(k) ??
+          k;
+      final ans = _formatVictimVoiceAnswer(v);
+      rows.add(
+        Padding(
+          padding: const EdgeInsets.only(bottom: 10),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                prompt,
+                style: TextStyle(
+                  color: Colors.white.withValues(alpha: 0.72),
+                  fontWeight: FontWeight.w800,
+                  fontSize: 11,
+                  height: 1.35,
+                ),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                ans,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.w900,
+                  fontSize: 13,
+                  height: 1.25,
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+    if (rows.isEmpty) return const [];
+    return [
+      const SizedBox(height: 12),
+      Text(
+        l.get('volunteer_victim_three_questions'),
+        style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w900, fontSize: 13),
+      ),
+      const SizedBox(height: 8),
+      ...rows,
+    ];
   }
 
   @override
@@ -3152,6 +3250,9 @@ class _VictimInfoSection extends StatelessWidget {
         final trappedVal = triage['trapped'];
         final chestPainVal = triage['chestPain'];
 
+        final l = AppLocalizations.of(context);
+        final fromCache = snap.data?.metadata.isFromCache == true;
+
         return Container(
           width: double.infinity,
           padding: const EdgeInsets.all(14),
@@ -3163,160 +3264,234 @@ class _VictimInfoSection extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // Zone A — header strip
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: AppColors.primaryDanger.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(
+                    color: AppColors.primaryDanger.withValues(alpha: 0.45),
+                    width: 1.5,
+                  ),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Icon(Icons.medical_information_rounded,
+                            color: AppColors.primaryDanger.withValues(alpha: 0.95), size: 22),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            l.get('volunteer_victim_medical_card'),
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontWeight: FontWeight.w900,
+                              fontSize: 15,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    if (fromCache)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 4),
+                        child: Text(
+                          l.get('volunteer_victim_medical_offline_hint'),
+                          style: TextStyle(
+                            color: Colors.white.withValues(alpha: 0.55),
+                            fontSize: 10.5,
+                            height: 1.35,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                    const SizedBox(height: 10),
+                    Row(
+                      children: [
+                        Expanded(child: _miniField(l.bloodType, bloodType.isEmpty ? '—' : bloodType)),
+                        const SizedBox(width: 10),
+                        Expanded(child: _miniField(l.allergies, allergies.isEmpty ? '—' : allergies)),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    _miniField(l.medicalConditions, conditions.isEmpty ? '—' : conditions),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 12),
+              Text(
+                l.get('volunteer_victim_consciousness_title'),
+                style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w900, fontSize: 13),
+              ),
+              const SizedBox(height: 6),
               Row(
                 children: [
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                    decoration: BoxDecoration(
-                      color: sevColor.withValues(alpha: 0.16),
-                      borderRadius: BorderRadius.circular(999),
-                      border: Border.all(color: sevColor.withValues(alpha: 0.7)),
-                    ),
-                    child: Text(
-                      critical ? 'CRITICAL' : (sevScore != null ? 'SEV $sevScore' : 'SEV —'),
-                      style: TextStyle(
-                        color: sevColor,
-                        fontSize: 11,
-                        fontWeight: FontWeight.w900,
-                        letterSpacing: 0.9,
-                      ),
+                  Expanded(
+                    child: _miniVitalTile(
+                      icon: Icons.psychology_rounded,
+                      label: l.get('volunteer_victim_label_conscious'),
+                      value: consciousLabel,
+                      color: consciousColor,
                     ),
                   ),
                   const SizedBox(width: 8),
                   Expanded(
-                    child: Text(
-                      categoryPick.isNotEmpty
-                          ? categoryPick
-                          : ((data['type'] as String?)?.trim().isNotEmpty == true
-                              ? (data['type'] as String).trim()
-                              : 'Victim info'),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        color: Colors.cyanAccent,
-                        fontSize: 13,
-                        fontWeight: FontWeight.w800,
+                    child: _miniVitalTile(
+                      icon: Icons.monitor_heart_rounded,
+                      label: l.get('volunteer_victim_label_breathing'),
+                      value: _tileLabel('breathingTrouble', breathingTroubleVal),
+                      color: _tileColor(
+                        danger: breathingTroubleVal == true,
+                        warning: false,
+                        ok: breathingTroubleVal == false,
                       ),
                     ),
-                  ),
-                  const SizedBox(width: 8),
-                  Text(
-                    'Updated ${_relativeLabel(updatedAt)}',
-                    style: const TextStyle(color: Colors.white54, fontSize: 10, fontWeight: FontWeight.w700),
                   ),
                 ],
               ),
-              const SizedBox(height: 10),
-
-              // Zone B — vitals grid (2x2 tiles)
-              Container(
-                padding: const EdgeInsets.all(10),
-                decoration: BoxDecoration(
-                  color: Colors.black.withValues(alpha: 0.24),
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: Colors.white10),
-                ),
-                child: Column(
+              ..._VictimInfoSection._threeInitialVictimAnswers(voiceInterview, l),
+              const SizedBox(height: 6),
+              Theme(
+                data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+                child: ExpansionTile(
+                  tilePadding: EdgeInsets.zero,
+                  initiallyExpanded: false,
+                  title: Text(
+                    l.get('volunteer_more_triage_details'),
+                    style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 12),
+                  ),
+                  childrenPadding: const EdgeInsets.only(top: 6, bottom: 4),
                   children: [
                     Row(
                       children: [
-                        Expanded(
-                          child: _miniVitalTile(
-                            icon: Icons.psychology_rounded,
-                            label: 'Conscious',
-                            value: consciousLabel,
-                            color: consciousColor,
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                          decoration: BoxDecoration(
+                            color: sevColor.withValues(alpha: 0.16),
+                            borderRadius: BorderRadius.circular(999),
+                            border: Border.all(color: sevColor.withValues(alpha: 0.7)),
                           ),
-                        ),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: _miniVitalTile(
-                            icon: Icons.monitor_heart_rounded,
-                            label: 'Breathing',
-                            value: _tileLabel('breathingTrouble', breathingTroubleVal),
-                            color: _tileColor(
-                              danger: breathingTroubleVal == true,
-                              warning: false,
-                              ok: breathingTroubleVal == false,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 8),
-                    Row(
-                      children: [
-                        Expanded(
-                          child: _miniVitalTile(
-                            icon: Icons.water_drop_rounded,
-                            label: 'Bleeding',
-                            value: _tileLabel('bleeding', bleedingVal),
-                            color: _tileColor(
-                              danger: bleedingVal == true,
-                              warning: false,
-                              ok: bleedingVal == false,
+                          child: Text(
+                            critical ? 'CRITICAL' : (sevScore != null ? 'SEV $sevScore' : 'SEV —'),
+                            style: TextStyle(
+                              color: sevColor,
+                              fontSize: 11,
+                              fontWeight: FontWeight.w900,
+                              letterSpacing: 0.9,
                             ),
                           ),
                         ),
                         const SizedBox(width: 8),
                         Expanded(
-                          child: _miniVitalTile(
-                            icon: Icons.personal_injury_rounded,
-                            label: 'Trapped',
-                            value: _tileLabel('trapped', trappedVal),
-                            color: _tileColor(
-                              danger: trappedVal == true,
-                              warning: false,
-                              ok: trappedVal == false,
+                          child: Text(
+                            categoryPick.isNotEmpty
+                                ? categoryPick
+                                : ((data['type'] as String?)?.trim().isNotEmpty == true
+                                    ? (data['type'] as String).trim()
+                                    : 'Victim info'),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              color: Colors.cyanAccent,
+                              fontSize: 13,
+                              fontWeight: FontWeight.w800,
                             ),
                           ),
                         ),
+                        const SizedBox(width: 8),
+                        Text(
+                          'Updated ${_relativeLabel(updatedAt)}',
+                          style: const TextStyle(color: Colors.white54, fontSize: 10, fontWeight: FontWeight.w700),
+                        ),
                       ],
                     ),
-                    if (consciousnessKnown && !isUnconscious && voiceMiss > 0) ...[
-                      const SizedBox(height: 8),
-                      Align(
-                        alignment: Alignment.centerLeft,
-                        child: Text(
-                          'Voice misses: $voiceMiss (3 misses ≥1 min apart → unresponsive)',
-                          style: TextStyle(
-                            color: Colors.orangeAccent.withValues(alpha: 0.95),
-                            fontWeight: FontWeight.w800,
-                            fontSize: 11,
-                          ),
-                        ),
+                    const SizedBox(height: 10),
+                    Container(
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(
+                        color: Colors.black.withValues(alpha: 0.24),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: Colors.white10),
                       ),
-                    ],
-                    const SizedBox(height: 4),
-                    Align(
-                      alignment: Alignment.centerLeft,
-                      child: Text(
-                        'Chest pain: ${_tileLabel('chestPain', chestPainVal)}',
-                        style: const TextStyle(color: Colors.white60, fontSize: 11),
+                      child: Column(
+                        children: [
+                          Row(
+                            children: [
+                              Expanded(
+                                child: _miniVitalTile(
+                                  icon: Icons.water_drop_rounded,
+                                  label: 'Bleeding',
+                                  value: _tileLabel('bleeding', bleedingVal),
+                                  color: _tileColor(
+                                    danger: bleedingVal == true,
+                                    warning: false,
+                                    ok: bleedingVal == false,
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: _miniVitalTile(
+                                  icon: Icons.personal_injury_rounded,
+                                  label: 'Trapped',
+                                  value: _tileLabel('trapped', trappedVal),
+                                  color: _tileColor(
+                                    danger: trappedVal == true,
+                                    warning: false,
+                                    ok: trappedVal == false,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                          if (consciousnessKnown && !isUnconscious && voiceMiss > 0) ...[
+                            const SizedBox(height: 8),
+                            Align(
+                              alignment: Alignment.centerLeft,
+                              child: Text(
+                                'Voice misses: $voiceMiss (3 misses ≥1 min apart → unresponsive)',
+                                style: TextStyle(
+                                  color: Colors.orangeAccent.withValues(alpha: 0.95),
+                                  fontWeight: FontWeight.w800,
+                                  fontSize: 11,
+                                ),
+                              ),
+                            ),
+                          ],
+                          const SizedBox(height: 4),
+                          Align(
+                            alignment: Alignment.centerLeft,
+                            child: Text(
+                              'Chest pain: ${_tileLabel('chestPain', chestPainVal)}',
+                              style: const TextStyle(color: Colors.white60, fontSize: 11),
+                            ),
+                          ),
+                        ],
                       ),
                     ),
                   ],
                 ),
               ),
 
-              // Zone C — expandable detail
-              const SizedBox(height: 10),
+              const SizedBox(height: 8),
               Theme(
                 data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
                 child: ExpansionTile(
                   tilePadding: EdgeInsets.zero,
                   initiallyExpanded: false,
-                  title: const Text(
-                    'More victim details',
-                    style: TextStyle(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 12),
+                  title: Text(
+                    l.get('volunteer_more_victim_details'),
+                    style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 12),
                   ),
                   childrenPadding: const EdgeInsets.only(top: 6),
                   children: [
                     if (intakeDone) ...[
-                      const Text(
-                        'SOS intake (victim app)',
-                        style: TextStyle(color: Colors.white, fontWeight: FontWeight.w900, fontSize: 12),
+                      Text(
+                        l.get('volunteer_sos_intake_title'),
+                        style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w900, fontSize: 12),
                       ),
                       const SizedBox(height: 4),
                       Text(
@@ -3331,15 +3506,6 @@ class _VictimInfoSection extends StatelessWidget {
                       ),
                       const SizedBox(height: 10),
                     ],
-                    Row(
-                      children: [
-                        Expanded(child: _miniField('Blood', bloodType.isEmpty ? '—' : bloodType)),
-                        const SizedBox(width: 10),
-                        Expanded(child: _miniField('Allergies', allergies.isEmpty ? '—' : allergies)),
-                      ],
-                    ),
-                    const SizedBox(height: 8),
-                    _miniField('Conditions', conditions.isEmpty ? '—' : conditions),
                     if (notes.isNotEmpty) ...[
                       const SizedBox(height: 10),
                       Text(notes, style: const TextStyle(color: Colors.white70, height: 1.3)),
@@ -3363,9 +3529,9 @@ class _VictimInfoSection extends StatelessWidget {
                                     child: Column(
                                       crossAxisAlignment: CrossAxisAlignment.start,
                                       children: [
-                                        const Text(
-                                          'Victim safety Q&A',
-                                          style: TextStyle(
+                                        Text(
+                                          l.get('volunteer_full_qa_sheet_title'),
+                                          style: const TextStyle(
                                             color: Colors.white,
                                             fontWeight: FontWeight.w900,
                                             fontSize: 14,
@@ -3375,6 +3541,7 @@ class _VictimInfoSection extends StatelessWidget {
                                           voiceInterview: voiceInterview,
                                           categoryPick: categoryPick,
                                           incidentType: (data['type'] as String?)?.trim() ?? '',
+                                          l10n: l,
                                         ),
                                       ],
                                     ),
@@ -3383,7 +3550,7 @@ class _VictimInfoSection extends StatelessWidget {
                               },
                             );
                           },
-                          child: const Text('Show full Q&A'),
+                          child: Text(l.get('volunteer_show_full_qa')),
                         ),
                       ),
                     ],

@@ -1,7 +1,6 @@
 import 'dart:async';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:cloud_functions/cloud_functions.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
@@ -10,6 +9,7 @@ import 'package:fl_chart/fl_chart.dart';
 
 import '../../../core/constants/app_constants.dart';
 import '../../../core/maps/eos_hybrid_map.dart';
+import '../../../core/maps/ops_map_controller.dart';
 import '../../../core/constants/india_ops_zones.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/utils/ops_analytics_hex_grid.dart';
@@ -19,9 +19,11 @@ import '../../../core/utils/fleet_map_icons.dart';
 import '../../../services/incident_service.dart';
 import '../../../services/ops_analytics_derived.dart';
 import '../../../services/ops_incident_analytics_digest.dart';
+import '../../../services/ops_lifeline_analytics_chat.dart';
 import '../domain/admin_panel_access.dart';
 import '../domain/command_center_accent.dart';
 import 'liveops_feedback_dashboard.dart';
+import 'widgets/command_center_shared_widgets.dart';
 import 'widgets/ops_analytics_trend_chart.dart';
 
 enum _AnalyticsCategory { sos, fleet, hospitals, volunteers, feedback }
@@ -51,7 +53,11 @@ class _AdminAnalyticsDashboardState extends State<AdminAnalyticsDashboard> {
   Timer? _analyticsSimTimer;
   double _analyticsMapZoom = 11.0;
   _AnalyticsCategory _analyticsCategory = _AnalyticsCategory.sos;
-  bool _analyticsAiOpen = true;
+  OpsMapController? _analyticsMapCtl;
+  bool _analyticsDetailPanelOpen = true;
+  bool _hexSelectMode = false;
+  String? _pendingHexKey;
+  String? _confirmedHexKey;
 
   Color get _accent => CommandCenterAccent.forRole(widget.access.role).primary;
 
@@ -81,9 +87,73 @@ class _AdminAnalyticsDashboardState extends State<AdminAnalyticsDashboard> {
   @override
   void dispose() {
     _analyticsSimTimer?.cancel();
+    _analyticsMapCtl?.dispose();
     _aiCtrl.dispose();
     _scrollAi.dispose();
     super.dispose();
+  }
+
+  List<SosIncident> _incidentsForHexKey(
+    List<SosIncident> incidents,
+    String hexKey,
+    LatLng origin,
+    double hexSize,
+  ) {
+    final p = OpsAnalyticsHexGrid.parseKey(hexKey);
+    return incidents
+        .where((e) {
+          final h =
+              OpsAnalyticsHexGrid.hexKeyForLatLng(e.liveVictimPin, origin, hexSize);
+          return h.q == p.q && h.r == p.r;
+        })
+        .toList();
+  }
+
+  Future<void> _resetAnalyticsMapCamera(LatLng target, double zoom) async {
+    final c = _analyticsMapCtl;
+    if (c == null) return;
+    try {
+      await c.animateCamera(
+        CameraUpdate.newCameraPosition(CameraPosition(target: target, zoom: zoom)),
+      );
+    } catch (_) {}
+  }
+
+  Future<void> _focusConfirmedHex(
+    IndiaOpsZone zone,
+    double hexSize,
+    String key,
+  ) async {
+    final h = OpsAnalyticsHexGrid.parseKey(key);
+    final target =
+        OpsAnalyticsHexGrid.centerForHex(h.q, h.r, zone.center, hexSize);
+    await _resetAnalyticsMapCamera(target, 14.4);
+  }
+
+  void _clearHexSelection(IndiaOpsZone zone, LatLng mapCenter, double defaultZoom) {
+    setState(() {
+      _hexSelectMode = false;
+      _pendingHexKey = null;
+      _confirmedHexKey = null;
+    });
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      unawaited(_resetAnalyticsMapCamera(mapCenter, defaultZoom));
+    });
+  }
+
+  void _onAnalyticsHexMapTap(LatLng pos, IndiaOpsZone zone, double hexSize) {
+    if (!_hexSelectMode) return;
+    if (!zone.containsLatLng(pos)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Tap inside ${zone.label}.'),
+          backgroundColor: AppColors.slate700,
+        ),
+      );
+      return;
+    }
+    final h = OpsAnalyticsHexGrid.hexKeyForLatLng(pos, zone.center, hexSize);
+    setState(() => _pendingHexKey = '${h.q},${h.r}');
   }
 
   void _scrollAiToEnd() {
@@ -109,63 +179,17 @@ class _AdminAnalyticsDashboardState extends State<AdminAnalyticsDashboard> {
     _scrollAiToEnd();
 
     try {
-      final snap = await FirebaseFirestore.instance
-          .collection('sos_incidents')
-          .limit(500)
-          .get();
-      final all = snap.docs
-          .map(SosIncident.fromFirestore)
-          .where((e) => !_excludeTrainingIncident(e))
-          .toList();
-      final z = _zone!;
-      final nowAi = DateTime.now();
-      final inZ = all.where((e) => z.containsLatLng(e.liveVictimPin)).toList();
-      final inc48 = inZ
-          .where(
-            (e) => nowAi.difference(e.timestamp) <= const Duration(hours: 48),
-          )
-          .toList();
-      final inc7d = inZ
-          .where(
-            (e) => nowAi.difference(e.timestamp) <= const Duration(days: 7),
-          )
-          .toList();
-      final trend7 = OpsAnalyticsDerived.sevenDayCountsInZone(inZ, nowAi);
-      final b48 = OpsAnalyticsDerived.hexBinsForIncidents(inc48, z);
-      final b7d = OpsAnalyticsDerived.hexBinsForIncidents(inc7d, z);
-      final digest = OpsIncidentAnalyticsDigest.build(all, zone: _zone);
-      final augment = OpsAnalyticsDerived.augmentForGemini(
-        trend7: trend7,
-        hotspot48h: OpsAnalyticsDerived.hotspotSummary(b48, z),
-        hotspot7d: OpsAnalyticsDerived.hotspotSummary(b7d, z),
-      );
-      final fullDigest = '$digest\n$augment';
-
       final hist = <Map<String, String>>[];
       for (var i = 0; i < _aiMsgs.length - 1; i++) {
         final m = _aiMsgs[i];
         hist.add({'role': m.isUser ? 'user' : 'model', 'text': m.text});
       }
-
-      final callable = FirebaseFunctions.instance.httpsCallable('lifelineChat');
-      final res = await callable.call({
-        'message': text,
-        'scenario': 'Emergency operations center — live incident analytics',
-        'contextDigest': fullDigest,
-        'history': hist,
-        'analyticsMode': true,
-      });
-      final raw = res.data;
-      final Map<String, dynamic> data = raw is Map
-          ? raw.map((k, v) => MapEntry(k.toString(), v))
-          : <String, dynamic>{};
-      final status = (data['status'] as String?)?.trim() ?? 'ok';
-      var reply = (data['text'] as String?)?.trim() ?? 'No response.';
-      if (status == 'rate_limited') {
-        reply = '[Rate limited] $reply';
-      } else if (status == 'offline') {
-        reply = '[Analytics AI offline] $reply';
-      }
+      final reply = await OpsLifelineAnalyticsChat.send(
+        message: text,
+        zone: _zone!,
+        history: hist,
+        scenario: 'Emergency operations center — live incident analytics',
+      );
       if (context.mounted) setState(() => _aiMsgs.add(_AiMsg(false, reply)));
     } catch (e) {
       if (context.mounted)
@@ -304,11 +328,11 @@ class _AdminAnalyticsDashboardState extends State<AdminAnalyticsDashboard> {
         'Post-incident ratings and comments from resolved SOS flows.',
     };
     return Column(
-      crossAxisAlignment: CrossAxisAlignment.center,
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
           '$activeN active · $inZoneN in zone',
-          textAlign: TextAlign.center,
+          textAlign: TextAlign.start,
           style: const TextStyle(
             color: Colors.white54,
             fontWeight: FontWeight.w700,
@@ -318,7 +342,7 @@ class _AdminAnalyticsDashboardState extends State<AdminAnalyticsDashboard> {
         const SizedBox(height: 8),
         Text(
           hint,
-          textAlign: TextAlign.center,
+          textAlign: TextAlign.start,
           style: TextStyle(
             color: Colors.white.withValues(alpha: 0.38),
             fontSize: 11,
@@ -333,13 +357,6 @@ class _AdminAnalyticsDashboardState extends State<AdminAnalyticsDashboard> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        const Padding(
-          padding: EdgeInsets.fromLTRB(12, 4, 12, 6),
-          child: Text(
-            'Gemini sees Firestore digest plus 7-day trend and hex hotspots (48h & 7d). Not a substitute for 112.',
-            style: TextStyle(color: Colors.white38, fontSize: 10, height: 1.35),
-          ),
-        ),
         Padding(
           padding: const EdgeInsets.fromLTRB(10, 6, 10, 0),
           child: Wrap(
@@ -709,12 +726,16 @@ class _AdminAnalyticsDashboardState extends State<AdminAnalyticsDashboard> {
                     hexSize,
                   );
                   final t = e.value / maxHex;
+                  final isSel = e.key == _confirmedHexKey ||
+                      e.key == _pendingHexKey;
                   hexPolygons.add(
                     Polygon(
                       polygonId: PolygonId('hx_${e.key.replaceAll(',', '_')}'),
                       points: ring,
-                      strokeColor: Colors.white.withValues(alpha: 0.3),
-                      strokeWidth: 1,
+                      strokeColor: isSel
+                          ? Colors.cyanAccent
+                          : Colors.white.withValues(alpha: 0.3),
+                      strokeWidth: isSel ? 3 : 1,
                       fillColor: Color.lerp(
                         const Color(0xFF1565C0).withValues(alpha: 0.1),
                         const Color(0xFFFF5722).withValues(alpha: 0.5),
@@ -723,32 +744,30 @@ class _AdminAnalyticsDashboardState extends State<AdminAnalyticsDashboard> {
                     ),
                   );
                 }
+                if (_pendingHexKey != null &&
+                    !bins48.containsKey(_pendingHexKey)) {
+                  final h = OpsAnalyticsHexGrid.parseKey(_pendingHexKey!);
+                  final ring = OpsAnalyticsHexGrid.hexRing(
+                    h.q,
+                    h.r,
+                    zone.center,
+                    hexSize,
+                  );
+                  hexPolygons.add(
+                    Polygon(
+                      polygonId: const PolygonId('hx_pending_empty'),
+                      points: ring,
+                      strokeColor: Colors.cyanAccent,
+                      strokeWidth: 2,
+                      fillColor: Colors.cyanAccent.withValues(alpha: 0.12),
+                    ),
+                  );
+                }
 
                 final cat = _analyticsCategory;
                 final showFeedbackPane =
                     cat == _AnalyticsCategory.feedback &&
                     widget.access.canUseLiveOpsFeedback;
-                final resolved7d = inZone
-                    .where(
-                      (e) =>
-                          e.status == IncidentStatus.resolved &&
-                          now.difference(e.timestamp) <=
-                              const Duration(days: 7),
-                    )
-                    .length;
-                final blockedNz = inZone
-                    .where((e) => e.status == IncidentStatus.blocked)
-                    .length;
-                final volume7d = inZone
-                    .where(
-                      (e) =>
-                          now.difference(e.timestamp) <=
-                          const Duration(days: 7),
-                    )
-                    .length;
-                final onSceneVol = active
-                    .where((e) => e.onSceneVolunteerIds.isNotEmpty)
-                    .length;
 
                 if (showFeedbackPane) {
                   return LiveOpsFeedbackDashboard(
@@ -757,38 +776,76 @@ class _AdminAnalyticsDashboardState extends State<AdminAnalyticsDashboard> {
                   );
                 }
 
-                final mapCard = ClipRRect(
-                  borderRadius: BorderRadius.circular(16),
-                  child: SizedBox(
-                    height: 400,
-                    child: EosHybridMap(
-                      initialCameraPosition: CameraPosition(
-                        target: center,
-                        zoom: active.isEmpty ? zone.defaultZoom : 11,
+                final defaultMapZoom =
+                    active.isEmpty ? zone.defaultZoom : 11.0;
+                final mapCenterTarget = center;
+
+                Widget hexFocusSummary() {
+                  final key = _confirmedHexKey;
+                  if (key == null) return const SizedBox.shrink();
+                  final n48 = bins48[key] ?? 0;
+                  final inCell =
+                      _incidentsForHexKey(inc48h, key, zone.center, hexSize);
+                  return Material(
+                    color: Colors.black.withValues(alpha: 0.28),
+                    child: Padding(
+                      padding: const EdgeInsets.fromLTRB(10, 10, 10, 10),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              Icon(Icons.hexagon_outlined,
+                                  color: _accent, size: 20),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: Text(
+                                  'Hex $key',
+                                  style: TextStyle(
+                                    color: _accent,
+                                    fontWeight: FontWeight.w900,
+                                    fontSize: 14,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 6),
+                          Text(
+                            '$n48 incidents in cell (48h bin) · ${inCell.length} pin(s) located in cell',
+                            style: const TextStyle(
+                              color: Colors.white70,
+                              fontSize: 11,
+                              height: 1.35,
+                            ),
+                          ),
+                          if (inCell.isNotEmpty) ...[
+                            const SizedBox(height: 8),
+                            for (final e in inCell.take(8))
+                              Padding(
+                                padding: const EdgeInsets.only(bottom: 4),
+                                child: Text(
+                                  '· ${e.type} · ${e.id}',
+                                  style: const TextStyle(
+                                    color: Colors.white54,
+                                    fontSize: 10,
+                                  ),
+                                ),
+                              ),
+                            if (inCell.length > 8)
+                              Text(
+                                '+${inCell.length - 8} more',
+                                style: const TextStyle(
+                                  color: Colors.white38,
+                                  fontSize: 10,
+                                ),
+                              ),
+                          ],
+                        ],
                       ),
-                      onCameraMove: (c) {
-                        final z = c.zoom;
-                        if ((z - _analyticsMapZoom).abs() > 0.12) {
-                          _analyticsMapZoom = z;
-                          setState(() {});
-                        }
-                      },
-                      cameraTargetBounds: CameraTargetBounds(zone.cameraBounds),
-                      minMaxZoomPreference:
-                          const MinMaxZoomPreference(5.5, 17),
-                      mapType: MapType.normal,
-                      mapId: AppConstants.googleMapsDarkMapId.isNotEmpty
-                          ? AppConstants.googleMapsDarkMapId
-                          : null,
-                      markers: markers,
-                      polylines: analyticsVolunteerPolylines,
-                      polygons: hexPolygons,
-                      zoomControlsEnabled: false,
-                      myLocationButtonEnabled: false,
-                      padding: EdgeInsets.zero,
                     ),
-                  ),
-                );
+                  );
+                }
 
                 final metricsBelowMap = Container(
                   padding: const EdgeInsets.fromLTRB(10, 12, 10, 14),
@@ -856,278 +913,423 @@ class _AdminAnalyticsDashboardState extends State<AdminAnalyticsDashboard> {
                   ),
                 );
 
-                return Scrollbar(
-                  thumbVisibility: true,
-                  child: SingleChildScrollView(
-                    padding: const EdgeInsets.fromLTRB(12, 10, 12, 20),
-                    child: Align(
-                      alignment: Alignment.topCenter,
-                      child: ConstrainedBox(
-                        constraints: const BoxConstraints(maxWidth: 1240),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.center,
-                          children: [
-                            ColoredBox(
-                              color: AppColors.slate800,
-                              child: Padding(
-                                padding:
-                                    const EdgeInsets.fromLTRB(12, 10, 12, 6),
-                                child: _analyticsCategoryChips(),
+                final leftBody = Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    ColoredBox(
+                      color: AppColors.slate800,
+                      child: Padding(
+                        padding: const EdgeInsets.fromLTRB(12, 10, 12, 6),
+                        child: _analyticsCategoryChips(),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    _analyticsStatusSection(
+                      active.length,
+                      inZone.length,
+                    ),
+                    const SizedBox(height: 12),
+                    Row(
+                      children: [
+                        _livePill(timeFmt.format(DateTime.now())),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Text(
+                            '${active.length} active · ${inZone.length} in zone · zoom ${(_analyticsMapZoom).toStringAsFixed(1)}',
+                            textAlign: TextAlign.start,
+                            style: const TextStyle(
+                              color: Colors.white54,
+                              fontSize: 12,
+                            ),
+                          ),
+                        ),
+                        OutlinedButton.icon(
+                          onPressed: _aiLoading ? null : _runAutoSummary,
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: AppColors.accentBlue,
+                          ),
+                          icon: const Icon(Icons.auto_awesome, size: 18),
+                          label: const Text('AI summary'),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      crossAxisAlignment: WrapCrossAlignment.center,
+                      children: [
+                        FilledButton.tonal(
+                          onPressed: () => setState(() {
+                            _hexSelectMode = !_hexSelectMode;
+                            if (!_hexSelectMode) _pendingHexKey = null;
+                          }),
+                          style: FilledButton.styleFrom(
+                            foregroundColor: _hexSelectMode
+                                ? Colors.orangeAccent
+                                : Colors.white70,
+                            backgroundColor: _hexSelectMode
+                                ? Colors.orangeAccent.withValues(alpha: 0.15)
+                                : Colors.white.withValues(alpha: 0.06),
+                          ),
+                          child: Text(
+                            _hexSelectMode
+                                ? 'Cancel hex pick'
+                                : 'Select hex cell',
+                          ),
+                        ),
+                        if (_confirmedHexKey != null)
+                          OutlinedButton(
+                            onPressed: () => _clearHexSelection(
+                              zone,
+                              mapCenterTarget,
+                              defaultMapZoom,
+                            ),
+                            style: OutlinedButton.styleFrom(
+                              foregroundColor: Colors.cyanAccent,
+                            ),
+                            child: const Text('Clear selection'),
+                          ),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+                    LayoutBuilder(
+                      builder: (ctx, c) {
+                        final narrow = c.maxWidth < 880;
+                        if (narrow) {
+                          return Column(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
+                              metricsBelowMap,
+                              const SizedBox(height: 12),
+                              OutlinedButton.icon(
+                                onPressed:
+                                    _aiLoading ? null : _runGeminiHotspot,
+                                style: OutlinedButton.styleFrom(
+                                  foregroundColor: Colors.orangeAccent,
+                                ),
+                                icon: const Icon(
+                                  Icons.map_outlined,
+                                  size: 18,
+                                ),
+                                label: const Text('Ask AI: hotspots'),
                               ),
-                            ),
-                            const SizedBox(height: 12),
-                            _analyticsStatusSection(
-                              active.length,
-                              inZone.length,
-                            ),
-                            const SizedBox(height: 14),
-                            Wrap(
-                              alignment: WrapAlignment.center,
-                              spacing: 10,
-                              runSpacing: 10,
-                              children: [
-                                _statCard(
-                                  'Active now',
-                                  '${active.length}',
-                                  Icons.emergency,
-                                  Colors.orangeAccent,
+                              const SizedBox(height: 8),
+                              OutlinedButton.icon(
+                                onPressed: _aiLoading ? null : _runGeminiTrend,
+                                style: OutlinedButton.styleFrom(
+                                  foregroundColor: Colors.lightGreenAccent,
                                 ),
-                                _statCard(
-                                  'Pending',
-                                  '$pending',
-                                  Icons.pending_actions,
-                                  Colors.amber,
+                                icon: const Icon(
+                                  Icons.show_chart,
+                                  size: 18,
                                 ),
-                                _statCard(
-                                  'Dispatched',
-                                  '$dispatched',
-                                  Icons.send,
-                                  AppColors.accentBlue,
-                                ),
-                                _statCard(
-                                  '24h in zone',
-                                  '$h24',
-                                  Icons.schedule,
-                                  Colors.cyanAccent,
-                                ),
-                                _statCard(
-                                  '7d volume',
-                                  '$volume7d',
-                                  Icons.date_range,
-                                  Colors.deepPurpleAccent,
-                                ),
-                                _statCard(
-                                  'Resolved (7d)',
-                                  '$resolved7d',
-                                  Icons.check_circle_outline,
-                                  Colors.greenAccent,
-                                ),
-                                _statCard(
-                                  'Blocked',
-                                  '$blockedNz',
-                                  Icons.block,
-                                  Colors.redAccent,
-                                ),
-                                _statCard(
-                                  '+Volunteers',
-                                  '$withVol',
-                                  Icons.groups,
-                                  Colors.lightGreenAccent,
-                                ),
-                                _statCard(
-                                  'On-scene vol',
-                                  '$onSceneVol',
-                                  Icons.front_hand,
-                                  Colors.limeAccent,
-                                ),
-                                _statCard(
-                                  'SMS-linked',
-                                  '$smsN',
-                                  Icons.sms,
-                                  Colors.tealAccent,
-                                ),
-                                _statCard(
-                                  'Feed (excl. demo)',
-                                  '${incidents.length}',
-                                  Icons.dataset_linked_outlined,
-                                  Colors.blueGrey,
-                                ),
-                              ],
-                            ),
-                            const SizedBox(height: 16),
-                            Row(
-                              children: [
-                                _livePill(timeFmt.format(DateTime.now())),
-                                const SizedBox(width: 10),
-                                Expanded(
-                                  child: Text(
-                                    '${active.length} active · ${inZone.length} in zone · zoom ${(_analyticsMapZoom).toStringAsFixed(1)}',
-                                    textAlign: TextAlign.center,
-                                    style: const TextStyle(
-                                      color: Colors.white54,
-                                      fontSize: 12,
-                                    ),
-                                  ),
-                                ),
-                                OutlinedButton.icon(
-                                  onPressed:
-                                      _aiLoading ? null : _runAutoSummary,
-                                  style: OutlinedButton.styleFrom(
-                                    foregroundColor: AppColors.accentBlue,
-                                  ),
-                                  icon: const Icon(Icons.auto_awesome, size: 18),
-                                  label: const Text('AI summary'),
-                                ),
-                              ],
-                            ),
-                            const SizedBox(height: 12),
-                            mapCard,
-                            const SizedBox(height: 18),
-                            LayoutBuilder(
-                              builder: (ctx, c) {
-                                final narrow = c.maxWidth < 880;
-                                if (narrow) {
-                                  return Column(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.stretch,
-                                    children: [
-                                      metricsBelowMap,
-                                      const SizedBox(height: 12),
-                                      OutlinedButton.icon(
-                                        onPressed: _aiLoading
-                                            ? null
-                                            : _runGeminiHotspot,
-                                        style: OutlinedButton.styleFrom(
-                                          foregroundColor: Colors.orangeAccent,
-                                        ),
-                                        icon: const Icon(
-                                          Icons.map_outlined,
-                                          size: 18,
-                                        ),
-                                        label: const Text('Ask AI: hotspots'),
-                                      ),
-                                      const SizedBox(height: 8),
-                                      OutlinedButton.icon(
-                                        onPressed: _aiLoading
-                                            ? null
-                                            : _runGeminiTrend,
-                                        style: OutlinedButton.styleFrom(
-                                          foregroundColor:
-                                              Colors.lightGreenAccent,
-                                        ),
-                                        icon: const Icon(
-                                          Icons.show_chart,
-                                          size: 18,
-                                        ),
-                                        label: const Text('Ask AI: 7d trend'),
-                                      ),
-                                    ],
-                                  );
-                                }
-                                return Row(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Expanded(flex: 5, child: metricsBelowMap),
-                                    const SizedBox(width: 16),
-                                    Expanded(
-                                      flex: 4,
-                                      child: Column(
-                                        crossAxisAlignment:
-                                            CrossAxisAlignment.stretch,
-                                        children: [
-                                          OutlinedButton.icon(
-                                            onPressed: _aiLoading
-                                                ? null
-                                                : _runGeminiHotspot,
-                                            style: OutlinedButton.styleFrom(
-                                              foregroundColor:
-                                                  Colors.orangeAccent,
-                                            ),
-                                            icon: const Icon(
-                                              Icons.map_outlined,
-                                              size: 18,
-                                            ),
-                                            label: const Text('Ask AI: hotspots'),
-                                          ),
-                                          const SizedBox(height: 8),
-                                          OutlinedButton.icon(
-                                            onPressed: _aiLoading
-                                                ? null
-                                                : _runGeminiTrend,
-                                            style: OutlinedButton.styleFrom(
-                                              foregroundColor:
-                                                  Colors.lightGreenAccent,
-                                            ),
-                                            icon: const Icon(
-                                              Icons.show_chart,
-                                              size: 18,
-                                            ),
-                                            label: const Text('Ask AI: 7d trend'),
-                                          ),
-                                        ],
-                                      ),
-                                    ),
-                                  ],
-                                );
-                              },
-                            ),
-                            const SizedBox(height: 16),
-                            Material(
-                              color: const Color(0xFF1B2634),
-                              borderRadius: BorderRadius.circular(12),
-                              clipBehavior: Clip.antiAlias,
+                                label: const Text('Ask AI: 7d trend'),
+                              ),
+                            ],
+                          );
+                        }
+                        return Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Expanded(flex: 5, child: metricsBelowMap),
+                            const SizedBox(width: 16),
+                            Expanded(
+                              flex: 4,
                               child: Column(
-                                crossAxisAlignment:
-                                    CrossAxisAlignment.stretch,
+                                crossAxisAlignment: CrossAxisAlignment.stretch,
                                 children: [
-                                  ListTile(
-                                    onTap: () => setState(
-                                      () => _analyticsAiOpen =
-                                          !_analyticsAiOpen,
+                                  OutlinedButton.icon(
+                                    onPressed:
+                                        _aiLoading ? null : _runGeminiHotspot,
+                                    style: OutlinedButton.styleFrom(
+                                      foregroundColor: Colors.orangeAccent,
                                     ),
-                                    leading: Icon(
-                                      Icons.psychology_outlined,
-                                      color: AppColors.accentBlue,
+                                    icon: const Icon(
+                                      Icons.map_outlined,
+                                      size: 18,
                                     ),
-                                    title: const Text(
-                                      'Analytics AI',
-                                      style: TextStyle(
-                                        color: Colors.white,
-                                        fontWeight: FontWeight.w800,
-                                      ),
-                                    ),
-                                    subtitle: Text(
-                                      _analyticsAiOpen
-                                          ? 'Tap to collapse'
-                                          : 'Gemini Q&A on the same live feed as these metrics',
-                                      style: const TextStyle(
-                                        color: Colors.white38,
-                                        fontSize: 11,
-                                      ),
-                                    ),
-                                    trailing: Icon(
-                                      _analyticsAiOpen
-                                          ? Icons.expand_less
-                                          : Icons.expand_more,
-                                      color: Colors.white54,
-                                    ),
+                                    label: const Text('Ask AI: hotspots'),
                                   ),
-                                  if (_analyticsAiOpen)
-                                    SizedBox(
-                                      height: 320,
-                                      child: ColoredBox(
-                                        color: const Color(0xFF161B22),
-                                        child: _buildAiAssistantPanel(),
-                                      ),
+                                  const SizedBox(height: 8),
+                                  OutlinedButton.icon(
+                                    onPressed:
+                                        _aiLoading ? null : _runGeminiTrend,
+                                    style: OutlinedButton.styleFrom(
+                                      foregroundColor: Colors.lightGreenAccent,
                                     ),
+                                    icon: const Icon(
+                                      Icons.show_chart,
+                                      size: 18,
+                                    ),
+                                    label: const Text('Ask AI: 7d trend'),
+                                  ),
                                 ],
                               ),
                             ),
                           ],
+                        );
+                      },
+                    ),
+                  ],
+                );
+
+                final mapStack = ClipRRect(
+                  borderRadius: BorderRadius.circular(12),
+                  child: Stack(
+                    fit: StackFit.expand,
+                    children: [
+                      EosHybridMap(
+                        initialCameraPosition: CameraPosition(
+                          target: mapCenterTarget,
+                          zoom: defaultMapZoom,
+                        ),
+                        onMapCreated: (c) {
+                          _analyticsMapCtl?.dispose();
+                          _analyticsMapCtl = c;
+                        },
+                        onCameraMove: (c) {
+                          final z = c.zoom;
+                          if ((z - _analyticsMapZoom).abs() > 0.12) {
+                            _analyticsMapZoom = z;
+                            setState(() {});
+                          }
+                        },
+                        onTap: (p) =>
+                            _onAnalyticsHexMapTap(p, zone, hexSize),
+                        cameraTargetBounds:
+                            CameraTargetBounds(zone.cameraBounds),
+                        minMaxZoomPreference:
+                            const MinMaxZoomPreference(5.5, 17),
+                        mapType: MapType.normal,
+                        mapId: AppConstants.googleMapsDarkMapId.isNotEmpty
+                            ? AppConstants.googleMapsDarkMapId
+                            : null,
+                        markers: markers,
+                        polylines: analyticsVolunteerPolylines,
+                        polygons: hexPolygons,
+                        zoomControlsEnabled: false,
+                        myLocationButtonEnabled: false,
+                        padding: EdgeInsets.zero,
+                      ),
+                      if (_hexSelectMode)
+                        Positioned(
+                          left: 12,
+                          top: 12,
+                          child: Material(
+                            color: Colors.black.withValues(alpha: 0.82),
+                            borderRadius: BorderRadius.circular(10),
+                            child: Padding(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 12,
+                                vertical: 10,
+                              ),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Icon(Icons.touch_app_rounded,
+                                      color: _accent, size: 20),
+                                  const SizedBox(width: 10),
+                                  const Text(
+                                    'Tap a hex on the map',
+                                    style: TextStyle(
+                                      color: Colors.white,
+                                      fontWeight: FontWeight.w700,
+                                      fontSize: 13,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ),
+                      if (_pendingHexKey != null)
+                        Positioned(
+                          left: 10,
+                          right: 10,
+                          bottom: 10,
+                          child: Material(
+                            elevation: 10,
+                            borderRadius: BorderRadius.circular(12),
+                            color: const Color(0xFF1B2634),
+                            child: Padding(
+                              padding: const EdgeInsets.fromLTRB(
+                                  12, 10, 12, 10),
+                              child: Row(
+                                children: [
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        Text(
+                                          'Cell ${_pendingHexKey!}',
+                                          style: TextStyle(
+                                            color: _accent,
+                                            fontWeight: FontWeight.w900,
+                                            fontSize: 14,
+                                          ),
+                                        ),
+                                        const SizedBox(height: 4),
+                                        Text(
+                                          '${bins48[_pendingHexKey!] ?? 0} incidents (48h) in this hex',
+                                          style: const TextStyle(
+                                            color: Colors.white70,
+                                            fontSize: 12,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                  TextButton(
+                                    onPressed: () => setState(
+                                        () => _pendingHexKey = null),
+                                    child: const Text('Cancel'),
+                                  ),
+                                  const SizedBox(width: 4),
+                                  FilledButton(
+                                    onPressed: () {
+                                      final k = _pendingHexKey!;
+                                      setState(() {
+                                        _confirmedHexKey = k;
+                                        _pendingHexKey = null;
+                                        _hexSelectMode = false;
+                                      });
+                                      WidgetsBinding.instance
+                                          .addPostFrameCallback((_) {
+                                        unawaited(_focusConfirmedHex(
+                                            zone, hexSize, k));
+                                      });
+                                    },
+                                    style: FilledButton.styleFrom(
+                                      backgroundColor: _accent,
+                                    ),
+                                    child: const Text('Confirm'),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ),
+                    ],
+                  ),
+                );
+
+                final detailAndAi = Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    hexFocusSummary(),
+                    if (_hexSelectMode || _confirmedHexKey != null)
+                      Padding(
+                        padding:
+                            const EdgeInsets.fromLTRB(10, 0, 10, 6),
+                        child: Text(
+                          _confirmedHexKey != null
+                              ? 'Map zoomed to the selected hex. Clear selection on the left to reset the view.'
+                              : 'Pick a hex, then Confirm to zoom in and inspect.',
+                          style: const TextStyle(
+                            color: Colors.white38,
+                            fontSize: 10,
+                            height: 1.35,
+                          ),
+                        ),
+                      ),
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(10, 4, 10, 6),
+                      child: Row(
+                        children: [
+                          Icon(Icons.psychology_outlined,
+                              color: AppColors.accentBlue, size: 18),
+                          const SizedBox(width: 8),
+                          const Text(
+                            'Analytics AI',
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontWeight: FontWeight.w800,
+                              fontSize: 13,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const Padding(
+                      padding: EdgeInsets.fromLTRB(10, 0, 10, 6),
+                      child: Text(
+                        'Gemini reads the same live digest as this dashboard.',
+                        style: TextStyle(
+                          color: Colors.white38,
+                          fontSize: 9,
+                          height: 1.3,
                         ),
                       ),
                     ),
-                  ),
+                    Expanded(
+                      child: ColoredBox(
+                        color: const Color(0xFF161B22),
+                        child: _buildAiAssistantPanel(),
+                      ),
+                    ),
+                  ],
+                );
+
+                return LayoutBuilder(
+                  builder: (context, constraints) {
+                    final narrow = constraints.maxWidth < 1040;
+                    if (narrow) {
+                      return Scrollbar(
+                        thumbVisibility: true,
+                        child: SingleChildScrollView(
+                          padding:
+                              const EdgeInsets.fromLTRB(12, 10, 12, 20),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
+                              leftBody,
+                              const SizedBox(height: 14),
+                              SizedBox(height: 380, child: mapStack),
+                              const SizedBox(height: 14),
+                              SizedBox(
+                                height: 400,
+                                child: detailAndAi,
+                              ),
+                            ],
+                          ),
+                        ),
+                      );
+                    }
+                    return Row(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        SizedBox(
+                          width: 340,
+                          child: Scrollbar(
+                            thumbVisibility: true,
+                            child: SingleChildScrollView(
+                              padding: const EdgeInsets.fromLTRB(
+                                  12, 10, 8, 20),
+                              child: leftBody,
+                            ),
+                          ),
+                        ),
+                        const VerticalDivider(
+                          width: 1,
+                          color: Colors.white12,
+                        ),
+                        Expanded(child: mapStack),
+                        OpsCollapsibleDetailPanel(
+                          expanded: _analyticsDetailPanelOpen,
+                          onToggleExpanded: () => setState(() =>
+                              _analyticsDetailPanelOpen =
+                                  !_analyticsDetailPanelOpen),
+                          accent: _accent,
+                          title: 'Details & AI',
+                          openWidth: 360,
+                          body: detailAndAi,
+                        ),
+                      ],
+                    );
+                  },
                 );
               },
             ),

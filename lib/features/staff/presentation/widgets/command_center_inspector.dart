@@ -467,11 +467,19 @@ class _CommandCenterInspectorState extends State<CommandCenterInspector> {
                   style: const TextStyle(color: Colors.orangeAccent, fontSize: 11),
                 ),
                 const SizedBox(height: 4),
-                if (inc.emergencyContactPhone != null && inc.emergencyContactPhone!.isNotEmpty)
-                  Text(
-                    'Emergency contact: ${inc.emergencyContactPhone}',
-                    style: const TextStyle(color: Colors.cyanAccent, fontSize: 11),
-                  ),
+                if ((inc.emergencyContactPhone ?? '').isNotEmpty ||
+                    (inc.emergencyContactEmail ?? '').isNotEmpty) ...[
+                  if ((inc.emergencyContactPhone ?? '').isNotEmpty)
+                    Text(
+                      'Emergency contact phone: ${inc.emergencyContactPhone}',
+                      style: const TextStyle(color: Colors.cyanAccent, fontSize: 11),
+                    ),
+                  if ((inc.emergencyContactEmail ?? '').isNotEmpty)
+                    Text(
+                      'Emergency contact email: ${inc.emergencyContactEmail}',
+                      style: const TextStyle(color: Colors.cyanAccent, fontSize: 11),
+                    ),
+                ],
                 const SizedBox(height: 12),
                 Center(
                   child: QrImageView(
@@ -757,12 +765,24 @@ class _CommandCenterInspectorState extends State<CommandCenterInspector> {
                   'Blood: ${inc.bloodType ?? "—"} · Allergies: ${inc.allergies ?? "—"} · Conditions: ${inc.medicalConditions ?? "—"}',
                   style: const TextStyle(color: Colors.orangeAccent, fontSize: 11, height: 1.3),
                 ),
-                if (inc.emergencyContactPhone != null && inc.emergencyContactPhone!.isNotEmpty)
+                if ((inc.emergencyContactPhone ?? '').isNotEmpty ||
+                    (inc.emergencyContactEmail ?? '').isNotEmpty)
                   Padding(
                     padding: const EdgeInsets.only(top: 4),
-                    child: Text(
-                      'Emergency contact: ${inc.emergencyContactPhone} (${inc.useEmergencyContactForSms ? "SMS on" : "SMS off"})',
-                      style: const TextStyle(color: Colors.cyanAccent, fontSize: 11),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        if ((inc.emergencyContactPhone ?? '').isNotEmpty)
+                          Text(
+                            'Emergency contact phone: ${inc.emergencyContactPhone} (${inc.useEmergencyContactForSms ? "SMS on" : "SMS off"})',
+                            style: const TextStyle(color: Colors.cyanAccent, fontSize: 11),
+                          ),
+                        if ((inc.emergencyContactEmail ?? '').isNotEmpty)
+                          Text(
+                            'Emergency contact email: ${inc.emergencyContactEmail}',
+                            style: const TextStyle(color: Colors.cyanAccent, fontSize: 11),
+                          ),
+                      ],
                     ),
                   ),
                 if (inc.smsRelayOrOrigin)

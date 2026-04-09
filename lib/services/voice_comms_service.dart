@@ -93,12 +93,33 @@ class VoiceCommsService {
     },
   };
 
+  /// BCP-47 for on-device TTS. Includes every [kSupportedLocales] language code.
   static String bcp47ForLocale(String locale) {
-    switch (locale) {
+    switch (locale.toLowerCase()) {
       case 'en':
         return 'en-IN';
       case 'hi':
         return 'hi-IN';
+      case 'ta':
+        return 'ta-IN';
+      case 'te':
+        return 'te-IN';
+      case 'kn':
+        return 'kn-IN';
+      case 'ml':
+        return 'ml-IN';
+      case 'bn':
+        return 'bn-IN';
+      case 'mr':
+        return 'mr-IN';
+      case 'gu':
+        return 'gu-IN';
+      case 'pa':
+        return 'pa-IN';
+      case 'or':
+        return 'or-IN';
+      case 'ur':
+        return 'ur-IN';
       case 'es':
         return 'es-ES';
       case 'fr':

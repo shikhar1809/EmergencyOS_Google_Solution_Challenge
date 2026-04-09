@@ -27,6 +27,7 @@ import 'services/incident_seed_service.dart';
 import 'services/leaderboard_service.dart';
 import 'services/offline_cache_service.dart';
 import 'services/ops_hospital_service.dart';
+import 'services/voice_comms_service.dart';
 
 Future<void> bootstrapEmergencyOS(AppVariant variant) async {
   try {
@@ -65,6 +66,9 @@ Future<void> bootstrapEmergencyOS(AppVariant variant) async {
     );
 
     await OfflineCacheService.init();
+
+    // So first web TTS (readAloudImmediate) uses app language, not default en.
+    await VoiceCommsService.getLocale();
 
     try {
       const recaptchaSiteKey = String.fromEnvironment('RECAPTCHA_SITE_KEY', defaultValue: '');

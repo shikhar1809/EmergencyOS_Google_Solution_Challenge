@@ -2201,10 +2201,11 @@ class _AdminCommandCenterScreenState extends State<AdminCommandCenterScreen>
   @override
   Widget build(BuildContext context) {
     if (_zone == null) {
-      return Scaffold(
-        primary: false,
-        backgroundColor: AppColors.slate900,
-        body: Center(child: CircularProgressIndicator(color: _accent)),
+      // Avoid nested [Scaffold] inside parent [Expanded] — use explicit expand so layout
+      // always receives bounded constraints (web / multi-site hosting).
+      return ColoredBox(
+        color: AppColors.slate900,
+        child: Center(child: CircularProgressIndicator(color: _accent)),
       );
     }
     final zone = _zone!;
@@ -2610,8 +2611,10 @@ class _AdminCommandCenterScreenState extends State<AdminCommandCenterScreen>
               .toList(),
         );
 
-    return Column(
-      children: [
+    return SizedBox.expand(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
         if (acc.role == AdminConsoleRole.medical &&
             (acc.boundHospitalDocId ?? '').trim().isNotEmpty)
           HospitalDispatchPendingBanner(
@@ -3217,6 +3220,7 @@ class _AdminCommandCenterScreenState extends State<AdminCommandCenterScreen>
           ),
         ),
       ],
+      ),
     );
   }
 }

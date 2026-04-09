@@ -542,7 +542,7 @@ class _MainNavigationShellState extends ConsumerState<MainNavigationShell> with 
           type: 'General Emergency',
           incidentId: createdId!,
           victimCount: 1,
-          freeText: 'EmergencyOS shell SOS',
+          freeText: 'emergencyOS shell SOS',
         );
       } else {
         unawaited(
@@ -552,7 +552,7 @@ class _MainNavigationShellState extends ConsumerState<MainNavigationShell> with 
             type: 'General Emergency',
             incidentId: createdId!,
             victimCount: 1,
-            freeText: 'EmergencyOS shell SOS',
+            freeText: 'emergencyOS shell SOS',
           ),
         );
       }

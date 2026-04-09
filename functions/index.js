@@ -35,6 +35,7 @@ const { defineString, defineSecret } = require("firebase-functions/params");
 const { AccessToken, AgentDispatchClient, RoomServiceClient } = require("livekit-server-sdk");
 
 const lkUrl = defineString("LIVEKIT_URL", { default: "" });
+const lkHttpUrl = defineString("LIVEKIT_HTTP_URL", { default: "" });
 const lkKey = defineString("LIVEKIT_API_KEY", { default: "" });
 const lkSecret = defineSecret("LIVEKIT_API_SECRET");
 
@@ -44,16 +45,52 @@ const lifelineAgentName =
 const copilotAgentName =
   process.env.COPILOT_LIVEKIT_AGENT_NAME || "copilot";
 
+function sanitizeLiveKitString(v) {
+  if (v == null) return "";
+  let s = String(v).trim().replace(/^\uFEFF/, "");
+  if (
+    (s.startsWith('"') && s.endsWith('"') && s.length >= 2) ||
+    (s.startsWith("'") && s.endsWith("'") && s.length >= 2)
+  ) {
+    s = s.slice(1, -1).trim();
+  }
+  s = s.replace(/\r\n/g, "\n").replace(/\r/g, "").trim();
+  return s;
+}
+
+/** Strip invisible / line-break chars that break JWT signing (common Secret Manager paste issues). */
+function sanitizeLiveKitApiSecret(v) {
+  let s = sanitizeLiveKitString(v);
+  s = s.replace(/[\u200B-\u200D\uFEFF]/g, "");
+  s = s.replace(/[\r\n\t\v\f]/g, "").trim();
+  return s;
+}
+
+/** API keys are a single token — remove all whitespace. */
+function sanitizeLiveKitApiKey(v) {
+  let s = sanitizeLiveKitString(v);
+  s = s.replace(/[\u200B-\u200D\uFEFF]/g, "");
+  s = s.replace(/\s+/g, "").trim();
+  return s;
+}
+
+/**
+ * LiveKit credentials for token minting + server SDK.
+ * Prefer the secret passed from `lkSecret.value()` over `process.env.LIVEKIT_API_SECRET` so a stale
+ * or duplicate plain env var in Cloud Console cannot override Secret Manager (fixes "invalid token").
+ */
 function liveKitEnv(secretFromBinding) {
-  const url = (process.env.LIVEKIT_URL || lkUrl.value() || "").trim();
-  const apiKey = (process.env.LIVEKIT_API_KEY || lkKey.value() || "").trim();
-  const apiSecret = (process.env.LIVEKIT_API_SECRET || (secretFromBinding || "") || "").toString().trim();
+  const url = sanitizeLiveKitString(process.env.LIVEKIT_URL || lkUrl.value() || "");
+  const apiKey = sanitizeLiveKitApiKey(process.env.LIVEKIT_API_KEY || lkKey.value() || "");
+  const bound = sanitizeLiveKitApiSecret(secretFromBinding || "");
+  const fromEnv = sanitizeLiveKitApiSecret(process.env.LIVEKIT_API_SECRET || "");
+  const apiSecret = bound || fromEnv;
   return { url, apiKey, apiSecret };
 }
 
 /** Flutter/web clients must receive `wss://` (not `https://`) or LiveKit reports invalid token / failed connect. */
 function livekitUrlForClients(envUrl) {
-  let u = (envUrl || "").trim();
+  let u = sanitizeLiveKitString(envUrl);
   if (!u) return u;
   while (u.endsWith("/")) u = u.slice(0, -1);
   if (u.startsWith("https://")) return `wss://${u.slice(8)}`;
@@ -61,11 +98,53 @@ function livekitUrlForClients(envUrl) {
   return u;
 }
 
+/**
+ * RoomServiceClient / AgentDispatchClient call LiveKit's HTTP API. They must use https:// (not wss://).
+ * Twirp expects the API origin only (no path) — extra path segments break requests and often surface as "invalid token".
+ */
+function livekitUrlForServerSdk(envUrl) {
+  let u = sanitizeLiveKitString(envUrl);
+  if (!u) return u;
+  while (u.endsWith("/")) u = u.slice(0, -1);
+  if (u.startsWith("wss://")) u = `https://${u.slice(6)}`;
+  else if (u.startsWith("ws://")) u = `http://${u.slice(5)}`;
+  try {
+    const parsed = new URL(u);
+    if (!parsed.hostname) return u;
+    return `${parsed.protocol}//${parsed.host}`;
+  } catch (_) {
+    return u;
+  }
+}
+
+/**
+ * Prefer LIVEKIT_HTTP_URL (env, Firebase param, or GCP console) — Twirp API origin only, e.g. https://proj.livekit.cloud
+ * Otherwise derive https origin from LIVEKIT_URL.
+ */
+function livekitHostForServerSdk(env) {
+  const explicit = sanitizeLiveKitString(
+    process.env.LIVEKIT_HTTP_URL || lkHttpUrl.value() || ""
+  );
+  if (explicit) return livekitUrlForServerSdk(explicit);
+  return livekitUrlForServerSdk(env.url);
+}
+
+/** WebSocket URL returned to Flutter/web clients (from LIVEKIT_URL or derived from LIVEKIT_HTTP_URL). */
+function livekitClientWsUrl(env) {
+  const u = sanitizeLiveKitString(env.url || "");
+  if (u) return livekitUrlForClients(u);
+  const h = livekitHostForServerSdk(env);
+  if (h.startsWith("https://")) return `wss://${h.slice(8)}`;
+  if (h.startsWith("http://")) return `ws://${h.slice(7)}`;
+  return "";
+}
+
 function assertLiveKitConfigured(env) {
-  if (!env.url || !env.apiKey || !env.apiSecret) {
+  const ws = livekitClientWsUrl(env);
+  if (!ws || !env.apiKey || !env.apiSecret) {
     throw new HttpsError(
       "failed-precondition",
-      "LiveKit not configured. Local: copy functions/.env.example to functions/.env. Production: firebase functions:secrets:set LIVEKIT_API_SECRET; set LIVEKIT_URL and LIVEKIT_API_KEY (Firebase params or GCP env vars)."
+      "LiveKit not configured. Local: copy functions/.env.example to functions/.env. Production: firebase functions:secrets:set LIVEKIT_API_SECRET; set LIVEKIT_URL + LIVEKIT_API_KEY (or LIVEKIT_HTTP_URL + LIVEKIT_API_KEY) as Firebase params or GCP env vars."
     );
   }
 }
@@ -554,7 +633,17 @@ exports.lifelineChat = onCall(
             };
         }
 
-        const { message, scenario, base64Image, mimeType, history, contextDigest, analyticsMode } = request.data || {};
+        const {
+            message,
+            scenario,
+            base64Image,
+            mimeType,
+            history,
+            contextDigest,
+            analyticsMode,
+            trainingMode,
+            replyLocale,
+        } = request.data || {};
         if (!message || typeof message !== "string") {
             throw new HttpsError("invalid-argument", "message required");
         }
@@ -571,6 +660,9 @@ exports.lifelineChat = onCall(
 
         const scen = typeof scenario === "string" ? scenario : "General Emergency";
         const isAnalytics = analyticsMode === true;
+        const isTraining = trainingMode === true;
+        const replyLocaleRaw =
+            typeof replyLocale === "string" ? replyLocale.trim() : "";
 
         let digestRaw =
             contextDigest && typeof contextDigest === "string" ? contextDigest.trim() : "";
@@ -593,6 +685,21 @@ exports.lifelineChat = onCall(
             if (digestRaw) {
                 transcript += `## LIVE CONTEXT (READ-ONLY)\n${digestRaw}\n\n`;
             }
+        } else if (isTraining) {
+            const langLine = replyLocaleRaw
+                ? `The user's app language is ${replyLocaleRaw}. Write your ENTIRE reply in that language (natural for that locale).`
+                : `Match the language of the user's message for your entire reply.`;
+            transcript =
+                `You are LIFELINE — EmergencyOS first-aid and emergency-training assistant.\n` +
+                `${langLine}\n\n` +
+                `Rules:\n` +
+                `- Only answer: first aid, CPR/AED/choking/bleeding/burns/shock, the training curriculum below, when to call 112 (or local emergency numbers), and how to use EmergencyOS safety flows.\n` +
+                `- If the user asks anything unrelated (games, coding, politics, homework, general chat), reply with ONE short refusal sentence in their language — no other content.\n` +
+                `- Be concise: numbered steps or short bullets (about 8 lines or fewer).\n` +
+                `- Standard first-aid guidance only; do not invent dangerous treatments.\n\n`;
+            if (digestRaw) {
+                transcript += `## TRAINING CURRICULUM (REFERENCE)\n${digestRaw}\n\n`;
+            }
         } else {
             transcript = lifelineSystemPrompt(scen) + "\n\n";
             if (digestRaw) {
@@ -608,13 +715,20 @@ exports.lifelineChat = onCall(
                 if (t) transcript += `${role}: ${t}\n`;
             }
         }
-        transcript += `User: ${message}\n\n${isAnalytics ? "Respond as OPS ANALYTICS:" : "Respond as LIFELINE:"}`;
+        const tailLabel = isAnalytics
+            ? "Respond as OPS ANALYTICS:"
+            : isTraining
+              ? "Respond as LIFELINE (training):"
+              : "Respond as LIFELINE:";
+        transcript += `User: ${message}\n\n${tailLabel}`;
 
         try {
             let response;
             const gen = isAnalytics
                 ? { maxOutputTokens: 2048, temperature: 0.3 }
-                : { maxOutputTokens: 180, temperature: 0.2 };
+                : isTraining
+                  ? { maxOutputTokens: 640, temperature: 0.25 }
+                  : { maxOutputTokens: 180, temperature: 0.2 };
             if (base64Image && typeof base64Image === "string") {
                 response = await ai.models.generateContent({
                     model: "gemini-2.5-flash",
@@ -738,7 +852,11 @@ async function assertCommsBridgeIncidentAccess(uid, token, userDoc, incidentId, 
 }
 
 async function ensureCommsLiveKitRoom(env, roomName) {
-  const roomClient = new RoomServiceClient(env.url, env.apiKey, env.apiSecret);
+  const roomClient = new RoomServiceClient(
+    livekitHostForServerSdk(env),
+    env.apiKey,
+    env.apiSecret
+  );
   try {
     const rooms = await roomClient.listRooms([roomName]);
     if (!rooms || rooms.length === 0) {
@@ -900,7 +1018,7 @@ exports.getLivekitToken = onCall(
 
     return {
       token,
-      url: livekitUrlForClients(env.url),
+      url: livekitClientWsUrl(env),
       roomName,
       identity,
       role,
@@ -943,7 +1061,7 @@ exports.getCopilotLivekitToken = onCall(
 
     return {
       token,
-      url: livekitUrlForClients(env.url),
+      url: livekitClientWsUrl(env),
       roomName,
       identity,
     };
@@ -977,7 +1095,11 @@ exports.ensureCopilotAgent = onCall(
       }
     }
 
-    const agentDispatchClient = new AgentDispatchClient(env.url, env.apiKey, env.apiSecret);
+    const agentDispatchClient = new AgentDispatchClient(
+      livekitHostForServerSdk(env),
+      env.apiKey,
+      env.apiSecret
+    );
     const metadata = JSON.stringify({
       uid,
       roomName,
@@ -1043,7 +1165,11 @@ exports.ensureEmergencyBridge = onCall(
 
   const emergencyContactPhone = normalizeE164(incident.emergencyContactPhone);
 
-  const agentDispatchClient = new AgentDispatchClient(env.url, env.apiKey, env.apiSecret);
+  const agentDispatchClient = new AgentDispatchClient(
+    livekitHostForServerSdk(env),
+    env.apiKey,
+    env.apiSecret
+  );
   const metadata = JSON.stringify({
     incidentId,
     roomName,
@@ -1103,7 +1229,11 @@ exports.dispatchLifelineComms = onCall(
   }
 
   const roomName = emergencyRoomName(incidentId);
-  const agentDispatchClient = new AgentDispatchClient(env.url, env.apiKey, env.apiSecret);
+  const agentDispatchClient = new AgentDispatchClient(
+    livekitHostForServerSdk(env),
+    env.apiKey,
+    env.apiSecret
+  );
 
   const metadata = JSON.stringify({
     incidentId,
@@ -1134,15 +1264,26 @@ exports.getOpsSystemHealth = onCall({ secrets: [lkSecret] }, async (request) => 
   let livekitDetail = "Not configured";
   try {
     const env = liveKitEnv(lkSecret.value());
-    if (env.url && env.apiKey && env.apiSecret) {
-      const roomClient = new RoomServiceClient(env.url, env.apiKey, env.apiSecret);
+    const lkHost = livekitHostForServerSdk(env);
+    // Allow LIVEKIT_HTTP_URL-only configs (no wss LIVEKIT_URL) for server API checks.
+    if (lkHost && env.apiKey && env.apiSecret) {
+      const roomClient = new RoomServiceClient(lkHost, env.apiKey, env.apiSecret);
       const rooms = await roomClient.listRooms();
       livekitOk = true;
       livekitDetail = `${rooms.length} room(s) listed`;
+    } else if (!env.apiKey || !env.apiSecret) {
+      livekitDetail = "Missing LIVEKIT_API_KEY or LIVEKIT_API_SECRET";
+    } else if (!lkHost) {
+      livekitDetail = "Set LIVEKIT_URL (wss/https) or LIVEKIT_HTTP_URL (https origin)";
     }
   } catch (e) {
     livekitOk = false;
-    livekitDetail = String(e?.message || e);
+    let msg = String(e?.message || e);
+    if (/invalid token/i.test(msg)) {
+      msg +=
+        " — Pair LIVEKIT_API_KEY + LIVEKIT_API_SECRET from the same LiveKit project; remove stray spaces/newlines in Secret Manager. Set LIVEKIT_URL + LIVEKIT_API_KEY (params), or set env LIVEKIT_HTTP_URL=https://<subdomain>.livekit.cloud on the function. Redeploy after changes.";
+    }
+    livekitDetail = msg;
   }
 
   const smsOk = !!(twilioSid && twilioToken && twilioNumber);
@@ -1195,7 +1336,7 @@ exports.ensureCommsBridgeRooms = onCall({ secrets: [lkSecret] }, async (request)
   await ensureCommsLiveKitRoom(env, op);
   await ensureCommsLiveKitRoom(env, em);
 
-  return { operationRoom: op, emergencyRoom: em, url: livekitUrlForClients(env.url) };
+  return { operationRoom: op, emergencyRoom: em, url: livekitClientWsUrl(env) };
 });
 
 exports.getCommsBridgeLivekitToken = onCall({ secrets: [lkSecret] }, async (request) => {
@@ -1267,7 +1408,7 @@ exports.getCommsBridgeLivekitToken = onCall({ secrets: [lkSecret] }, async (requ
   });
   const token = await at.toJwt();
 
-  return { token, url: livekitUrlForClients(env.url), roomName, identity, channel };
+  return { token, url: livekitClientWsUrl(env), roomName, identity, channel };
 });
 
 // ─── Incident video → Gemini (accepted volunteers only) ─────────────────────

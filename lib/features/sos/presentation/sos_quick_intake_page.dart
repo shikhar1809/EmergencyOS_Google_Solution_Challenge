@@ -150,7 +150,7 @@ class _SosQuickIntakePageState extends ConsumerState<SosQuickIntakePage>
             type: typeForIncident,
             incidentId: createdId,
             victimCount: _peopleCount,
-            freeText: 'EmergencyOS intake SOS',
+            freeText: 'emergencyOS intake SOS',
           ),
         );
       } else {
@@ -161,7 +161,7 @@ class _SosQuickIntakePageState extends ConsumerState<SosQuickIntakePage>
             type: typeForIncident,
             incidentId: createdId,
             victimCount: _peopleCount,
-            freeText: 'EmergencyOS intake SOS',
+            freeText: 'emergencyOS intake SOS',
           ),
         );
       }

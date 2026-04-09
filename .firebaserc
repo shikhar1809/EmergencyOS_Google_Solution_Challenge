@@ -6,7 +6,7 @@
     "emergencyos-101": {
       "hosting": {
         "main": [
-          "emergencyos-101"
+          "emergencyos-main"
         ],
         "admin": [
           "emergencyos-admin"

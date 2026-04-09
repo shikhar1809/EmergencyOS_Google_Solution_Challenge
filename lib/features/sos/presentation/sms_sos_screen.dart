@@ -241,7 +241,7 @@ class _SmsSosScreenState extends State<SmsSosScreen> {
                 Text('NO DATA CONNECTION', style: TextStyle(color: Colors.orangeAccent, fontWeight: FontWeight.w900, fontSize: 13, letterSpacing: 1)),
                 SizedBox(height: 4),
                 Text(
-                  'Switching to SMS Emergency Relay. Your SOS will be sent to the EmergencyOS gateway and your emergency contacts via text message.',
+                  'Switching to SMS Emergency Relay. Your SOS will be sent to the emergencyOS gateway and your emergency contacts via text message.',
                   style: TextStyle(color: Colors.white70, fontSize: 12, height: 1.5),
                 ),
               ],

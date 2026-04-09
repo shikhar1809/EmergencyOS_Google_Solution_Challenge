@@ -1,3 +1,5 @@
+import '../../../core/l10n/app_localizations.dart';
+
 /// Fixed three-step victim interview on active SOS. Answers are stored under
 /// `voiceInterview` on the incident for responder triage.
 abstract final class EmergencyVoiceInterviewQuestions {
@@ -69,6 +71,55 @@ abstract final class EmergencyVoiceInterviewQuestions {
 
   static List<Map<String, String>> flowForType(String? incidentOrTriageType) => fixedInterviewFlow();
 
+  /// Same keys and English [options] as [fixedInterviewFlow] (for Firestore / triage logic);
+  /// [prompt] and [labels] are localized for UI + TTS.
+  static List<Map<String, String>> localizedFlow(AppLocalizations l) {
+    final q1Labels = [
+      l.get('sos_chip_cat_accident'),
+      l.get('sos_chip_cat_medical'),
+      l.get('sos_chip_cat_hazard'),
+      l.get('sos_chip_cat_assault'),
+      l.get('sos_chip_cat_other'),
+    ];
+    final q2Canon =
+        'Critical (life-threatening)|Injured but stable|Not injured but in danger|Safe now';
+    final q2Labels = [
+      l.get('sos_chip_safe_critical'),
+      l.get('sos_chip_safe_injured'),
+      l.get('sos_chip_safe_danger'),
+      l.get('sos_chip_safe_safe_now'),
+    ];
+    final q3Canon = 'Only me|Two|More than two';
+    final q3Labels = [
+      l.get('sos_chip_people_me'),
+      l.get('sos_chip_people_two'),
+      l.get('sos_chip_people_many'),
+    ];
+    return [
+      {
+        'key': q1EmergencyTypeKey,
+        'prompt': l.get('sos_interview_q1_prompt'),
+        'type': 'chip',
+        'options': situationTypeOptions.join('|'),
+        'labels': q1Labels.join('|'),
+      },
+      {
+        'key': q2SafetySeriousKey,
+        'prompt': l.get('sos_interview_q2_prompt'),
+        'type': 'chip',
+        'options': q2Canon,
+        'labels': q2Labels.join('|'),
+      },
+      {
+        'key': q3PeopleCountKey,
+        'prompt': l.get('sos_interview_q3_prompt'),
+        'type': 'chip',
+        'options': q3Canon,
+        'labels': q3Labels.join('|'),
+      },
+    ];
+  }
+
   static final Map<String, String> promptsByAnswerKey = () {
     final m = <String, String>{};
     for (final q in fixedInterviewFlow()) {
@@ -85,5 +136,20 @@ abstract final class EmergencyVoiceInterviewQuestions {
     final k = key.trim();
     if (k.isEmpty) return null;
     return promptsByAnswerKey[k];
+  }
+
+  static String? promptForAnswerKeyWithL10n(String key, AppLocalizations l) {
+    final k = key.trim();
+    if (k.isEmpty) return null;
+    switch (k) {
+      case q1EmergencyTypeKey:
+        return l.get('sos_interview_q1_prompt');
+      case q2SafetySeriousKey:
+        return l.get('sos_interview_q2_prompt');
+      case q3PeopleCountKey:
+        return l.get('sos_interview_q3_prompt');
+      default:
+        return promptForAnswerKey(k);
+    }
   }
 }

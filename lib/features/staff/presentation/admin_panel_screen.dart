@@ -22,6 +22,7 @@ import 'impact_dashboard_screen.dart';
 import 'master_management_hub_screen.dart';
 import 'master_insights_screen.dart';
 import 'master_systems_hub_screen.dart';
+import 'widgets/master_dashboard_health_bar.dart';
 import 'widgets/ops_dashboard_status_bar.dart';
 
 class OpsDashboardScreen extends StatefulWidget {
@@ -104,7 +105,7 @@ class _OpsDashboardScreenState extends State<OpsDashboardScreen> {
 
   int? _commsTabIndexForAccess(AdminPanelAccess a) {
     if (!a.canUseCommsBridge) return null;
-    // Master: Live Ops, Management, Systems, Insights, Comms
+    // Master: Live Ops, Management, Systems, Analytics, Comms, Insights
     // Medical: Live Ops, Fleet, Comms
     if (a.role == AdminConsoleRole.master) return 4;
     if (a.role == AdminConsoleRole.medical) return 2;
@@ -450,12 +451,14 @@ class _OpsDashboardScreenState extends State<OpsDashboardScreen> {
           label: Text('Systems'),
         ),
       );
-      list.add(
-        const NavigationRailDestination(
-          icon: Icon(Icons.insights_rounded),
-          label: Text('Insights'),
-        ),
-      );
+      if (a.canUseAnalytics) {
+        list.add(
+          const NavigationRailDestination(
+            icon: Icon(Icons.analytics),
+            label: Text('Analytics'),
+          ),
+        );
+      }
       if (a.canUseCommsBridge) {
         list.add(
           const NavigationRailDestination(
@@ -465,6 +468,12 @@ class _OpsDashboardScreenState extends State<OpsDashboardScreen> {
           ),
         );
       }
+      list.add(
+        const NavigationRailDestination(
+          icon: Icon(Icons.insights_rounded),
+          label: Text('Insights'),
+        ),
+      );
     }
     if (a.role == AdminConsoleRole.medical) {
       list.add(
@@ -483,21 +492,19 @@ class _OpsDashboardScreenState extends State<OpsDashboardScreen> {
         );
       }
     }
-    if (a.canUseAnalytics) {
+    if (a.canUseAnalytics && a.role != AdminConsoleRole.master) {
       list.add(
         const NavigationRailDestination(
           icon: Icon(Icons.analytics),
           label: Text('Analytics'),
         ),
       );
-      if (a.role != AdminConsoleRole.master) {
-        list.add(
-          const NavigationRailDestination(
-            icon: Icon(Icons.volunteer_activism),
-            label: Text('Impact'),
-          ),
-        );
-      }
+      list.add(
+        const NavigationRailDestination(
+          icon: Icon(Icons.volunteer_activism),
+          label: Text('Impact'),
+        ),
+      );
     }
     return list;
   }
@@ -565,15 +572,21 @@ class _OpsDashboardScreenState extends State<OpsDashboardScreen> {
           decoration: const BoxDecoration(
             border: Border(top: BorderSide(color: Colors.white12)),
           ),
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.center,
-            children: [
-              Expanded(
-                child: Center(
+          // Explicit height: a Stack with only [Positioned.fill] can confuse column layout
+          // and starve the Expanded body above (blank master dashboard).
+          child: SizedBox(
+            height: 62,
+            child: Stack(
+              clipBehavior: Clip.none,
+              alignment: Alignment.center,
+              children: [
+                Align(
+                  alignment: Alignment.center,
                   child: SingleChildScrollView(
                     scrollDirection: Axis.horizontal,
                     child: Row(
                       mainAxisSize: MainAxisSize.min,
+                      mainAxisAlignment: MainAxisAlignment.center,
                       children: [
                         for (var i = 0; i < destinations.length; i++)
                           _opsDockItem(
@@ -586,12 +599,19 @@ class _OpsDashboardScreenState extends State<OpsDashboardScreen> {
                     ),
                   ),
                 ),
-              ),
-              OpsDashboardStatusBar(
-                sessionStartedAt: sessionStartedAt,
-                dockTray: true,
-              ),
-            ],
+                Positioned(
+                  right: 0,
+                  top: 0,
+                  bottom: 0,
+                  child: Center(
+                    child: OpsDashboardStatusBar(
+                      sessionStartedAt: sessionStartedAt,
+                      dockTray: true,
+                    ),
+                  ),
+                ),
+              ],
+            ),
           ),
         ),
       ),
@@ -610,7 +630,9 @@ class _OpsDashboardScreenState extends State<OpsDashboardScreen> {
       }
       if (i == idx++) return MasterManagementHubScreen(access: a);
       if (i == idx++) return MasterSystemsHubScreen(access: a);
-      if (i == idx++) return MasterInsightsScreen(access: a);
+      if (a.canUseAnalytics) {
+        if (i == idx++) return AdminAnalyticsDashboard(access: a);
+      }
       if (a.canUseCommsBridge) {
         if (i == idx++) {
           return CommsBridgeScreen(
@@ -622,9 +644,7 @@ class _OpsDashboardScreenState extends State<OpsDashboardScreen> {
           );
         }
       }
-      if (a.canUseAnalytics) {
-        if (i == idx++) return AdminAnalyticsDashboard(access: a);
-      }
+      if (i == idx++) return MasterInsightsScreen(access: a);
       return AdminCommandCenterScreen(
         access: a,
         focusIncidentId: widget.focusIncidentId,
@@ -1000,6 +1020,8 @@ class _OpsDashboardScreenState extends State<OpsDashboardScreen> {
               ],
             ),
           ),
+          if (access.role == AdminConsoleRole.master)
+            const MasterDashboardHealthBar(),
           Expanded(child: ClipRect(child: _bodyForIndex(access, safeIndex))),
           _opsTaskbarDock(
             destinations: destinations,

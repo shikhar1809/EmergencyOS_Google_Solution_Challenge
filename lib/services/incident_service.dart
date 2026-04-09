@@ -46,6 +46,7 @@ class SosIncident {
 
   // Emergency contact updates (victim chosen contact)
   final String? emergencyContactPhone;
+  final String? emergencyContactEmail;
   final bool useEmergencyContactForSms;
   /// Optional secret used for family tracker links (read-only status view).
   final String? familyTrackingToken;
@@ -165,6 +166,7 @@ class SosIncident {
     this.ambulanceEta,
     this.medicalStatus,
     this.emergencyContactPhone,
+    this.emergencyContactEmail,
     this.useEmergencyContactForSms = false,
     this.familyTrackingToken,
     this.acceptedVolunteerIds = const [],
@@ -235,6 +237,8 @@ class SosIncident {
     if (ambulanceEta != null) 'ambulanceEta': ambulanceEta,
     if (medicalStatus != null) 'medicalStatus': medicalStatus,
     if (emergencyContactPhone != null) 'emergencyContactPhone': emergencyContactPhone,
+    if (emergencyContactEmail != null && emergencyContactEmail!.trim().isNotEmpty)
+      'emergencyContactEmail': emergencyContactEmail!.trim(),
     'useEmergencyContactForSms': useEmergencyContactForSms,
     if (familyTrackingToken != null) 'familyTrackingToken': familyTrackingToken,
     'acceptedVolunteerIds': acceptedVolunteerIds,
@@ -311,6 +315,11 @@ class SosIncident {
     ambulanceEta: j['ambulanceEta'] as String?,
     medicalStatus: j['medicalStatus'] as String?,
     emergencyContactPhone: j['emergencyContactPhone'] as String?,
+    emergencyContactEmail: () {
+      final s = (j['emergencyContactEmail'] as String?)?.trim();
+      if (s == null || s.isEmpty) return null;
+      return s;
+    }(),
     useEmergencyContactForSms: (j['useEmergencyContactForSms'] as bool?) ?? false,
     familyTrackingToken: j['familyTrackingToken'] as String?,
     acceptedVolunteerIds: List<String>.from(j['acceptedVolunteerIds'] ?? []),
@@ -589,6 +598,7 @@ class IncidentService {
     String? algs;
     String? conds;
     String? emergencyPhone;
+    String? emergencyEmail;
     bool useEmergencySms = false;
     
     if (userId.isNotEmpty && userId != 'anonymous') {
@@ -601,6 +611,9 @@ class IncidentService {
           if ((data['conditions'] as String?)?.isNotEmpty ?? false) conds = data['conditions'];
           if ((data['contactPhone'] as String?)?.trim().isNotEmpty ?? false) {
             emergencyPhone = (data['contactPhone'] as String).trim();
+          }
+          if ((data['contactEmail'] as String?)?.trim().isNotEmpty ?? false) {
+            emergencyEmail = (data['contactEmail'] as String).trim();
           }
           useEmergencySms = (data['useEmergencyContactForSms'] as bool?) ?? false;
         }
@@ -621,6 +634,7 @@ class IncidentService {
       allergies: algs,
       medicalConditions: conds,
       emergencyContactPhone: emergencyPhone,
+      emergencyContactEmail: emergencyEmail,
       useEmergencyContactForSms: useEmergencySms,
     );
 
