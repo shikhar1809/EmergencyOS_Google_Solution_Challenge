@@ -38,6 +38,13 @@ class MapsLeafletFallbackNotifier extends Notifier<bool> {
           : '[MapsFallback] Cleared OSM preference: $reason',
     );
   }
+
+  /// Force Google Maps mode for the admin console - clears any stored Leaflet preference.
+  void forceGoogleMaps({required String reason}) {
+    state = false;
+    SharedPreferences.getInstance().then((prefs) => prefs.remove(_kPrefKey));
+    debugPrint('[MapsFallback] Force Google Maps for admin: $reason');
+  }
 }
 
 final mapsLeafletFallbackProvider =

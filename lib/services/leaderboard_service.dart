@@ -635,13 +635,28 @@ class LeaderboardService {
     return controller.stream;
   }
 
-  /// Streams count of currently active (pending/dispatched) alerts across all users.
+  static DateTime? _incidentCreatedAt(Map<String, dynamic> d) {
+    final t = d['timestamp'];
+    if (t is Timestamp) return t.toDate();
+    return null;
+  }
+
+  /// Streams count of pending/dispatched SOS created within the last hour (master active window).
   static Stream<int> watchActiveAlertCount() {
+    const window = Duration(hours: 1);
     return _db
         .collection('sos_incidents')
         .where('status', whereIn: ['pending', 'dispatched'])
         .snapshots()
-        .map((snap) => snap.docs.length);
+        .map((snap) {
+          final now = DateTime.now();
+          var n = 0;
+          for (final doc in snap.docs) {
+            final ts = _incidentCreatedAt(doc.data());
+            if (ts != null && now.difference(ts) <= window) n++;
+          }
+          return n;
+        });
   }
 
   /// Returns the rank of the current user in the leaderboard (1-indexed).

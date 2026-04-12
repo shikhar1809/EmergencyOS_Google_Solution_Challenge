@@ -2014,6 +2014,42 @@ exports.declineHospitalDispatch = onCall(
   }
 );
 
+/** Master console only: re-run hospital-in-hex chain (e.g. no assignment, exhausted, or stuck). */
+exports.adminRestartHospitalDispatch = onCall(
+  {
+    cors: true,
+    region: "us-east1",
+    memory: "256MiB",
+    cpu: 0.25,
+    concurrency: 1,
+    timeoutSeconds: 120,
+    maxInstances: 5,
+    invoker: "public",
+  },
+  async (request) => {
+    if (!request.auth) throw new HttpsError("unauthenticated", "Sign in required.");
+    if (!isMasterConsoleEmailToken(request.auth.token)) {
+      throw new HttpsError("permission-denied", "Master console only.");
+    }
+    const incidentId = (request.data?.incidentId || "").toString().trim();
+    if (!incidentId) {
+      throw new HttpsError("invalid-argument", "incidentId required.");
+    }
+    const incSnap = await db.collection("sos_incidents").doc(incidentId).get();
+    if (!incSnap.exists) {
+      throw new HttpsError("not-found", "Incident not found.");
+    }
+    const incident = incSnap.data() || {};
+    try {
+      await dispatchHospitalInHex({ incidentId, incident });
+    } catch (e) {
+      console.error("[adminRestartHospitalDispatch]", incidentId, e);
+      throw new HttpsError("internal", "Failed to restart hospital dispatch.");
+    }
+    return { ok: true };
+  }
+);
+
 exports.hospitalDispatchEscalation = onSchedule(
   {
     schedule: "every 1 minutes",

@@ -21,6 +21,7 @@ import 'package:permission_handler/permission_handler.dart';
 
 import '../../../core/theme/app_colors.dart';
 import '../../../core/constants/app_constants.dart';
+import '../../../core/constants/google_maps_illustrative_light_style.dart';
 import '../../../core/constants/india_ops_zones.dart';
 import '../../../core/utils/fleet_map_icons.dart';
 import '../../../core/utils/map_marker_generator.dart';
@@ -139,6 +140,9 @@ class _SosActiveLockedScreenState extends ConsumerState<SosActiveLockedScreen> {
   bool _dispatchRoutesLoading = false;
   StreamSubscription? _dispatchMapSub;
   DispatchChainState? _dispatchMapState;
+  String? _lastSosFeedHospitalSig;
+  String? _lastSosFeedFleetSig;
+  String? _lastSosFeedAmbEnRouteSig;
   Timer? _routeDebounce;
   Timer? _drillScenarioTimer;
   Timer? _drillVehicleAlongRouteTimer;
@@ -206,6 +210,8 @@ class _SosActiveLockedScreenState extends ConsumerState<SosActiveLockedScreen> {
   bool _hasNavigatedToFeedback = false;
   bool _hasSeenIncidentExist = false;
   bool _autoExpireHandled = false;
+  /// One-shot TTS line when profile emergency contact phone/email is on the incident doc.
+  bool _spokenEmergencyContactTts = false;
 
   static const String _voiceCommsBrief =
       'The emergency LiveKit channel joins automatically. The Lifeline agent receives the same guidance text as your device TTS. Your microphone is live on the channel when connected.';
@@ -277,7 +283,10 @@ class _SosActiveLockedScreenState extends ConsumerState<SosActiveLockedScreen> {
     }
     if (!widget.isDrillMode && widget.incidentId.trim().isNotEmpty) {
       _dispatchMapSub = DispatchChainService.watchForIncident(widget.incidentId).listen((state) {
-        if (mounted) setState(() => _dispatchMapState = state);
+        if (!mounted) return;
+        setState(() => _dispatchMapState = state);
+        _scheduleDispatchRoutesRebuild();
+        unawaited(_maybeAppendSosDispatchFeedLines(state));
       });
     }
     if (!widget.isDrillMode) {
@@ -818,6 +827,23 @@ class _SosActiveLockedScreenState extends ConsumerState<SosActiveLockedScreen> {
     _speakGuidance(msg);
   }
 
+  /// Speaks once when the incident includes an emergency contact phone or email (matches UI row).
+  void _maybeSpeakEmergencyContactTtsAfterSnapshot() {
+    if (!context.mounted || widget.isDrillMode || _spokenEmergencyContactTts) return;
+    if (VoiceCommsService.silenceMode) return;
+    final p = _emergencyContactPhone;
+    final e = _emergencyContactEmail;
+    if ((p == null || p.isEmpty) && (e == null || e.isEmpty)) return;
+    _spokenEmergencyContactTts = true;
+    final msg = AppLocalizations.of(context).get('sos_tts_emergency_contacts_on_file');
+    final holdForFlow = !_interviewCompleted || _isQaRunning || _qaVoiceInProgress;
+    if (holdForFlow) {
+      _deferredIncidentVoiceLines.add(msg);
+    } else {
+      _speakGuidance(msg);
+    }
+  }
+
   void _wireIncidentListener() {
     _incidentSub = FirebaseFirestore.instance
         .collection('sos_incidents')
@@ -831,7 +857,9 @@ class _SosActiveLockedScreenState extends ConsumerState<SosActiveLockedScreen> {
         _incidentSub = null;
         if (_hasSeenIncidentExist && !_hasNavigatedToFeedback && !widget.isDrillMode) {
           _hasNavigatedToFeedback = true;
-          context.go('/post_incident_feedback', extra: {'incidentId': widget.incidentId});
+          context.go(
+            '/incident-feedback/${Uri.encodeComponent(widget.incidentId.trim())}?closed=archived',
+          );
         }
         return;
       }
@@ -891,7 +919,10 @@ class _SosActiveLockedScreenState extends ConsumerState<SosActiveLockedScreen> {
         if (ids.length > _acceptedCount) {
           parts.add('Volunteer accepted. Help is on the way.');
         }
-        if (amb != null && amb.isNotEmpty) {
+        final ambDispatchEnRoute =
+            (_dispatchMapState?.assignment?.ambulanceDispatchStatus ?? '').trim() == 'ambulance_en_route';
+        final hasLiveAmbVehicle = ambLLat != null && ambLLng != null;
+        if (amb != null && amb.isNotEmpty && (hasLiveAmbVehicle || ambDispatchEnRoute)) {
           parts.add('Ambulance dispatched. Estimated arrival: $amb.');
         }
         if (med != null && med.isNotEmpty) parts.add(med);
@@ -928,7 +959,10 @@ class _SosActiveLockedScreenState extends ConsumerState<SosActiveLockedScreen> {
         _incidentStatus = data['status'] as String?;
         if ((_incidentStatus == 'resolved' || _incidentStatus == 'cancelled') && !_hasNavigatedToFeedback && !widget.isDrillMode) {
           _hasNavigatedToFeedback = true;
-          context.go('/post_incident_feedback', extra: {'incidentId': widget.incidentId});
+          final iid = widget.incidentId.trim();
+          context.go(
+            '/incident-feedback/${Uri.encodeComponent(iid)}?closed=${Uri.encodeComponent(_incidentStatus!)}',
+          );
         }
         _useEmergencyContactForSms = (data['useEmergencyContactForSms'] as bool?) ?? false;
         _emergencyContactPhone = (data['emergencyContactPhone'] as String?)?.trim();
@@ -952,6 +986,7 @@ class _SosActiveLockedScreenState extends ConsumerState<SosActiveLockedScreen> {
           }
         }
       });
+      _maybeSpeakEmergencyContactTtsAfterSnapshot();
       _scheduleDispatchRoutesRebuild();
     });
   }
@@ -968,27 +1003,118 @@ class _SosActiveLockedScreenState extends ConsumerState<SosActiveLockedScreen> {
     });
   }
 
+  Future<void> _maybeAppendSosDispatchFeedLines(DispatchChainState state) async {
+    if (widget.isDrillMode) return;
+    final id = widget.incidentId.trim();
+    if (id.isEmpty) return;
+    final a = state.assignment;
+    if (a == null) return;
+
+    final hid = (a.acceptedHospitalId ?? '').trim();
+    if (hid.isNotEmpty && state.isAccepted) {
+      final sig = 'acc|$hid';
+      if (_lastSosFeedHospitalSig != sig) {
+        _lastSosFeedHospitalSig = sig;
+        final name = (a.acceptedHospitalName ?? a.primaryHospitalName ?? state.currentHospitalName).trim();
+        await IncidentService.appendIncidentFeedLine(
+          incidentId: id,
+          text: 'Hospital accepted: ${name.isEmpty ? hid : name}',
+          source: 'dispatch',
+        );
+      }
+    }
+
+    final cs = (a.assignedFleetCallSign ?? '').trim();
+    if (cs.isNotEmpty) {
+      final sig = 'fleet|$cs';
+      if (_lastSosFeedFleetSig != sig) {
+        _lastSosFeedFleetSig = sig;
+        await IncidentService.appendIncidentFeedLine(
+          incidentId: id,
+          text: 'Ambulance unit assigned: $cs',
+          source: 'dispatch',
+        );
+      }
+    }
+
+    final ambSt = (a.ambulanceDispatchStatus ?? '').trim();
+    if (ambSt == 'ambulance_en_route' && _lastSosFeedAmbEnRouteSig != ambSt) {
+      _lastSosFeedAmbEnRouteSig = ambSt;
+      await IncidentService.appendIncidentFeedLine(
+        incidentId: id,
+        text: 'Ambulance en route',
+        source: 'dispatch',
+      );
+    }
+  }
+
+  bool _victimAmbulanceMinuteEtaVisible() {
+    if (_ambulanceLivePos != null) return true;
+    final ambSt = (_dispatchMapState?.assignment?.ambulanceDispatchStatus ?? '').trim();
+    return ambSt == 'ambulance_en_route';
+  }
+
+  String? _victimAmbulanceHeaderStat() {
+    if (!_victimAmbulanceMinuteEtaVisible()) {
+      final ambSt = (_dispatchMapState?.assignment?.ambulanceDispatchStatus ?? '').trim();
+      if (ambSt == 'pending_operator') return 'Coordinating crew';
+      if (_dispatchMapState?.isAccepted == true) return 'Coordinating';
+      return '—';
+    }
+    final doc = _ambulanceEta?.trim();
+    if (doc != null && doc.isNotEmpty) return doc;
+    if (_routeEtaAmbMin != null) return '~${_routeEtaAmbMin} min';
+    return 'En route';
+  }
+
+  String? _victimAmbulanceLegendDocEta() {
+    if (!_victimAmbulanceMinuteEtaVisible()) return null;
+    final doc = _ambulanceEta?.trim();
+    if (doc != null && doc.isNotEmpty) return doc;
+    return null;
+  }
+
+  String? _volunteerMapLegendCaption() {
+    final vl = _volunteerLat;
+    final vg = _volunteerLng;
+    final scene = _victimLatLng;
+    if (vl == null || vg == null || scene == null) return null;
+    return 'Live GPS marker';
+  }
+
   Future<void> _rebuildVictimDispatchRoutes(LatLng scene) async {
     final vl = _volunteerLat;
     final vg = _volunteerLng;
+    final hospTarget = _dispatchHospitalTarget;
     if (!context.mounted) return;
     setState(() => _dispatchRoutesLoading = true);
-    final hospOrigin = LatLng(scene.latitude - 0.006, scene.longitude - 0.004);
-    var amb = await OsrmRouteUtil.drivingRoute(hospOrigin, scene);
-    if (amb.length < 2) amb = OsrmRouteUtil.fallbackPolyline(hospOrigin, scene);
-    List<LatLng> volPath = [];
+    List<LatLng> amb;
+    if (hospTarget != null) {
+      amb = await OsrmRouteUtil.drivingRoute(scene, hospTarget);
+      if (amb.length < 2) amb = OsrmRouteUtil.fallbackPolyline(scene, hospTarget);
+    } else {
+      final hospOrigin = LatLng(scene.latitude - 0.006, scene.longitude - 0.004);
+      amb = await OsrmRouteUtil.drivingRoute(hospOrigin, scene);
+      if (amb.length < 2) amb = OsrmRouteUtil.fallbackPolyline(hospOrigin, scene);
+    }
+    int? volEtaMin;
     if (vl != null && vg != null) {
-      volPath = await OsrmRouteUtil.drivingRoute(LatLng(vl, vg), scene);
-      if (volPath.length < 2) {
-        volPath = OsrmRouteUtil.fallbackPolyline(LatLng(vl, vg), scene);
-      }
+      final m = Geolocator.distanceBetween(
+        vl,
+        vg,
+        scene.latitude,
+        scene.longitude,
+      );
+      const kph = 28.0;
+      final min = (m / 1000.0) / kph * 60.0;
+      if (min.isFinite) volEtaMin = min.clamp(1, 180).round();
     }
     if (!context.mounted) return;
     setState(() {
       _ambulancePath = amb;
-      _volunteerResponderPath = volPath;
+      _volunteerResponderPath = [];
       _routeEtaAmbMin = OsrmRouteUtil.etaMinutesFromRoute(amb);
-      _routeEtaVolMin = volPath.length >= 2 ? OsrmRouteUtil.etaMinutesFromRoute(volPath) : null;
+      _routeEtaVolMin = volEtaMin;
       _dispatchRoutesLoading = false;
     });
   }
@@ -1234,7 +1360,7 @@ class _SosActiveLockedScreenState extends ConsumerState<SosActiveLockedScreen> {
     if (!context.mounted || _userStoppedAllQuestions) return;
     // Drain legacy "primed during navigation" flag — web tap gate handles the actual priming.
     VoiceCommsService.takeSosOpeningPrimedForActiveScreen();
-    VoiceCommsService.invalidateLocaleCache();
+    await VoiceCommsService.getLocale();
     // On web the tap gate already called clearSpeakQueue + primeForVoiceGuidance synchronously
     // inside the user-gesture handler. On native we prime here.
     if (!kIsWeb) VoiceCommsService.primeForVoiceGuidance();
@@ -1992,10 +2118,11 @@ class _SosActiveLockedScreenState extends ConsumerState<SosActiveLockedScreen> {
       }
       _textUpdate.clear();
       if (context.mounted) {
+        final l10n = AppLocalizations.of(context);
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(
-              _livekitConnected ? 'Update sent to Live emergency bridge.' : 'Update sent to incident channel.',
+              _livekitConnected ? l10n.sosActiveUpdateSentLivekit : l10n.sosActiveUpdateSentChannel,
             ),
             backgroundColor: AppColors.primarySafe,
           ),
@@ -2004,7 +2131,10 @@ class _SosActiveLockedScreenState extends ConsumerState<SosActiveLockedScreen> {
     } catch (_) {
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Could not send update.'), backgroundColor: AppColors.primaryDanger),
+          SnackBar(
+            content: Text(AppLocalizations.of(context).sosActiveCouldNotSendUpdate),
+            backgroundColor: AppColors.primaryDanger,
+          ),
         );
       }
     } finally {
@@ -2077,8 +2207,8 @@ class _SosActiveLockedScreenState extends ConsumerState<SosActiveLockedScreen> {
           );
           if (context.mounted) {
             ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(
-                content: Text('Voice text update sent to the emergency channel.'),
+              SnackBar(
+                content: Text(AppLocalizations.of(context).sosActiveVoiceTextSent),
                 backgroundColor: AppColors.primarySafe,
               ),
             );
@@ -2087,8 +2217,8 @@ class _SosActiveLockedScreenState extends ConsumerState<SosActiveLockedScreen> {
           debugPrint('[SOS] LiveKit voice update failed: $e');
           if (context.mounted) {
             ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(
-                content: Text('Could not send voice update. Try again.'),
+              SnackBar(
+                content: Text(AppLocalizations.of(context).sosActiveCouldNotSendVoice),
                 backgroundColor: AppColors.primaryDanger,
               ),
             );
@@ -2108,8 +2238,8 @@ class _SosActiveLockedScreenState extends ConsumerState<SosActiveLockedScreen> {
         victimRecordingClearB64();
         if (context.mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Voice update sent.'),
+            SnackBar(
+              content: Text(AppLocalizations.of(context).sosActiveVoiceUpdateSent),
               backgroundColor: AppColors.primarySafe,
             ),
           );
@@ -2158,7 +2288,10 @@ class _SosActiveLockedScreenState extends ConsumerState<SosActiveLockedScreen> {
       debugPrint('[SOS] stopRecording failed: $e');
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Voice recording failed to send. Try again.'), backgroundColor: AppColors.primaryDanger),
+          SnackBar(
+            content: Text(AppLocalizations.of(context).sosActiveVoiceRecordFailed),
+            backgroundColor: AppColors.primaryDanger,
+          ),
         );
       }
     }
@@ -2597,14 +2730,51 @@ class _SosActiveLockedScreenState extends ConsumerState<SosActiveLockedScreen> {
       ));
     }
 
+    final assign = _dispatchMapState?.assignment;
+    if (assign != null && _dispatchMapState!.isAccepted) {
+      rows.add(_liveUpdateRow(
+        Icons.local_hospital_rounded,
+        Colors.greenAccent,
+        'Hospital accepted',
+        _dispatchMapState!.currentHospitalName,
+      ));
+    }
+    final fleetCs = (assign?.assignedFleetCallSign ?? '').trim();
+    if (fleetCs.isNotEmpty) {
+      rows.add(_liveUpdateRow(
+        Icons.local_shipping_rounded,
+        AppColors.primaryInfo,
+        'Ambulance unit assigned',
+        'Unit $fleetCs',
+      ));
+    }
+
     final amb = _ambulanceEta?.trim();
-    if (amb != null && amb.isNotEmpty) {
+    if (_victimAmbulanceMinuteEtaVisible()) {
+      final etaLine = amb != null && amb.isNotEmpty
+          ? amb
+          : (_routeEtaAmbMin != null ? '~${_routeEtaAmbMin} min (route)' : 'En route');
       rows.add(_liveUpdateRow(
         Icons.airport_shuttle_rounded,
         Colors.cyanAccent,
-        'Ambulance dispatched',
-        'EMS routing active · ETA $amb',
+        'Ambulance en route',
+        'EMS ETA · $etaLine',
       ));
+    } else {
+      final a = _dispatchMapState?.assignment;
+      final ambSt = (a?.ambulanceDispatchStatus ?? '').trim();
+      if (a != null &&
+          (ambSt == 'pending_operator' ||
+              (_dispatchMapState!.isAccepted && ambSt.isNotEmpty && ambSt != 'ambulance_en_route'))) {
+        rows.add(_liveUpdateRow(
+          Icons.hourglass_bottom_rounded,
+          Colors.amberAccent,
+          'Ambulance coordination',
+          ambSt == 'pending_operator'
+              ? 'Hospital accepted — alerting ambulance operators.'
+              : 'Arranging ambulance crew — minute ETA when unit is en route.',
+        ));
+      }
     }
 
     final med = _medicalStatus?.trim();
@@ -2767,29 +2937,13 @@ class _SosActiveLockedScreenState extends ConsumerState<SosActiveLockedScreen> {
               Polyline(
                 polylineId: const PolylineId('victim_amb'),
                 points: _ambulancePath,
-                color: Colors.redAccent,
-                width: 6,
+                color: const Color(0xFFC62828),
+                width: 7,
                 zIndex: 2,
               ),
-            if (_volunteerResponderPath.length >= 2)
-              Polyline(
-                polylineId: const PolylineId('victim_vol'),
-                points: _volunteerResponderPath,
-                color: AppColors.primarySafe,
-                width: 7,
-                patterns: [PatternItem.dash(14), PatternItem.gap(8)],
-                zIndex: 5,
-              ),
-            if (_dispatchHospitalTarget != null && _victimLatLng != null)
-              Polyline(
-                polylineId: const PolylineId('dispatch_hospital_line'),
-                points: [_victimLatLng!, _dispatchHospitalTarget!],
-                color: _dispatchMapState?.isAccepted == true ? Colors.green : Colors.orangeAccent,
-                width: 4,
-                patterns: [PatternItem.dash(10), PatternItem.gap(6)],
-                zIndex: 3,
-              ),
           },
+          mapId: AppConstants.googleMapsDarkMapId.isNotEmpty ? AppConstants.googleMapsDarkMapId : null,
+          style: effectiveGoogleMapsEmbeddedStyleJson(),
           myLocationEnabled: false,
           zoomControlsEnabled: false,
           mapToolbarEnabled: false,
@@ -2874,10 +3028,21 @@ class _SosActiveLockedScreenState extends ConsumerState<SosActiveLockedScreen> {
               crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisSize: MainAxisSize.min,
               children: [
-                const Text('Routes to you', style: TextStyle(color: Colors.white70, fontWeight: FontWeight.w900, fontSize: 10)),
+                Text(AppLocalizations.of(context).sosActiveRoutesToYou,
+                    style: const TextStyle(color: Colors.white70, fontWeight: FontWeight.w900, fontSize: 10)),
                 const SizedBox(height: 6),
-                _dispatchPathLegendRow(Colors.redAccent, 'Ambulance', _routeEtaAmbMin, _ambulanceEta),
-                _dispatchPathLegendRow(AppColors.primarySafe, 'Volunteer', _routeEtaVolMin, null),
+                _dispatchPathLegendRow(
+                  Colors.redAccent,
+                  'Ambulance',
+                  _victimAmbulanceMinuteEtaVisible() ? _routeEtaAmbMin : null,
+                  _victimAmbulanceLegendDocEta(),
+                ),
+                _dispatchPathLegendRow(
+                  AppColors.primarySafe,
+                  'Volunteer',
+                  _routeEtaVolMin,
+                  _volunteerMapLegendCaption(),
+                ),
               ],
             ),
           ),
@@ -2914,7 +3079,8 @@ class _SosActiveLockedScreenState extends ConsumerState<SosActiveLockedScreen> {
                   const SizedBox(height: 8),
                   Row(
                     children: [
-                      const Text('Avg Response Time:', style: TextStyle(color: Colors.white54, fontSize: 12)),
+                      Text(AppLocalizations.of(context).sosActiveAvgResponseTime,
+                          style: const TextStyle(color: Colors.white54, fontSize: 12)),
                       const SizedBox(width: 6),
                       Text(
                         '${_areaIntel!.avgResponseMinutes} mins',
@@ -2925,7 +3091,8 @@ class _SosActiveLockedScreenState extends ConsumerState<SosActiveLockedScreen> {
                   const SizedBox(height: 4),
                   Row(
                     children: [
-                      const Text('Recent Incident Volume:', style: TextStyle(color: Colors.white54, fontSize: 12)),
+                      Text(AppLocalizations.of(context).sosActiveRecentVolume,
+                          style: const TextStyle(color: Colors.white54, fontSize: 12)),
                       const SizedBox(width: 6),
                       Text(
                         '${_areaIntel!.totalPastIncidents} past incidents',
@@ -2936,7 +3103,8 @@ class _SosActiveLockedScreenState extends ConsumerState<SosActiveLockedScreen> {
                   const SizedBox(height: 4),
                   Row(
                     children: [
-                      const Text('Congestion Warning:', style: TextStyle(color: Colors.white54, fontSize: 12)),
+                      Text(AppLocalizations.of(context).sosActiveCongestionWarning,
+                          style: const TextStyle(color: Colors.white54, fontSize: 12)),
                       const SizedBox(width: 6),
                       Text(
                         _areaIntel!.riskScore > 50 ? 'High (Expect delays)' : 'Low',
@@ -3236,7 +3404,7 @@ class _SosActiveLockedScreenState extends ConsumerState<SosActiveLockedScreen> {
                               timeStr: timeStr,
                               acceptedCount: _acceptedCount,
                               onSceneVolunteerCount: _onSceneVolunteerCount,
-                              ambulanceEta: _ambulanceEta,
+                              ambulanceEta: _victimAmbulanceHeaderStat(),
                               medicalStatus: _medicalStatus,
                             ),
                           ),
@@ -3874,10 +4042,30 @@ class _DispatchChainStatusStripState extends State<_DispatchChainStatusStrip> {
   String? _lastSpokenPhase;
   String? _lastSpokenHospital;
   int? _lastSpokenTier;
+  StreamSubscription<DispatchChainState>? _dispatchSpeakSub;
+
+  @override
+  void initState() {
+    super.initState();
+    _dispatchSpeakSub = DispatchChainService.watchForIncident(widget.incidentId).listen((state) {
+      if (!mounted) return;
+      final assignment = state.assignment;
+      final status = state.status;
+      if (assignment == null || status == 'none') return;
+      _maybeSpeak(state);
+    });
+  }
+
+  @override
+  void dispose() {
+    _dispatchSpeakSub?.cancel();
+    super.dispose();
+  }
 
   void _maybeSpeak(DispatchChainState state) {
     final speak = widget.onSpeakGuidance;
-    if (speak == null) return;
+    if (speak == null || !mounted) return;
+    final l10n = AppLocalizations.of(context);
     final status = state.status;
     final hospName = state.currentHospitalName;
     final tier = state.currentTier;
@@ -3887,21 +4075,38 @@ class _DispatchChainStatusStripState extends State<_DispatchChainStatusStrip> {
       if (_lastSpokenTier != tier) {
         _lastSpokenTier = tier;
         if (tier == 1) {
-          speak('Alerting nearest hospital in your area. Trying $hospName.');
+          speak(
+            l10n
+                .get('sos_dispatch_alerting_nearest_trying')
+                .replaceAll('{hospital}', hospName),
+          );
         } else {
-          speak('No response. Escalating to tier $tier. Trying $hospName.');
+          speak(
+            l10n
+                .get('sos_dispatch_escalating_tier_trying')
+                .replaceAll('{tier}', '$tier')
+                .replaceAll('{hospital}', hospName),
+          );
         }
       } else {
-        speak('No response from previous hospital. Trying $hospName.');
+        speak(
+          l10n
+              .get('sos_dispatch_retry_previous_trying')
+              .replaceAll('{hospital}', hospName),
+        );
       }
     }
     if (status == 'accepted' && _lastSpokenPhase != 'accepted') {
       _lastSpokenPhase = 'accepted';
-      speak('$hospName has accepted your emergency. Ambulance coordination underway.');
+      speak(
+        l10n
+            .get('volunteer_dispatch_hospital_accepted')
+            .replaceAll('{hospital}', hospName),
+      );
     }
     if (status == 'exhausted' && _lastSpokenPhase != 'exhausted') {
       _lastSpokenPhase = 'exhausted';
-      speak('All hospitals notified. Please call 112 for emergency services.');
+      speak(l10n.get('sos_dispatch_all_hospitals_call_112'));
     }
   }
 
@@ -3911,9 +4116,22 @@ class _DispatchChainStatusStripState extends State<_DispatchChainStatusStrip> {
       stream: DispatchChainService.watchForIncident(widget.incidentId),
       builder: (context, snap) {
         final state = snap.data;
-        final assignment = state?.assignment;
-        final status = state?.status ?? 'none';
-
+        if (state == null) {
+          return Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: Colors.black.withValues(alpha: 0.18),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: Colors.white10),
+            ),
+            child: const Text(
+              'We are contacting nearby hospitals based on your location and emergency type.',
+              style: TextStyle(color: Colors.white70, fontSize: 11.5, height: 1.35),
+            ),
+          );
+        }
+        final assignment = state.assignment;
+        final status = state.status;
         if (assignment == null || status == 'none') {
           return Container(
             padding: const EdgeInsets.all(12),
@@ -3928,8 +4146,6 @@ class _DispatchChainStatusStripState extends State<_DispatchChainStatusStrip> {
             ),
           );
         }
-
-        _maybeSpeak(state!);
 
         final hospName = state.currentHospitalName;
         final tierLabel = state.currentTierLabel;
@@ -4298,6 +4514,7 @@ class _MapTab extends StatelessWidget {
             markers: markers,
             mapType: MapType.normal,
             mapId: AppConstants.googleMapsDarkMapId.isNotEmpty ? AppConstants.googleMapsDarkMapId : null,
+            style: effectiveGoogleMapsEmbeddedStyleJson(),
             onMapCreated: onMapCreated,
             myLocationEnabled: false,
             myLocationButtonEnabled: false,

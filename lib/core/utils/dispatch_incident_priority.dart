@@ -82,6 +82,8 @@ List<String> requiredServicesForType(String type) {
   switch (type) {
     case 'Cardiac arrest / Heart attack':
       return const ['trauma', 'cardiology', 'icu'];
+    case 'CPR / AED (cardiac emergency)':
+      return const ['trauma', 'cardiology', 'icu'];
     case 'Stroke / Sudden weakness':
       return const ['trauma', 'neurology', 'icu'];
     case 'Severe bleeding / Hemorrhage':

@@ -23,7 +23,14 @@ class _MapsFallbackBootstrapState extends ConsumerState<MapsFallbackBootstrap> {
   @override
   void initState() {
     super.initState();
-    unawaited(ref.read(mapsLeafletFallbackProvider.notifier).hydrate());
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      await ref.read(mapsLeafletFallbackProvider.notifier).hydrate();
+      if (!mounted) return;
+      ref.read(mapsLeafletFallbackProvider.notifier).setLeafletExplicit(
+            true,
+            reason: 'opensource_default',
+          );
+    });
     if (kIsWeb && !_webHooked) {
       _webHooked = true;
       registerGoogleMapsWebFailureBridge((reason) {

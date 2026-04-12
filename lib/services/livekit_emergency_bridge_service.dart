@@ -18,6 +18,8 @@ enum LiveKitBridgeRole {
   acceptedVolunteer,
   /// Trained volunteer — server requires arena level 10 or (5 lives helped & 1000 XP).
   volunteerElite,
+  /// Allotted EMS fleet unit (`emsAcceptedBy` on incident).
+  emsFleet,
 }
 
 extension LiveKitBridgeRoleApi on LiveKitBridgeRole {
@@ -27,6 +29,7 @@ extension LiveKitBridgeRoleApi on LiveKitBridgeRole {
         LiveKitBridgeRole.emergencyContact => 'emergency_contact',
         LiveKitBridgeRole.acceptedVolunteer => 'accepted_volunteer',
         LiveKitBridgeRole.volunteerElite => 'volunteer_elite',
+        LiveKitBridgeRole.emsFleet => 'ems_fleet',
       };
 }
 
@@ -59,7 +62,7 @@ class LivekitEmergencyBridgeService {
   /// Connects the caller to the LiveKit emergency bridge room.
   ///
   /// [role] — `victim` (default), `emergency_desk`, `emergency_contact` (phone / contact link),
-  /// `accepted_volunteer` (must be in incident `acceptedVolunteerIds`), or `volunteer_elite`.
+  /// `accepted_volunteer`, `volunteer_elite`, or `ems_fleet` (allotted EMS unit).
   static Future<Room> connectToEmergencyBridge({
     required String incidentId,
     required String uid,

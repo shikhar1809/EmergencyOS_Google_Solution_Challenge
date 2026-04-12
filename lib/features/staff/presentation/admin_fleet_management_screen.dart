@@ -7,14 +7,19 @@ import 'package:google_maps_flutter/google_maps_flutter.dart';
 import '../../../core/maps/eos_hybrid_map.dart';
 import '../../../core/maps/ops_map_controller.dart';
 
+import '../../../core/constants/app_constants.dart';
+import '../../../core/constants/google_maps_illustrative_light_style.dart';
 import '../../../core/constants/india_ops_zones.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/utils/fleet_map_icons.dart';
+import '../../../core/utils/fleet_unit_availability.dart';
 import '../../../core/utils/ops_fleet_docs_dedupe.dart';
 import '../../../core/utils/osrm_route_util.dart';
 import '../../../services/demo_fleet_simulation.dart';
+import '../../../services/fleet_assignment_service.dart';
 import '../../../services/fleet_gate_credentials_service.dart';
 import '../../../services/fleet_unit_service.dart';
+import '../../../services/incident_service.dart';
 import '../../../services/ops_hospital_service.dart';
 import '../domain/admin_panel_access.dart';
 import '../domain/command_center_accent.dart';
@@ -166,8 +171,10 @@ class _AdminFleetManagementScreenState extends State<AdminFleetManagementScreen>
   Widget _buildFleetCard(BuildContext context, Map<String, dynamic> data, String docId) {
     final callSign = (data['fleetCallSign'] as String?)?.trim() ?? 'Unknown';
     final type = (data['vehicleType'] as String?)?.trim().toLowerCase() ?? 'unknown';
-    final isAvailable = data['available'] == true;
+    final staffed = fleetUnitIsStaffedAvailable(data, docId);
+    final placeholder = isFleetUnitPlaceholderDoc(docId);
     final assignedIncident = (data['assignedIncidentId'] as String?)?.trim();
+    final onRun = assignedIncident != null && assignedIncident.isNotEmpty;
 
     final Color typeColor = switch (type) {
       'medical' || 'ambulance' => Colors.redAccent,
@@ -178,13 +185,41 @@ class _AdminFleetManagementScreenState extends State<AdminFleetManagementScreen>
       _ => Icons.directions_car,
     };
 
+    final String badgeLabel;
+    final Color badgeBorder;
+    final Color badgeBg;
+    final Color badgeFg;
+    if (staffed) {
+      badgeLabel = 'AVAILABLE';
+      badgeBorder = Colors.green;
+      badgeBg = Colors.green.withValues(alpha: 0.2);
+      badgeFg = Colors.greenAccent;
+    } else if (onRun) {
+      badgeLabel = 'DISPATCHED';
+      badgeBorder = Colors.orange;
+      badgeBg = Colors.orange.withValues(alpha: 0.2);
+      badgeFg = Colors.orangeAccent;
+    } else if (placeholder) {
+      badgeLabel = 'NO OPERATOR';
+      badgeBorder = Colors.white38;
+      badgeBg = Colors.white10;
+      badgeFg = Colors.white54;
+    } else {
+      badgeLabel = 'OFF DUTY';
+      badgeBorder = Colors.orange;
+      badgeBg = Colors.orange.withValues(alpha: 0.2);
+      badgeFg = Colors.orangeAccent;
+    }
+
+    final highlightStandby = staffed;
+
     return Container(
       width: 380,
       decoration: BoxDecoration(
         color: AppColors.slate800,
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: isAvailable ? Colors.white12 : typeColor.withValues(alpha: 0.3)),
-        boxShadow: !isAvailable
+        border: Border.all(color: highlightStandby ? Colors.white12 : typeColor.withValues(alpha: 0.3)),
+        boxShadow: !highlightStandby
             ? [BoxShadow(color: typeColor.withValues(alpha: 0.1), blurRadius: 10, spreadRadius: 2)]
             : null,
       ),
@@ -215,16 +250,14 @@ class _AdminFleetManagementScreenState extends State<AdminFleetManagementScreen>
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                   decoration: BoxDecoration(
-                    color: isAvailable
-                        ? Colors.green.withValues(alpha: 0.2)
-                        : Colors.orange.withValues(alpha: 0.2),
+                    color: badgeBg,
                     borderRadius: BorderRadius.circular(20),
-                    border: Border.all(color: isAvailable ? Colors.green : Colors.orange),
+                    border: Border.all(color: badgeBorder),
                   ),
                   child: Text(
-                    isAvailable ? 'AVAILABLE' : 'DISPATCHED',
+                    badgeLabel,
                     style: TextStyle(
-                      color: isAvailable ? Colors.greenAccent : Colors.orangeAccent,
+                      color: badgeFg,
                       fontSize: 10,
                       fontWeight: FontWeight.bold,
                     ),
@@ -348,9 +381,184 @@ class _AdminFleetManagementScreenState extends State<AdminFleetManagementScreen>
               ],
             ),
           ),
+          if (!placeholder && staffed && !onRun && (type == 'medical' || type == 'ambulance')) ...[
+            Padding(
+              padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+              child: SizedBox(
+                width: double.infinity,
+                child: OutlinedButton.icon(
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: Colors.cyanAccent,
+                    side: const BorderSide(color: Colors.cyanAccent),
+                    padding: const EdgeInsets.symmetric(vertical: 10),
+                  ),
+                  onPressed: () => _showAssignToIncidentDialog(
+                    context,
+                    operatorUid: docId,
+                  ),
+                  icon: const Icon(Icons.crisis_alert, size: 18),
+                  label: const Text(
+                    'Assign to accepted incident',
+                    style: TextStyle(fontWeight: FontWeight.w800, fontSize: 12),
+                  ),
+                ),
+              ),
+            ),
+          ],
         ],
       ),
     );
+  }
+
+  Future<void> _showAssignToIncidentDialog(
+    BuildContext context, {
+    required String operatorUid,
+  }) async {
+    final hid = widget.access.boundHospitalDocId?.trim();
+    try {
+      late final QuerySnapshot<Map<String, dynamic>> snap;
+      if (hid != null && hid.isNotEmpty) {
+        snap = await FirebaseFirestore.instance
+            .collection('ops_incident_hospital_assignments')
+            .where('acceptedHospitalId', isEqualTo: hid)
+            .where('dispatchStatus', isEqualTo: 'accepted')
+            .limit(40)
+            .get();
+      } else {
+        snap = await FirebaseFirestore.instance
+            .collection('ops_incident_hospital_assignments')
+            .where('dispatchStatus', isEqualTo: 'accepted')
+            .limit(40)
+            .get();
+      }
+      if (!context.mounted) return;
+      if (snap.docs.isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('No accepted hospital consignments to assign.'),
+            backgroundColor: Colors.orange,
+          ),
+        );
+        return;
+      }
+      await showDialog<void>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          backgroundColor: AppColors.slate800,
+          title: const Text(
+            'Assign unit to incident',
+            style: TextStyle(color: Colors.white, fontWeight: FontWeight.w800),
+          ),
+          content: SizedBox(
+            width: 420,
+            height: 360,
+            child: ListView(
+              children: snap.docs.map((d) {
+                final incId = d.id;
+                final hosp =
+                    (d.data()['acceptedHospitalName'] as String?)?.trim() ?? '';
+                return ListTile(
+                  textColor: Colors.white,
+                  iconColor: _accent,
+                  leading: const Icon(Icons.local_hospital_outlined),
+                  title: Text(
+                    incId.length > 28 ? '${incId.substring(0, 26)}…' : incId,
+                    style: const TextStyle(
+                        fontWeight: FontWeight.w700, fontSize: 13),
+                  ),
+                  subtitle: hosp.isNotEmpty
+                      ? Text(hosp, style: const TextStyle(color: Colors.white54))
+                      : null,
+                  onTap: () async {
+                    Navigator.of(ctx).pop();
+                    try {
+                      final incSnap = await FirebaseFirestore.instance
+                          .collection('sos_incidents')
+                          .doc(incId)
+                          .get();
+                      final st =
+                          incSnap.data()?['status'] as String? ?? '';
+                      if (!['pending', 'dispatched', 'blocked'].contains(st)) {
+                        if (context.mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: Text(
+                                  'Incident is no longer open (status: $st).'),
+                              backgroundColor: Colors.orange,
+                            ),
+                          );
+                        }
+                        return;
+                      }
+                      await IncidentService.adminAssignAmbulanceDriver(
+                        incidentId: incId,
+                        driverUid: operatorUid,
+                      );
+                      await FleetUnitService.markAssignedToIncident(
+                        operatorUid: operatorUid,
+                        incidentId: incId,
+                      );
+                      try {
+                        final unitSnap = await FirebaseFirestore.instance
+                            .collection('ops_fleet_units')
+                            .doc(operatorUid)
+                            .get();
+                        final ud = unitSnap.data();
+                        final cs = (ud?['fleetCallSign'] as String?)?.trim() ?? '';
+                        var vt = (ud?['vehicleType'] as String?)?.trim().toLowerCase() ?? 'medical';
+                        if (vt == 'ambulance') vt = 'medical';
+                        if (cs.isNotEmpty) {
+                          await FleetAssignmentService.sendAssignment(
+                            fleetId: cs,
+                            incidentId: incId,
+                            vehicleType: vt,
+                            callSign: cs,
+                          );
+                        }
+                      } catch (e) {
+                        debugPrint('[FleetManagement] sendAssignment after panel assign: $e');
+                      }
+                      if (context.mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text('Unit assigned to $incId'),
+                            backgroundColor: Colors.green.shade800,
+                          ),
+                        );
+                      }
+                    } catch (e) {
+                      if (context.mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text('Assign failed: $e'),
+                            backgroundColor: Colors.red.shade800,
+                          ),
+                        );
+                      }
+                    }
+                  },
+                );
+              }).toList(),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(),
+              child: const Text('Close'),
+            ),
+          ],
+        ),
+      );
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Could not load consignments: $e'),
+            backgroundColor: Colors.red.shade800,
+          ),
+        );
+      }
+    }
   }
 
   Widget _infoRow(IconData icon, String label, String value, {bool highlight = false}) {
@@ -654,6 +862,8 @@ class _FleetTrackingSheetState extends State<_FleetTrackingSheet> {
                     myLocationButtonEnabled: false,
                     zoomControlsEnabled: true,
                     mapType: MapType.normal,
+                    mapId: AppConstants.googleMapsDarkMapId.isNotEmpty ? AppConstants.googleMapsDarkMapId : null,
+                    style: effectiveGoogleMapsEmbeddedStyleJson(),
                     markers: {
                       Marker(
                         markerId: const MarkerId('fleet_unit'),

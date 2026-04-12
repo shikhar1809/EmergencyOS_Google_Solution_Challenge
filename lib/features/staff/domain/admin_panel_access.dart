@@ -74,7 +74,8 @@ class AdminPanelAccess {
         // Hospital dashboard: ambulance/medical units assigned to this facility only.
         if (vt != 'medical' && vt != 'ambulance') return false;
         final ah = (data['assignedHospitalId'] as String?)?.trim() ?? '';
-        return ah == hid;
+        final sh = (data['stationedHospitalId'] as String?)?.trim() ?? '';
+        return ah == hid || sh == hid;
     }
   }
 

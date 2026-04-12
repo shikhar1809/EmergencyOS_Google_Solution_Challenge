@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../../../core/l10n/app_localizations.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../services/dispatch_chain_service.dart';
 
@@ -23,7 +24,8 @@ class _DispatchStatusStripState extends State<DispatchStatusStrip> {
 
   void _maybeSpeak(DispatchChainState state) {
     final speak = widget.onSpeakGuidance;
-    if (speak == null) return;
+    if (speak == null || !mounted) return;
+    final l10n = AppLocalizations.of(context);
     final status = state.status;
     final hospName = state.currentHospitalName;
     final tier = state.currentTier;
@@ -33,23 +35,38 @@ class _DispatchStatusStripState extends State<DispatchStatusStrip> {
       if (_lastSpokenTier != tier) {
         _lastSpokenTier = tier;
         if (tier == 1) {
-          speak('Alerting nearest hospital in your area. Trying $hospName.');
+          speak(
+            l10n
+                .get('sos_dispatch_alerting_nearest_trying')
+                .replaceAll('{hospital}', hospName),
+          );
         } else {
-          speak('No response. Escalating to tier $tier. Trying $hospName.');
+          speak(
+            l10n
+                .get('sos_dispatch_escalating_tier_trying')
+                .replaceAll('{tier}', '$tier')
+                .replaceAll('{hospital}', hospName),
+          );
         }
       } else {
-        speak('No response from previous hospital. Trying $hospName.');
+        speak(
+          l10n
+              .get('sos_dispatch_retry_previous_trying')
+              .replaceAll('{hospital}', hospName),
+        );
       }
     }
     if (status == 'accepted' && _lastSpokenPhase != 'accepted') {
       _lastSpokenPhase = 'accepted';
       speak(
-        '$hospName has accepted your emergency. Ambulance coordination underway.',
+        l10n
+            .get('volunteer_dispatch_hospital_accepted')
+            .replaceAll('{hospital}', hospName),
       );
     }
     if (status == 'exhausted' && _lastSpokenPhase != 'exhausted') {
       _lastSpokenPhase = 'exhausted';
-      speak('All hospitals notified. Please call 112 for emergency services.');
+      speak(l10n.get('sos_dispatch_all_hospitals_call_112'));
     }
   }
 

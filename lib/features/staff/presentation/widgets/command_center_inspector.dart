@@ -12,6 +12,7 @@ import 'package:intl/intl.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 
 import '../../../../core/constants/india_ops_zones.dart';
+import '../../../../core/utils/fleet_unit_availability.dart';
 import '../../../../firebase_options.dart';
 import '../../../../core/widgets/shared_situation_brief_card.dart';
 import '../../../../core/theme/app_colors.dart';
@@ -35,6 +36,7 @@ class CommandCenterInspector extends StatefulWidget {
     required this.sceneIncidentTier,
     required this.fleetDocs,
     this.boundHospitalDocId,
+    this.showMasterHospitalControls = false,
     required this.noteController,
     required this.etaAmbController,
     required this.medLineController,
@@ -47,6 +49,8 @@ class CommandCenterInspector extends StatefulWidget {
   final SosIncident incident;
   /// Medical ops: `ops_hospitals` doc id — used to show accept/decline when this hospital is notified.
   final String? boundHospitalDocId;
+  /// Master console: accept/skip hospital chain and restart dispatch without a bound hospital doc.
+  final bool showMasterHospitalControls;
   final IndiaOpsZone opsZone;
   /// Hex coverage tier at the victim pin (for dispatch priority badge).
   final TierHealth sceneIncidentTier;
@@ -70,6 +74,7 @@ class _CommandCenterInspectorState extends State<CommandCenterInspector> {
   final _broadcastCtrl = TextEditingController();
   final _ambDriverUidCtrl = TextEditingController();
   bool _hospitalDispatchBusy = false;
+  bool _restartHospitalDispatchBusy = false;
   bool _timelineExpanded = false;
   final _familyNameCtrl = TextEditingController();
   final _familyPhoneCtrl = TextEditingController();
@@ -93,7 +98,7 @@ class _CommandCenterInspectorState extends State<CommandCenterInspector> {
     final rows = <({double d, QueryDocumentSnapshot<Map<String, dynamic>> doc})>[];
     for (final d in widget.fleetDocs) {
       final data = d.data();
-      if (data['available'] != true) continue;
+      if (!fleetUnitIsStaffedAvailable(data, d.id)) continue;
       final vt = (data['vehicleType'] as String?)?.trim() ?? '';
       if (vt != vehicleType) continue;
       final lat = (data['lat'] as num?)?.toDouble();
@@ -292,6 +297,21 @@ class _CommandCenterInspectorState extends State<CommandCenterInspector> {
     }
   }
 
+  Future<void> _adminRestartHospitalDispatch() async {
+    if (_restartHospitalDispatchBusy) return;
+    setState(() => _restartHospitalDispatchBusy = true);
+    try {
+      final callable = _functionsUsEast1.httpsCallable('adminRestartHospitalDispatch');
+      await callable.call(<String, dynamic>{'incidentId': widget.incident.id});
+      widget.onAfterMutation();
+      await _snack('Hospital dispatch restarted', ok: true);
+    } catch (e) {
+      await _snack(e);
+    } finally {
+      if (mounted) setState(() => _restartHospitalDispatchBusy = false);
+    }
+  }
+
   String _videoAssessmentLine(String k, Object? v) {
     if (v == null) return '';
     if (v is Timestamp) {
@@ -404,21 +424,27 @@ class _CommandCenterInspectorState extends State<CommandCenterInspector> {
 
   Future<void> _confirmArchive() async {
     final uid = FirebaseAuth.instance.currentUser?.uid ?? 'ops';
+    final master = widget.showMasterHospitalControls;
     final go = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
         backgroundColor: AppColors.slate800,
-        title: const Text('Archive incident?', style: TextStyle(color: Colors.white)),
-        content: const Text(
-          'Copies the document to archive and removes it from the active list. Responder closure XP may apply.',
-          style: TextStyle(color: Colors.white70),
+        title: Text(
+          master ? 'Stop operation (resolved)?' : 'Archive incident?',
+          style: const TextStyle(color: Colors.white),
+        ),
+        content: Text(
+          master
+              ? 'Archives this incident as resolved, removes it from the active list, and ends dispatch for responders.'
+              : 'Copies the document to archive and removes it from the active list. Responder closure XP may apply.',
+          style: const TextStyle(color: Colors.white70),
         ),
         actions: [
           TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
           FilledButton(
             onPressed: () => Navigator.pop(ctx, true),
             style: FilledButton.styleFrom(backgroundColor: AppColors.primaryDanger),
-            child: const Text('Archive'),
+            child: Text(master ? 'Stop & archive' : 'Archive'),
           ),
         ],
       ),
@@ -431,7 +457,42 @@ class _CommandCenterInspectorState extends State<CommandCenterInspector> {
         closedByUid: uid,
       );
       widget.onAfterMutation();
-      await _snack('Archived', ok: true);
+      await _snack(master ? 'Operation stopped' : 'Archived', ok: true);
+    } catch (e) {
+      await _snack(e);
+    }
+  }
+
+  Future<void> _confirmCancelFalseAlarm() async {
+    final uid = FirebaseAuth.instance.currentUser?.uid ?? 'ops';
+    final go = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppColors.slate800,
+        title: const Text('Stop operation (false alarm)?', style: TextStyle(color: Colors.white)),
+        content: const Text(
+          'Archives as cancelled (false alarm). Removes the incident from the active list; responder closure XP may differ from a resolved stop.',
+          style: TextStyle(color: Colors.white70),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: FilledButton.styleFrom(backgroundColor: AppColors.primaryDanger),
+            child: const Text('Confirm false alarm'),
+          ),
+        ],
+      ),
+    );
+    if (go != true || !context.mounted) return;
+    try {
+      await IncidentService.archiveAndCloseIncident(
+        incidentId: widget.incident.id,
+        status: 'cancelled',
+        closedByUid: uid,
+      );
+      widget.onAfterMutation();
+      await _snack('Operation stopped (false alarm)', ok: true);
     } catch (e) {
       await _snack(e);
     }
@@ -587,7 +648,15 @@ class _CommandCenterInspectorState extends State<CommandCenterInspector> {
                 ),
                 const SizedBox(height: 6),
                 _statusLine('EMS inbound', _emsInboundLabel(inc)),
-                _statusLine('Assigned hospital', _assignedHospitalLabel(inc)),
+                StreamBuilder<OpsIncidentHospitalAssignment?>(
+                  stream: OpsIncidentHospitalAssignmentService.watchForIncident(inc.id),
+                  builder: (context, asSnap) {
+                    return _statusLine(
+                      'Assigned hospital',
+                      _assignedHospitalLabelFromAssignment(asSnap.data),
+                    );
+                  },
+                ),
                 _statusLine('Type of emergency', inc.type),
                 _statusLine('Victim conscious', _victimConsciousLabel(inc)),
               ],
@@ -597,13 +666,61 @@ class _CommandCenterInspectorState extends State<CommandCenterInspector> {
             stream: OpsIncidentHospitalAssignmentService.watchForIncident(inc.id),
             builder: (context, asSnap) {
               final a = asSnap.data;
-              if (a == null) return const SizedBox.shrink();
+              final master = widget.showMasterHospitalControls;
+              if (a == null) {
+                if (!master) return const SizedBox.shrink();
+                return Padding(
+                  padding: const EdgeInsets.only(top: 12),
+                  child: Container(
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: AppColors.slate800,
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(color: const Color(0xFF43A047).withValues(alpha: 0.4)),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          'Hospital & ambulance dispatch',
+                          style: TextStyle(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 12),
+                        ),
+                        const SizedBox(height: 6),
+                        const Text(
+                          'No hospital assignment document yet. Start or refresh the notify chain from the incident location.',
+                          style: TextStyle(color: Colors.white54, fontSize: 11, height: 1.35),
+                        ),
+                        const SizedBox(height: 8),
+                        FilledButton.tonal(
+                          onPressed: _restartHospitalDispatchBusy ? null : _adminRestartHospitalDispatch,
+                          style: FilledButton.styleFrom(visualDensity: VisualDensity.compact),
+                          child: _restartHospitalDispatchBusy
+                              ? const SizedBox(
+                                  width: 18,
+                                  height: 18,
+                                  child: CircularProgressIndicator(strokeWidth: 2),
+                                )
+                              : const Text('Restart hospital dispatch', style: TextStyle(fontSize: 11)),
+                        ),
+                      ],
+                    ),
+                  ),
+                );
+              }
               final bound = widget.boundHospitalDocId?.trim();
-              final notified = a.notifiedHospitalId?.trim();
+              final notified = (a.notifiedHospitalId ?? '').trim();
+              final st = (a.dispatchStatus ?? '').trim();
               final canAct = bound != null &&
                   bound.isNotEmpty &&
                   notified == bound &&
-                  (a.dispatchStatus ?? '') == 'pending_acceptance';
+                  st == 'pending_acceptance';
+              final canMasterPending =
+                  master && notified.isNotEmpty && st == 'pending_acceptance';
+              final showMasterRestart = master &&
+                  (st == 'exhausted' ||
+                      st == 'no_candidates' ||
+                      st == 'failed_to_assist' ||
+                      st == 'pending_notify');
               return Padding(
                 padding: const EdgeInsets.only(top: 12),
                 child: Container(
@@ -626,7 +743,7 @@ class _CommandCenterInspectorState extends State<CommandCenterInspector> {
                         style: const TextStyle(color: Colors.white70, fontSize: 11),
                       ),
                       Text(
-                        'Notified: ${a.notifiedHospitalName ?? notified ?? "—"} · index ${a.notifyIndex ?? 0}',
+                        'Notified: ${a.notifiedHospitalName ?? (notified.isNotEmpty ? notified : "—")} · index ${a.notifyIndex ?? 0}',
                         style: const TextStyle(color: Colors.white54, fontSize: 10, height: 1.3),
                       ),
                       if ((a.acceptedHospitalName ?? '').trim().isNotEmpty)
@@ -664,6 +781,44 @@ class _CommandCenterInspectorState extends State<CommandCenterInspector> {
                               child: const Text('Decline', style: TextStyle(fontSize: 11)),
                             ),
                           ],
+                        ),
+                      ],
+                      if (canMasterPending) ...[
+                        const SizedBox(height: 8),
+                        Wrap(
+                          spacing: 8,
+                          runSpacing: 8,
+                          children: [
+                            FilledButton(
+                              onPressed: _hospitalDispatchBusy ? null : () => _acceptHospitalDispatch(notified),
+                              style: FilledButton.styleFrom(
+                                backgroundColor: Colors.green.shade700,
+                                visualDensity: VisualDensity.compact,
+                              ),
+                              child: const Text('Accept dispatch', style: TextStyle(fontSize: 11)),
+                            ),
+                            OutlinedButton(
+                              onPressed: _hospitalDispatchBusy ? null : () => _declineHospitalDispatch(notified),
+                              style: OutlinedButton.styleFrom(visualDensity: VisualDensity.compact),
+                              child: const Text('Notify next hospital', style: TextStyle(fontSize: 11)),
+                            ),
+                          ],
+                        ),
+                      ],
+                      if (showMasterRestart) ...[
+                        const SizedBox(height: 8),
+                        FilledButton.tonal(
+                          onPressed: (_restartHospitalDispatchBusy || _hospitalDispatchBusy)
+                              ? null
+                              : _adminRestartHospitalDispatch,
+                          style: FilledButton.styleFrom(visualDensity: VisualDensity.compact),
+                          child: _restartHospitalDispatchBusy
+                              ? const SizedBox(
+                                  width: 18,
+                                  height: 18,
+                                  child: CircularProgressIndicator(strokeWidth: 2),
+                                )
+                              : const Text('Restart hospital dispatch', style: TextStyle(fontSize: 11)),
                         ),
                       ],
                       const SizedBox(height: 4),
@@ -943,8 +1098,21 @@ class _CommandCenterInspectorState extends State<CommandCenterInspector> {
             onPressed: _confirmArchive,
             style: OutlinedButton.styleFrom(foregroundColor: AppColors.primaryDanger),
             icon: const Icon(Icons.archive_outlined, size: 18),
-            label: const Text('Archive & close (resolved)'),
+            label: Text(
+              widget.showMasterHospitalControls
+                  ? 'Stop operation — resolved'
+                  : 'Archive & close (resolved)',
+            ),
           ),
+          if (widget.showMasterHospitalControls) ...[
+            const SizedBox(height: 6),
+            OutlinedButton.icon(
+              onPressed: _confirmCancelFalseAlarm,
+              style: OutlinedButton.styleFrom(foregroundColor: Colors.orangeAccent),
+              icon: const Icon(Icons.warning_amber_rounded, size: 18),
+              label: const Text('Stop operation — false alarm'),
+            ),
+          ],
         ],
       ),
     );
@@ -983,8 +1151,25 @@ class _CommandCenterInspectorState extends State<CommandCenterInspector> {
     return phase;
   }
 
-  String _assignedHospitalLabel(SosIncident inc) {
-    // Assignment is managed via OpsIncidentHospitalAssignment; show a simple summary here.
+  String _assignedHospitalLabelFromAssignment(OpsIncidentHospitalAssignment? a) {
+    if (a == null) return 'No dispatch record yet';
+    final st = (a.dispatchStatus ?? '').trim();
+    if (st == 'accepted') {
+      final name = (a.acceptedHospitalName ?? '').trim();
+      if (name.isNotEmpty) return '$name (accepted)';
+      final id = (a.acceptedHospitalId ?? '').trim();
+      if (id.isNotEmpty) return '$id (accepted)';
+    }
+    if (st == 'pending_acceptance') {
+      final n = (a.notifiedHospitalName ?? '').trim();
+      if (n.isNotEmpty) return 'Awaiting acceptance: $n';
+      final id = (a.notifiedHospitalId ?? '').trim();
+      if (id.isNotEmpty) return 'Awaiting acceptance: $id';
+      return 'Hospital notifying…';
+    }
+    if (st.isNotEmpty) {
+      return st.replaceAll('_', ' ');
+    }
     return 'See Hospital dispatch section';
   }
 

@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 
+import '../../../core/constants/app_constants.dart';
+import '../../../core/constants/google_maps_illustrative_light_style.dart';
 import '../../../core/maps/eos_hybrid_map.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../services/family_alert_service.dart';
@@ -121,6 +123,8 @@ class FamilyTrackerScreen extends StatelessWidget {
                     target: dest,
                     zoom: 14,
                   ),
+                  mapId: AppConstants.googleMapsDarkMapId.isNotEmpty ? AppConstants.googleMapsDarkMapId : null,
+                  style: effectiveGoogleMapsEmbeddedStyleJson(),
                   myLocationEnabled: false,
                   myLocationButtonEnabled: false,
                   zoomControlsEnabled: false,

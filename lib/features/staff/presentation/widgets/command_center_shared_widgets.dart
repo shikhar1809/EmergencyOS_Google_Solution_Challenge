@@ -32,6 +32,118 @@ class StatusPill extends StatelessWidget {
   }
 }
 
+/// Hospital Overview: avoids overloaded [IncidentStatus.dispatched] (“assigned” can mean volunteers only).
+String hospitalConsignmentStatusLabel(
+  SosIncident e,
+  String? ambulanceDispatchStatus, [
+  String? hospitalAssignmentDispatchStatus,
+]) {
+  final chain = hospitalAssignmentDispatchStatus?.trim();
+  if (chain == 'failed_to_assist') return 'Failed to assist';
+  final amb = ambulanceDispatchStatus?.trim();
+  if (amb != null && amb.isNotEmpty) {
+    return switch (amb) {
+      'pending_operator' => 'Ambulance pending',
+      'ambulance_en_route' => 'Ambulance en route',
+      'no_operator' => 'No ambulance assigned',
+      _ => amb.replaceAll('_', ' '),
+    };
+  }
+  final phase = e.emsWorkflowPhase?.trim();
+  if (phase != null && phase.isNotEmpty) {
+    return switch (phase) {
+      'inbound' => 'EMS inbound',
+      'on_scene' => 'EMS on scene',
+      _ => 'EMS ${phase.replaceAll('_', ' ')}',
+    };
+  }
+  switch (e.status) {
+    case IncidentStatus.pending:
+      return 'Open';
+    case IncidentStatus.blocked:
+      return 'Blocked';
+    case IncidentStatus.resolved:
+      return 'Closed';
+    case IncidentStatus.dispatched:
+      if (e.acceptedVolunteerIds.isNotEmpty) {
+        return 'Responders active';
+      }
+      return 'In progress';
+  }
+}
+
+Color hospitalConsignmentStatusColor(
+  SosIncident e,
+  String? ambulanceDispatchStatus, [
+  String? hospitalAssignmentDispatchStatus,
+]) {
+  final chain = hospitalAssignmentDispatchStatus?.trim();
+  if (chain == 'failed_to_assist') return Colors.white54;
+  final amb = ambulanceDispatchStatus?.trim();
+  if (amb != null && amb.isNotEmpty) {
+    return switch (amb) {
+      'ambulance_en_route' => Colors.lightGreenAccent,
+      'pending_operator' => Colors.orangeAccent,
+      'no_operator' => Colors.white54,
+      _ => AppColors.accentBlue,
+    };
+  }
+  final phase = e.emsWorkflowPhase?.trim();
+  if (phase != null && phase.isNotEmpty) {
+    return phase == 'on_scene' ? Colors.tealAccent : Colors.cyanAccent;
+  }
+  return switch (e.status) {
+    IncidentStatus.pending => Colors.orangeAccent,
+    IncidentStatus.dispatched => Colors.lightBlueAccent,
+    IncidentStatus.blocked => Colors.grey,
+    IncidentStatus.resolved => AppColors.primarySafe,
+  };
+}
+
+class HospitalConsignmentStatusPill extends StatelessWidget {
+  const HospitalConsignmentStatusPill({
+    super.key,
+    required this.incident,
+    this.ambulanceDispatchStatus,
+    this.hospitalAssignmentDispatchStatus,
+  });
+
+  final SosIncident incident;
+  final String? ambulanceDispatchStatus;
+  /// From `ops_incident_hospital_assignments.dispatchStatus` (e.g. [failed_to_assist]).
+  final String? hospitalAssignmentDispatchStatus;
+
+  @override
+  Widget build(BuildContext context) {
+    final label = hospitalConsignmentStatusLabel(
+      incident,
+      ambulanceDispatchStatus,
+      hospitalAssignmentDispatchStatus,
+    );
+    final color = hospitalConsignmentStatusColor(
+      incident,
+      ambulanceDispatchStatus,
+      hospitalAssignmentDispatchStatus,
+    );
+    return Container(
+      constraints: const BoxConstraints(maxWidth: 140),
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.2),
+        borderRadius: BorderRadius.circular(6),
+        border: Border.all(color: color.withValues(alpha: 0.45)),
+      ),
+      child: Text(
+        label,
+        textAlign: TextAlign.end,
+        maxLines: 2,
+        overflow: TextOverflow.ellipsis,
+        style: TextStyle(color: color, fontSize: 8, fontWeight: FontWeight.w800),
+      ),
+    );
+  }
+}
+
 class LegendDot extends StatelessWidget {
   const LegendDot({super.key, required this.color, required this.label});
 

@@ -288,16 +288,20 @@ class SosIncident {
     return v.map((k, val) => MapEntry(k.toString(), val?.toString() ?? ''));
   }
 
+  /// Missing or invalid values must not default to [DateTime.now()] or they bypass the 1-hour SOS window.
   static DateTime _parseInstant(dynamic v) {
-    if (v == null) return DateTime.now();
+    if (v == null) return _invalidIncidentInstant;
     if (v is Timestamp) return v.toDate();
     if (v is int) return DateTime.fromMillisecondsSinceEpoch(v);
     if (v is String) {
       final p = DateTime.tryParse(v);
       if (p != null) return p;
     }
-    return DateTime.now();
+    return _invalidIncidentInstant;
   }
+
+  static final DateTime _invalidIncidentInstant =
+      DateTime.fromMillisecondsSinceEpoch(0, isUtc: true);
 
   factory SosIncident.fromJson(Map<String, dynamic> j) => SosIncident(
     id: j['id'] ?? '',
@@ -395,15 +399,18 @@ class IncidentService {
   /// Open SOS incidents and volunteer response bindings expire after this window.
   static const Duration activeSosMaxDuration = Duration(hours: 1);
 
+  static final DateTime _invalidIncidentTimestamp =
+      DateTime.fromMillisecondsSinceEpoch(0, isUtc: true);
+
   static DateTime _parseIncidentTimestampField(dynamic v) {
-    if (v == null) return DateTime.now();
+    if (v == null) return _invalidIncidentTimestamp;
     if (v is Timestamp) return v.toDate();
     if (v is int) return DateTime.fromMillisecondsSinceEpoch(v);
     if (v is String) {
       final p = DateTime.tryParse(v);
       if (p != null) return p;
     }
-    return DateTime.now();
+    return _invalidIncidentTimestamp;
   }
 
   /// True when [incidentStart] is at or past the active SOS lifetime (1 hour).
@@ -1511,6 +1518,10 @@ class IncidentService {
     int resolvedCount = 0;
     int totalResponseMinutes = 0;
     int responseCountForAvg = 0;
+    int ambResponseSum = 0;
+    int ambResponseCount = 0;
+    int volResponseSum = 0;
+    int volResponseCount = 0;
 
     for (final inc in pastIncidents) {
       final t = inc.type.toLowerCase();
@@ -1544,6 +1555,23 @@ class IncidentService {
           responseCountForAvg++;
         }
       }
+
+      final emsOn = inc.emsOnSceneAt;
+      if (emsOn != null) {
+        final ambM = emsOn.difference(inc.timestamp).inMinutes.abs();
+        if (ambM > 0 && ambM < 180) {
+          ambResponseSum += ambM;
+          ambResponseCount++;
+        }
+      }
+      final firstAck = inc.firstAcknowledgedAt;
+      if (firstAck != null) {
+        final volM = firstAck.difference(inc.timestamp).inMinutes.abs();
+        if (volM > 0 && volM < 120) {
+          volResponseSum += volM;
+          volResponseCount++;
+        }
+      }
     }
 
     final sortedTypes = typeCount.entries.toList()..sort((a, b) => b.value.compareTo(a.value));
@@ -1574,6 +1602,8 @@ class IncidentService {
       peakHour: peakHour,
       peakDay: days[peakDay],
       avgResponseMinutes: responseCountForAvg > 0 ? totalResponseMinutes ~/ responseCountForAvg : 0,
+      avgAmbulanceResponseMinutes: ambResponseCount > 0 ? ambResponseSum ~/ ambResponseCount : 0,
+      avgVolunteerResponseMinutes: volResponseCount > 0 ? volResponseSum ~/ volResponseCount : 0,
       resolvedPercent: totalInc > 0 ? (resolvedCount / totalInc * 100).round() : 0,
       riskScore: riskScore,
       dangerZones: dangerZones,
@@ -1639,7 +1669,13 @@ class IncidentService {
         return null;
       }
       final status = d['status'] as String? ?? '';
-      if (status == 'resolved' || status == 'cancelled' || status == 'blocked') return null;
+      if (status == 'resolved' ||
+          status == 'cancelled' ||
+          status == 'blocked' ||
+          status == 'expired' ||
+          status == 'archived_stale') {
+        return null;
+      }
       final ts = _parseIncidentTimestampField(d['timestamp']);
       if (isIncidentActiveWindowExpired(ts)) {
         await archiveAndCloseIncident(
@@ -1652,8 +1688,9 @@ class IncidentService {
       }
       await prefs.setString('active_sos_incident_id', id);
       return id;
-    } catch (_) {
-      return id;
+    } catch (e) {
+      debugPrint('[IncidentService] _recoverVictimIfIncidentValid failed: $e');
+      return null;
     }
   }
 
@@ -1695,8 +1732,9 @@ class IncidentService {
         if (ok != null) return ok;
         await prefs.remove('active_sos_incident_id');
         await clearRemoteVictimPointer();
-      } catch (_) {
-        return localId;
+      } catch (e) {
+        debugPrint('[IncidentService] checkActiveSosOnStartup local recovery: $e');
+        return null;
       }
     }
 
@@ -1787,6 +1825,10 @@ class AreaIntelligence {
   final int peakHour;
   final String peakDay;
   final int avgResponseMinutes;
+  /// Mean minutes from SOS [timestamp] to EMS on-scene when [SosIncident.emsOnSceneAt] is present.
+  final int avgAmbulanceResponseMinutes;
+  /// Mean minutes from SOS [timestamp] to first acknowledgment when [SosIncident.firstAcknowledgedAt] is present.
+  final int avgVolunteerResponseMinutes;
   final int resolvedPercent;
   final int riskScore;
   final List<DangerZone> dangerZones;
@@ -1800,6 +1842,8 @@ class AreaIntelligence {
     required this.peakHour,
     required this.peakDay,
     required this.avgResponseMinutes,
+    required this.avgAmbulanceResponseMinutes,
+    required this.avgVolunteerResponseMinutes,
     required this.resolvedPercent,
     required this.riskScore,
     required this.dangerZones,
@@ -1814,6 +1858,8 @@ class AreaIntelligence {
     peakHour: 0,
     peakDay: 'N/A',
     avgResponseMinutes: 0,
+    avgAmbulanceResponseMinutes: 0,
+    avgVolunteerResponseMinutes: 0,
     resolvedPercent: 0,
     riskScore: 0,
     dangerZones: [],

@@ -66,7 +66,7 @@ class CommandCenterSidebar extends StatelessWidget {
 
   String _commandTabTitle(AdminCommandTabKind k) {
     return switch (k) {
-      AdminCommandTabKind.alerts => 'Active consignments',
+      AdminCommandTabKind.alerts => 'Active alerts',
       AdminCommandTabKind.archive => 'Archive',
     };
   }
@@ -80,6 +80,8 @@ class CommandCenterSidebar extends StatelessWidget {
           accent: accent,
           priorityLabelFor: priorityLabelFor,
           hospitalLocation: hospitalLocation,
+          boundHospitalDocId:
+              access.role == AdminConsoleRole.medical ? access.boundHospitalDocId : null,
           zone: zone,
         ),
       AdminCommandTabKind.archive => CommandCenterArchiveIncidentList(

@@ -6,11 +6,10 @@ import 'package:latlong2/latlong.dart' as ll;
 import '../theme/app_colors.dart';
 import 'leaflet_map_runtime.dart';
 
-/// Readable raster tiles (no Google Maps API key). Carto Voyager + OSM — respect their terms.
-/// Dark `dark_all` read as a flat black panel on many displays; Voyager pairs better with the
-/// app’s dark chrome while keeping roads, water, and labels legible.
-const _kCartoVoyagerUrl =
-    'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png';
+/// Raster fallback when Google Maps is unavailable. Carto **dark_all**: dark basemap with readable
+/// roads, aligned with the embedded emergency-response Google Maps style. Data © OpenStreetMap © CARTO.
+const _kCartoDarkUrl =
+    'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png';
 
 const _kCartoSubdomains = ['a', 'b', 'c', 'd'];
 
@@ -130,6 +129,29 @@ class _EosLeafletMapViewState extends State<EosLeafletMapView> {
     );
   }
 
+  (IconData, Color, double) _eosLeafletMarkerVisual(Marker m) {
+    final id = m.markerId.value;
+    if (id == 'amb') {
+      return (Icons.medical_services_rounded, Colors.redAccent, 40);
+    }
+    if (m.flat) {
+      return (Icons.navigation_rounded, AppColors.primaryInfo, 36);
+    }
+    if (id == 'user_location') {
+      return (Icons.navigation_rounded, AppColors.primaryInfo, 36);
+    }
+    if (id.startsWith('sos_')) {
+      return (Icons.crisis_alert_rounded, const Color(0xFFFF9100), 38);
+    }
+    if (id.startsWith('ops_hospital_') || id.startsWith('hospital_')) {
+      return (Icons.local_hospital_rounded, const Color(0xFF26C6DA), 38);
+    }
+    if (id.startsWith('past_')) {
+      return (Icons.history_rounded, AppColors.primaryWarning, 34);
+    }
+    return (Icons.place_rounded, AppColors.primaryDanger, 36);
+  }
+
   List<fm.Marker> _fmMarkers() {
     return widget.markers.map((m) {
       final anchor = m.anchor;
@@ -139,10 +161,11 @@ class _EosLeafletMapViewState extends State<EosLeafletMapView> {
         left: anchor.dx * 40,
         top: anchor.dy * 40,
       );
+      final vis = _eosLeafletMarkerVisual(m);
       Widget child = Icon(
-        m.flat ? Icons.navigation_rounded : Icons.place_rounded,
-        color: m.flat ? AppColors.primaryInfo : AppColors.primaryDanger,
-        size: 36,
+        vis.$1,
+        color: vis.$2,
+        size: vis.$3,
       );
       if (m.rotation != 0) {
         child = Transform.rotate(
@@ -242,7 +265,7 @@ class _EosLeafletMapViewState extends State<EosLeafletMapView> {
         initialZoom: init.zoom,
         minZoom: minZ,
         maxZoom: maxZ,
-        backgroundColor: AppColors.surface,
+        backgroundColor: const Color(0xFF0E1419),
         cameraConstraint: _cameraConstraint() ?? const fm.CameraConstraint.unconstrained(),
         interactionOptions: fm.InteractionOptions(flags: interaction),
         onPositionChanged: (camera, _) {
@@ -264,7 +287,7 @@ class _EosLeafletMapViewState extends State<EosLeafletMapView> {
       ),
       children: [
         fm.TileLayer(
-          urlTemplate: _kCartoVoyagerUrl,
+          urlTemplate: _kCartoDarkUrl,
           subdomains: _kCartoSubdomains,
           userAgentPackageName: 'com.emergencyos.app',
           maxZoom: 20,
@@ -278,11 +301,11 @@ class _EosLeafletMapViewState extends State<EosLeafletMapView> {
             '© OpenStreetMap © CARTO',
             style: TextStyle(
               fontSize: 10,
-              color: AppColors.textSecondary,
+              color: AppColors.textSecondary.withValues(alpha: 0.88),
               fontWeight: FontWeight.w600,
             ),
           ),
-          backgroundColor: AppColors.surfaceHighlight.withValues(alpha: 0.92),
+          backgroundColor: const Color(0xFF0E1419).withValues(alpha: 0.88),
           alignment: Alignment.bottomLeft,
         ),
       ],

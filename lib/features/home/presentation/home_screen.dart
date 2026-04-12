@@ -13,7 +13,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../../../core/l10n/app_localizations.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/constants/app_constants.dart';
-import '../../../core/constants/google_maps_home_dark_style.dart';
+import '../../../core/constants/google_maps_illustrative_light_style.dart';
 import '../../../core/constants/india_ops_zones.dart';
 import '../../../core/widgets/emergency_consent_dialog.dart';
 import '../../../services/connectivity_service.dart';
@@ -114,7 +114,7 @@ class _HomeScreenState extends State<HomeScreen> {
             cloudMapId: AppConstants.googleMapsDarkMapId.isNotEmpty
                 ? AppConstants.googleMapsDarkMapId
                 : null,
-            style: AppConstants.googleMapsDarkMapId.isEmpty ? kGoogleMapsHomeDarkStyleJson : null,
+            style: effectiveGoogleMapsEmbeddedStyleJson(),
             cameraTargetBounds: IndiaOpsZones.lucknowCameraTargetBounds,
             initialCameraPosition: _currentPosition != null
                 ? IndiaOpsZones.lucknowSafeCamera(

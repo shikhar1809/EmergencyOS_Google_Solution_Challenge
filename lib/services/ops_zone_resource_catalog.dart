@@ -6,8 +6,12 @@ import 'package:google_maps_flutter/google_maps_flutter.dart';
 import '../core/constants/india_ops_zones.dart';
 import '../features/map/domain/emergency_zone_classification.dart';
 import 'offline_cache_service.dart';
+import 'ops_hospital_service.dart';
 import 'places_service.dart';
 import 'volunteer_presence_service.dart';
+
+/// When a Places pin and an [OpsHospitalRow] land near the same building, keep one marker.
+const double kOpsHospitalPlacesDedupeRadiusM = 450;
 
 /// Offline grid directory (hospitals) + on-duty volunteers, filtered to an [IndiaOpsZone].
 abstract final class OpsZoneResourceCatalog {
@@ -17,6 +21,49 @@ abstract final class OpsZoneResourceCatalog {
 
   static List<EmergencyPlace> hospitalsInZone(IndiaOpsZone z) =>
       _inZone(_loadLayer('hospital'), z);
+
+  /// Offline/Places hospitals in [z], merged with Firestore [ops_hospitals] rows that have coordinates.
+  /// Skips ops rows within [kOpsHospitalPlacesDedupeRadiusM] of an existing pin.
+  static List<EmergencyPlace> hospitalsInZoneMerged(
+    IndiaOpsZone z,
+    List<OpsHospitalRow> opsRows,
+  ) {
+    final merged = List<EmergencyPlace>.from(hospitalsInZone(z));
+    final c = z.center;
+    final maxRadiusM = z.radiusM + kMaxCoverageRadiusM;
+    for (final row in opsRows) {
+      final olat = row.lat;
+      final olng = row.lng;
+      if (olat == null || olng == null) continue;
+      if (Geolocator.distanceBetween(c.latitude, c.longitude, olat, olng) > maxRadiusM) {
+        continue;
+      }
+      var nearExisting = false;
+      for (final p in merged) {
+        if (Geolocator.distanceBetween(p.lat, p.lng, olat, olng) <= kOpsHospitalPlacesDedupeRadiusM) {
+          nearExisting = true;
+          break;
+        }
+      }
+      if (nearExisting) continue;
+      merged.add(
+        EmergencyPlace(
+          name: row.name,
+          vicinity: row.region,
+          lat: olat,
+          lng: olng,
+          placeId: 'ops_hospital_${row.id}',
+          types: const ['hospital'],
+        ),
+      );
+    }
+    merged.sort((a, b) {
+      final da = Geolocator.distanceBetween(c.latitude, c.longitude, a.lat, a.lng);
+      final db = Geolocator.distanceBetween(c.latitude, c.longitude, b.lat, b.lng);
+      return da.compareTo(db);
+    });
+    return merged;
+  }
 
   /// Live-fetch hospitals for an extended coverage area using multi-point
   /// Places API queries, then merge + de-duplicate by placeId and persist
@@ -89,6 +136,31 @@ abstract final class OpsZoneResourceCatalog {
     if (p.placeId.isEmpty) return 'H-${p.lat.toStringAsFixed(2)}';
     final hash = p.placeId.hashCode.toUnsigned(32).toRadixString(36).toUpperCase();
     return 'H-${hash.substring(0, hash.length.clamp(0, 6))}';
+  }
+
+  static const String _kOpsHospitalPlaceIdPrefix = 'ops_hospital_';
+
+  /// Map tooltip / marker title: use management Firestore id when this pin matches
+  /// [ops_hospitals] coordinates (within [kOpsHospitalPlacesDedupeRadiusM]), else Places hash.
+  static String hospitalDisplayIdForMap(EmergencyPlace p, List<OpsHospitalRow> opsRows) {
+    final pid = p.placeId;
+    if (pid.startsWith(_kOpsHospitalPlaceIdPrefix)) {
+      return pid.substring(_kOpsHospitalPlaceIdPrefix.length);
+    }
+    OpsHospitalRow? best;
+    double? bestM;
+    for (final row in opsRows) {
+      final olat = row.lat;
+      final olng = row.lng;
+      if (olat == null || olng == null) continue;
+      final d = Geolocator.distanceBetween(p.lat, p.lng, olat, olng);
+      if (d <= kOpsHospitalPlacesDedupeRadiusM && (bestM == null || d < bestM)) {
+        bestM = d;
+        best = row;
+      }
+    }
+    if (best != null) return best.id;
+    return hospitalDisplayId(p);
   }
 
   static String dutyNarrative(ActiveVolunteerNearby v) {

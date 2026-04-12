@@ -11,7 +11,6 @@ import '../../../core/maps/eos_hybrid_map.dart';
 import '../../../core/maps/ops_map_controller.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:flutter_polyline_points/flutter_polyline_points.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:intl/intl.dart';
 import 'package:qr_flutter/qr_flutter.dart';
@@ -19,6 +18,7 @@ import '../../../core/theme/app_colors.dart';
 import '../../../core/widgets/shared_situation_brief_card.dart';
 import 'package:go_router/go_router.dart';
 import '../../../core/constants/app_constants.dart';
+import '../../../core/constants/google_maps_illustrative_light_style.dart';
 import '../../../core/constants/india_ops_zones.dart';
 import '../../../core/utils/fleet_map_icons.dart';
 import '../../../core/utils/map_marker_generator.dart';
@@ -30,6 +30,7 @@ import '../../sos/domain/emergency_voice_interview_questions.dart';
 import '../../ai_assist/domain/protocol_engine.dart';
 import '../../ai_assist/presentation/ai_assist_screen.dart';
 import '../../ai_assist/presentation/widgets/lifeline_training_arena.dart';
+import '../../../services/incident_report_service.dart';
 import '../../../services/incident_service.dart';
 import '../../../services/ops_incident_hospital_assignment_service.dart';
 import '../../../services/situation_brief_service.dart';
@@ -78,7 +79,11 @@ class _ActiveConsignmentScreenState extends ConsumerState<ActiveConsignmentScree
   StreamSubscription<Position>? _positionSub;
   StreamSubscription<DocumentSnapshot<Map<String, dynamic>>>? _volunteerAssignmentSub;
   Timer? _incidentWriteTimer;
-  DateTime _lastIncidentWrite = DateTime.fromMillisecondsSinceEpoch(0);
+  DateTime _lastVolunteerGpsWrite = DateTime.fromMillisecondsSinceEpoch(0);
+  DateTime _lastEtaMergeWrite = DateTime.fromMillisecondsSinceEpoch(0);
+  String? _lastDispatchFeedHospitalSig;
+  String? _lastDispatchFeedFleetSig;
+  String? _lastDispatchFeedAmbStatusSig;
   static const String _prefLowPowerConsignment = 'consignment_low_power_location_v1';
   bool _lowPowerConsignment = false;
 
@@ -236,6 +241,7 @@ class _ActiveConsignmentScreenState extends ConsumerState<ActiveConsignmentScree
       if (!mounted) return;
       _speakVolunteerDispatchUpdate(state);
       setState(() => _dispatchChainState = state);
+      unawaited(_maybeAppendDispatchFeedLinesFromChain(state));
     });
 
     final cid = widget.incidentId.trim();
@@ -617,24 +623,42 @@ class _ActiveConsignmentScreenState extends ConsumerState<ActiveConsignmentScree
 
   Future<void> _writeEtasToIncident() async {
     if (widget.isDrillMode) return;
-    if (_useLiveAmbulanceFromDispatch) return;
     final id = widget.incidentId.trim();
     if (id.isEmpty) return;
     final now = DateTime.now();
-    if (now.difference(_lastIncidentWrite) < _effectiveWriteInterval) return;
+    if (now.difference(_lastEtaMergeWrite) < _effectiveWriteInterval) return;
+
+    final ambSt = (_dispatchChainState?.assignment?.ambulanceDispatchStatus ?? '').trim();
+    final enRoute = _useLiveAmbulanceFromDispatch || ambSt == 'ambulance_en_route';
 
     final ambMin = _estimateEtaMinutesFromRoute(_hospRoute);
     final status = _isOnScene ? 'Volunteer on scene' : 'Volunteer en route';
 
+    final payload = <String, dynamic>{
+      'medicalStatus': status,
+      'etaUpdatedAt': FieldValue.serverTimestamp(),
+    };
+
+    if (ambMin != null) {
+      payload['emsCorridorEtaMin'] = ambMin;
+    }
+
+    if (enRoute) {
+      final etaStr = ambMin != null
+          ? '${ambMin} min'
+          : (_simAmbulanceRouteMinutes != null ? '${_simAmbulanceRouteMinutes} min' : null);
+      if (etaStr != null) {
+        payload['ambulanceEta'] = etaStr;
+      }
+    }
+
+    _lastEtaMergeWrite = now;
+
     try {
       await FirebaseFirestore.instance.collection('sos_incidents').doc(id).set(
-        {
-          if (ambMin != null) 'ambulanceEta': '${ambMin} min',
-          'medicalStatus': status,
-          'etaUpdatedAt': FieldValue.serverTimestamp(),
-        },
-        SetOptions(merge: true),
-      );
+            payload,
+            SetOptions(merge: true),
+          );
     } catch (e) {
       debugPrint('[Consignment] ETA write failed: $e');
     }
@@ -724,32 +748,8 @@ class _ActiveConsignmentScreenState extends ConsumerState<ActiveConsignmentScree
   }
 
   Future<void> _fetchVolunteerRoute() async {
-    if (_currentPosition == null) return;
-    final from = LatLng(_currentPosition!.latitude, _currentPosition!.longitude);
-    try {
-      PolylinePoints polylinePoints = PolylinePoints(apiKey: AppConstants.googleMapsApiKey);
-      PolylineResult result = await polylinePoints.getRouteBetweenCoordinates(
-        request: PolylineRequest(
-          origin: PointLatLng(from.latitude, from.longitude),
-          destination: PointLatLng(_incidentLocation.latitude, _incidentLocation.longitude),
-          mode: TravelMode.driving,
-        ),
-      );
-
-      if (result.points.isNotEmpty) {
-        if (mounted) {
-          setState(() {
-            _volunteerRoute = result.points.map((p) => LatLng(p.latitude, p.longitude)).toList();
-          });
-        }
-        return;
-      }
-    } catch (e) {
-      debugPrint('Volunteer Route Failed: $e');
-    }
-    final road = await _ensureRoadRoute(from, _incidentLocation);
     if (!mounted) return;
-    setState(() => _volunteerRoute = road);
+    setState(() => _volunteerRoute = []);
   }
 
   Future<void> _runVolunteerDrillEntry() async {
@@ -903,8 +903,8 @@ class _ActiveConsignmentScreenState extends ConsumerState<ActiveConsignmentScree
     if (id.isEmpty) return;
 
     final now = DateTime.now();
-    if (now.difference(_lastIncidentWrite) < _effectiveWriteInterval) return;
-    _lastIncidentWrite = now;
+    if (now.difference(_lastVolunteerGpsWrite) < _effectiveWriteInterval) return;
+    _lastVolunteerGpsWrite = now;
 
     try {
       await FirebaseFirestore.instance.collection('sos_incidents').doc(id).set(
@@ -917,6 +917,51 @@ class _ActiveConsignmentScreenState extends ConsumerState<ActiveConsignmentScree
       );
     } catch (e) {
       debugPrint('[Consignment] volunteer live write failed: $e');
+    }
+  }
+
+  Future<void> _maybeAppendDispatchFeedLinesFromChain(DispatchChainState state) async {
+    if (widget.isDrillMode) return;
+    final id = widget.incidentId.trim();
+    if (id.isEmpty) return;
+    final a = state.assignment;
+    if (a == null) return;
+
+    final hid = (a.acceptedHospitalId ?? '').trim();
+    if (hid.isNotEmpty && state.isAccepted) {
+      final sig = 'acc|$hid';
+      if (_lastDispatchFeedHospitalSig != sig) {
+        _lastDispatchFeedHospitalSig = sig;
+        final name = (a.acceptedHospitalName ?? a.primaryHospitalName ?? state.currentHospitalName).trim();
+        await IncidentService.appendIncidentFeedLine(
+          incidentId: id,
+          text: 'Hospital accepted: ${name.isEmpty ? hid : name}',
+          source: 'dispatch',
+        );
+      }
+    }
+
+    final cs = (a.assignedFleetCallSign ?? '').trim();
+    if (cs.isNotEmpty) {
+      final sig = 'fleet|$cs';
+      if (_lastDispatchFeedFleetSig != sig) {
+        _lastDispatchFeedFleetSig = sig;
+        await IncidentService.appendIncidentFeedLine(
+          incidentId: id,
+          text: 'Ambulance unit assigned: $cs',
+          source: 'dispatch',
+        );
+      }
+    }
+
+    final ambSt = (a.ambulanceDispatchStatus ?? '').trim();
+    if (ambSt == 'ambulance_en_route' && _lastDispatchFeedAmbStatusSig != ambSt) {
+      _lastDispatchFeedAmbStatusSig = ambSt;
+      await IncidentService.appendIncidentFeedLine(
+        incidentId: id,
+        text: 'Ambulance en route',
+        source: 'dispatch',
+      );
     }
   }
 
@@ -983,12 +1028,11 @@ class _ActiveConsignmentScreenState extends ConsumerState<ActiveConsignmentScree
     // Web: blocked GPS still allows incident map + routing sim; native keeps strict gate.
     if (blocked && kIsWeb) {
       if (mounted) {
+        final l10n = AppLocalizations.of(context);
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text(
-              'Browser location is off or blocked. You can still view the incident map — enable location in the site settings to show your position.',
-            ),
-            duration: Duration(seconds: 5),
+          SnackBar(
+            content: Text(l10n.volunteerActiveBrowserLocationOff),
+            duration: const Duration(seconds: 5),
           ),
         );
       }
@@ -1009,7 +1053,7 @@ class _ActiveConsignmentScreenState extends ConsumerState<ActiveConsignmentScree
     if (blocked) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Location permission is required for this consignment.')),
+          SnackBar(content: Text(AppLocalizations.of(context).volunteerActiveLocationRequired)),
         );
         context.pop();
       }
@@ -1025,8 +1069,13 @@ class _ActiveConsignmentScreenState extends ConsumerState<ActiveConsignmentScree
       debugPrint('Consignment map init failed: $e\n$st');
       if (mounted) {
         setState(() => _isLoading = false);
+        final l10n = AppLocalizations.of(context);
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Could not load consignment map. ${kDebugMode ? e.toString() : 'Please try again.'}')),
+          SnackBar(
+            content: Text(
+              l10n.volunteerActiveMapLoadFailed(kDebugMode ? e.toString() : 'Please try again.'),
+            ),
+          ),
         );
       }
     }
@@ -1136,7 +1185,7 @@ class _ActiveConsignmentScreenState extends ConsumerState<ActiveConsignmentScree
       if (mounted) {
         setState(() => _isLoading = false);
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('This incident has no map coordinates. Cannot open consignment.')),
+          SnackBar(content: Text(AppLocalizations.of(context).volunteerActiveNoMapCoords)),
         );
         context.pop();
       }
@@ -1148,7 +1197,7 @@ class _ActiveConsignmentScreenState extends ConsumerState<ActiveConsignmentScree
       if (mounted) {
         setState(() => _isLoading = false);
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Could not read your GPS yet. Open again outdoors or enable precise location.')),
+          SnackBar(content: Text(AppLocalizations.of(context).volunteerActiveGpsUnavailable)),
         );
         context.pop();
       }
@@ -1420,37 +1469,42 @@ class _ActiveConsignmentScreenState extends ConsumerState<ActiveConsignmentScree
     });
     showDialog(
       context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: AppColors.surface,
-        title: const Text('Offline Location QR', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w900)),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            QrImageView(
-              data: payload,
-              version: QrVersions.auto,
-              size: 220,
-              backgroundColor: Colors.white,
-            ),
-            const SizedBox(height: 10),
-            const Text(
-              'Scan to share incident location access offline.',
-              textAlign: TextAlign.center,
-              style: TextStyle(color: Colors.white70),
+      builder: (ctx) {
+        final l10n = AppLocalizations.of(ctx);
+        return AlertDialog(
+          backgroundColor: AppColors.surface,
+          title: Text(l10n.volunteerActiveOfflineQrTitle,
+              style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w900)),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              QrImageView(
+                data: payload,
+                version: QrVersions.auto,
+                size: 220,
+                backgroundColor: Colors.white,
+              ),
+              const SizedBox(height: 10),
+              Text(
+                l10n.volunteerActiveOfflineQrBody,
+                textAlign: TextAlign.center,
+                style: const TextStyle(color: Colors.white70),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(),
+              child: Text(l10n.volunteerActiveClose, style: const TextStyle(color: Colors.white70)),
             ),
           ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(),
-            child: const Text('Close', style: TextStyle(color: Colors.white70)),
-          ),
-        ],
-      ),
+        );
+      },
     );
   }
 
   Widget _buildEmergencyServicesStatus() {
+    final l10n = AppLocalizations.of(context);
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
@@ -1463,12 +1517,18 @@ class _ActiveConsignmentScreenState extends ConsumerState<ActiveConsignmentScree
         crossAxisAlignment: CrossAxisAlignment.start,
         mainAxisSize: MainAxisSize.min,
         children: [
-          const Text('Dispatched Services', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 14)),
+          Text(l10n.volunteerActiveDispatchedServices,
+              style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 14)),
           const SizedBox(height: 12),
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              _buildServiceBadge(Icons.medical_services_rounded, 'Ambulance', _trackingController.value >= 0.98 ? 'On Scene' : 'En Route', AppColors.primaryDanger),
+              _buildServiceBadge(
+                Icons.medical_services_rounded,
+                l10n.volunteerActiveAmbulance,
+                _trackingController.value >= 0.98 ? l10n.volunteerActiveOnScene : l10n.volunteerActiveEnRoute,
+                AppColors.primaryDanger,
+              ),
             ],
           ),
           const SizedBox(height: 12),
@@ -1507,27 +1567,26 @@ class _ActiveConsignmentScreenState extends ConsumerState<ActiveConsignmentScree
       context: context,
       barrierDismissible: false,
       builder: (ctx) {
+        final l10n = AppLocalizations.of(ctx);
         return AlertDialog(
           backgroundColor: AppColors.surface,
-          title: const Text(
-            'Exit response window?',
-            style: TextStyle(color: Colors.white, fontWeight: FontWeight.w900),
+          title: Text(
+            l10n.volunteerActiveExitTitle,
+            style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w900),
           ),
           content: Text(
-            widget.isVictim
-                ? 'Leave this incident view?'
-                : 'You will stop responding to this incident. Your assignment is cleared so the app will not send you back here automatically.',
+            widget.isVictim ? l10n.volunteerActiveLeaveVictim : l10n.volunteerActiveLeaveVolunteer,
             style: const TextStyle(color: Colors.white70, height: 1.35),
           ),
           actions: [
             TextButton(
               onPressed: () => Navigator.of(ctx).pop(false),
-              child: const Text('Stay', style: TextStyle(color: Colors.white70)),
+              child: Text(l10n.volunteerActiveStay, style: const TextStyle(color: Colors.white70)),
             ),
             ElevatedButton(
               style: ElevatedButton.styleFrom(backgroundColor: AppColors.primaryDanger),
               onPressed: () => Navigator.of(ctx).pop(true),
-              child: const Text('Exit', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+              child: Text(l10n.volunteerActiveExit, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
             ),
           ],
         );
@@ -1558,7 +1617,7 @@ class _ActiveConsignmentScreenState extends ConsumerState<ActiveConsignmentScree
                     color: Colors.black45,
                     shape: const CircleBorder(),
                     child: IconButton(
-                      tooltip: 'Back to response',
+                      tooltip: AppLocalizations.of(ctx).volunteerActiveBackToResponse,
                       onPressed: () => Navigator.of(ctx).pop(),
                       icon: const Icon(Icons.close_rounded, color: Colors.white),
                     ),
@@ -1578,8 +1637,8 @@ class _ActiveConsignmentScreenState extends ConsumerState<ActiveConsignmentScree
     await IncidentService.clearVolunteerAssignment();
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('This SOS has expired (1 hour) and was archived.'),
+      SnackBar(
+        content: Text(AppLocalizations.of(context).volunteerActiveSosExpired),
         backgroundColor: AppColors.surfaceHighlight,
       ),
     );
@@ -1782,6 +1841,8 @@ class _ActiveConsignmentScreenState extends ConsumerState<ActiveConsignmentScree
                 Stack(
                   children: [
                     EosHybridMap(
+                      mapId: AppConstants.googleMapsDarkMapId.isNotEmpty ? AppConstants.googleMapsDarkMapId : null,
+                      style: effectiveGoogleMapsEmbeddedStyleJson(),
                       mapType: lowPowerMap ? MapType.normal : MapType.hybrid,
                       trafficEnabled: !lowPowerMap,
                       gestureRecognizers: <Factory<OneSequenceGestureRecognizer>>{
@@ -1813,8 +1874,8 @@ class _ActiveConsignmentScreenState extends ConsumerState<ActiveConsignmentScree
                                 Polyline(
                                   polylineId: const PolylineId('ambulancePath'),
                                   points: _hospRoute,
-                                  color: Colors.redAccent,
-                                  width: 6,
+                                  color: const Color(0xFF2E7D32),
+                                  width: 7,
                                   patterns: [PatternItem.dash(20), PatternItem.gap(15)],
                                   zIndex: 20,
                                 ),
@@ -1823,39 +1884,15 @@ class _ActiveConsignmentScreenState extends ConsumerState<ActiveConsignmentScree
                                   polylineId: const PolylineId('evacPath'),
                                   points: _evacRoute,
                                   color: suppressMotion
-                                      ? Colors.redAccent
+                                      ? const Color(0xFF1B5E20)
                                       : (Color.lerp(
-                                              Colors.redAccent,
-                                              Colors.redAccent.withValues(alpha: 0.2),
+                                              const Color(0xFF1B5E20),
+                                              const Color(0xFF1B5E20).withValues(alpha: 0.35),
                                               _rotationController.value * 30 % 1.0) ??
-                                          Colors.redAccent),
+                                          const Color(0xFF1B5E20)),
                                   width: 8,
                                   patterns: [PatternItem.dash(20), PatternItem.gap(15)],
                                   zIndex: 10,
-                                ),
-                              if (_volunteerRoute.isNotEmpty)
-                                Polyline(
-                                  polylineId: const PolylineId('volunteerPath'),
-                                  points: _volunteerRoute,
-                                  color: AppColors.primarySafe,
-                                  width: 8,
-                                  patterns: [PatternItem.dash(18), PatternItem.gap(10)],
-                                  zIndex: 35,
-                                ),
-                              if (_dispatchChainState?.notifiedHospitalPosition != null || _dispatchChainState?.acceptedHospitalPosition != null)
-                                Polyline(
-                                  polylineId: const PolylineId('dispatch_hospital_line'),
-                                  points: [
-                                    _incidentLocation,
-                                    (_dispatchChainState?.isAccepted == true
-                                            ? _dispatchChainState?.acceptedHospitalPosition
-                                            : _dispatchChainState?.notifiedHospitalPosition) ??
-                                        _incidentLocation,
-                                  ],
-                                  color: _dispatchChainState?.isAccepted == true ? Colors.green : Colors.orangeAccent,
-                                  width: 4,
-                                  patterns: [PatternItem.dash(10), PatternItem.gap(6)],
-                                  zIndex: 3,
                                 ),
                             }
                           : {},
@@ -2063,8 +2100,10 @@ class _ActiveConsignmentScreenState extends ConsumerState<ActiveConsignmentScree
                           ElevatedButton.icon(
                             onPressed: _showOfflineQr,
                             icon: const Icon(Icons.qr_code_rounded, color: Colors.white),
-                            label: const Text('Offline QR Access',
-                                style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16)),
+                            label: Text(
+                              AppLocalizations.of(context).volunteerActiveOfflineQrAccess,
+                              style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16),
+                            ),
                             style: ElevatedButton.styleFrom(
                               backgroundColor: const Color(0xFF1E2740),
                               padding: const EdgeInsets.symmetric(vertical: 16),
@@ -2149,6 +2188,8 @@ class _ActiveConsignmentScreenState extends ConsumerState<ActiveConsignmentScree
                               drillNotes: widget.isDrillMode ? _drillVictimNotes : null,
                               drillVoiceQa: widget.isDrillMode ? Map<String, String>.from(_drillVoiceQa) : const {},
                             ),
+                            const SizedBox(height: 8),
+                            _VolunteerDispatchMilestoneStrip(dispatch: _dispatchChainState),
                             const SizedBox(height: 8),
                             Text(
                               AppLocalizations.of(context).get('volunteer_major_updates_log'),
@@ -2463,6 +2504,7 @@ class _OnSceneEtaCard extends StatelessWidget {
     return StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
       stream: FirebaseFirestore.instance.collection('sos_incidents').doc(incidentId).snapshots(),
       builder: (context, snap) {
+        final l10n = AppLocalizations.of(context);
         final data = snap.data?.data();
         final amb = (data?['ambulanceEta'] as String?)?.trim() ?? '—';
         final med = (data?['medicalStatus'] as String?)?.trim() ?? '—';
@@ -2477,11 +2519,12 @@ class _OnSceneEtaCard extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Text('Hospital & emergency vehicles', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w900)),
+              Text(l10n.volunteerActiveHospitalEvLabel,
+                  style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w900)),
               const SizedBox(height: 6),
-              const Text(
-                'Routed estimates are written to this incident as you approach. Open Maps for real facilities near the pin.',
-                style: TextStyle(color: Colors.white54, fontSize: 11, height: 1.3),
+              Text(
+                l10n.volunteerActiveHospitalEvSubtitle,
+                style: const TextStyle(color: Colors.white54, fontSize: 11, height: 1.3),
               ),
               const SizedBox(height: 12),
               if (routedHospitalHint.isNotEmpty)
@@ -2499,7 +2542,8 @@ class _OnSceneEtaCard extends StatelessWidget {
                 child: OutlinedButton.icon(
                   onPressed: _openNearbyHospitals,
                   icon: const Icon(Icons.near_me_rounded, color: Colors.white, size: 20),
-                  label: const Text('Nearby hospitals in Google Maps', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w700)),
+                  label: Text(l10n.volunteerActiveNearbyHospitalsMaps,
+                      style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700)),
                   style: OutlinedButton.styleFrom(
                     foregroundColor: Colors.white,
                     side: const BorderSide(color: Colors.white24),
@@ -2607,7 +2651,7 @@ class _OnSceneVolunteerPanelState extends State<_OnSceneVolunteerPanel> {
       );
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Scene checklist saved for dispatch and other responders.')),
+          SnackBar(content: Text(AppLocalizations.of(context).volunteerActiveChecklistSaved)),
         );
       }
       final desc = _incidentDescCtrl.text.trim();
@@ -2618,7 +2662,7 @@ class _OnSceneVolunteerPanelState extends State<_OnSceneVolunteerPanel> {
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Could not save: ')),
+          SnackBar(content: Text(AppLocalizations.of(context).volunteerActiveSaveFailed(e.toString()))),
         );
       }
     } finally {
@@ -2631,7 +2675,7 @@ class _OnSceneVolunteerPanelState extends State<_OnSceneVolunteerPanel> {
     if (_photoPaths.length >= kMaxScenePhotos) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('You can upload up to 3 scene photos.')),
+          SnackBar(content: Text(AppLocalizations.of(context).volunteerActivePhotoLimit)),
         );
       }
       return;
@@ -2657,7 +2701,9 @@ class _OnSceneVolunteerPanelState extends State<_OnSceneVolunteerPanel> {
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Photo error: ')));
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(AppLocalizations.of(context).volunteerActivePhotoError(e.toString()))),
+        );
         setState(() => _uploadingPhoto = false);
       }
     }
@@ -2798,6 +2844,230 @@ class _OnSceneVolunteerPanelState extends State<_OnSceneVolunteerPanel> {
           ),
         ),
       ],
+    );
+  }
+}
+
+class _VolunteerDispatchMilestoneStrip extends StatelessWidget {
+  final DispatchChainState? dispatch;
+
+  const _VolunteerDispatchMilestoneStrip({required this.dispatch});
+
+  @override
+  Widget build(BuildContext context) {
+    final s = dispatch;
+    if (s == null || s.assignment == null) return const SizedBox.shrink();
+    final cs = (s.assignment!.assignedFleetCallSign ?? '').trim();
+    final ambSt = (s.assignment!.ambulanceDispatchStatus ?? '').trim();
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.black.withValues(alpha: 0.22),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.greenAccent.withValues(alpha: 0.35)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            AppLocalizations.of(context).get('volunteer_dispatch_milestone_title'),
+            style: TextStyle(color: Colors.white.withValues(alpha: 0.75), fontSize: 10, fontWeight: FontWeight.w800),
+          ),
+          const SizedBox(height: 6),
+          if (s.isAccepted)
+            Text(
+              AppLocalizations.of(context)
+                  .get('volunteer_dispatch_milestone_hospital')
+                  .replaceAll('{hospital}', s.currentHospitalName),
+              style: const TextStyle(color: Colors.greenAccent, fontWeight: FontWeight.w700, fontSize: 12),
+            ),
+          if (cs.isNotEmpty) ...[
+            const SizedBox(height: 4),
+            Text(
+              AppLocalizations.of(context).get('volunteer_dispatch_milestone_unit').replaceAll('{unit}', cs),
+              style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600, fontSize: 12),
+            ),
+          ],
+          if (ambSt == 'pending_operator') ...[
+            const SizedBox(height: 4),
+            Text(
+              AppLocalizations.of(context).get('volunteer_dispatch_milestone_crew_pending'),
+              style: const TextStyle(color: Colors.white70, fontSize: 11),
+            ),
+          ],
+          if (ambSt == 'ambulance_en_route') ...[
+            const SizedBox(height: 4),
+            Text(
+              AppLocalizations.of(context).get('volunteer_dispatch_milestone_en_route'),
+              style: const TextStyle(color: Colors.lightBlueAccent, fontWeight: FontWeight.w700, fontSize: 12),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _VolunteerTriageQrReportCard extends StatelessWidget {
+  final String incidentId;
+  final double? incidentLat;
+  final double? incidentLng;
+  final bool fromCache;
+
+  const _VolunteerTriageQrReportCard({
+    required this.incidentId,
+    this.incidentLat,
+    this.incidentLng,
+    this.fromCache = false,
+  });
+
+  Future<void> _onTapReport(BuildContext context) async {
+    final id = incidentId.trim();
+    if (id.isEmpty) return;
+    try {
+      final snap = await FirebaseFirestore.instance.collection('sos_incidents').doc(id).get();
+      if (!snap.exists || !context.mounted) return;
+      final inc = SosIncident.fromFirestore(snap);
+      await IncidentReportService.generateAndStoreReport(inc);
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(AppLocalizations.of(context).get('volunteer_triage_report_saved')),
+          backgroundColor: AppColors.primarySafe,
+        ),
+      );
+    } catch (e) {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('${AppLocalizations.of(context).get('volunteer_triage_report_failed')}$e'),
+          backgroundColor: AppColors.primaryDanger,
+        ),
+      );
+    }
+  }
+
+  void _showQrDialog(BuildContext context) {
+    final l = AppLocalizations.of(context);
+    final payload = jsonEncode({
+      'incidentId': incidentId,
+      if (incidentLat != null) 'incidentLat': incidentLat,
+      if (incidentLng != null) 'incidentLng': incidentLng,
+      'generatedAt': DateTime.now().toIso8601String(),
+      'kind': 'volunteer_triage_handoff',
+    });
+    showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppColors.surface,
+        title: Text(
+          l.get('volunteer_triage_qr_title'),
+          style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w900),
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            QrImageView(
+              data: payload,
+              version: QrVersions.auto,
+              size: 220,
+              backgroundColor: Colors.white,
+            ),
+            const SizedBox(height: 10),
+            Text(
+              l.get('volunteer_triage_qr_body'),
+              textAlign: TextAlign.center,
+              style: const TextStyle(color: Colors.white70, fontSize: 12),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: Text(l.volunteerActiveClose, style: const TextStyle(color: Colors.white70)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final l = AppLocalizations.of(context);
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: AppColors.primarySafe.withValues(alpha: 0.1),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: AppColors.primarySafe.withValues(alpha: 0.45), width: 1.2),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.qr_code_2_rounded, color: AppColors.primarySafe.withValues(alpha: 0.95), size: 22),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  l.get('volunteer_triage_qr_report_title'),
+                  style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w900, fontSize: 15),
+                ),
+              ),
+            ],
+          ),
+          if (fromCache)
+            Padding(
+              padding: const EdgeInsets.only(top: 4),
+              child: Text(
+                l.get('volunteer_victim_medical_offline_hint'),
+                style: TextStyle(
+                  color: Colors.white.withValues(alpha: 0.55),
+                  fontSize: 10.5,
+                  height: 1.35,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+          const SizedBox(height: 8),
+          Text(
+            l.get('volunteer_triage_qr_report_subtitle'),
+            style: TextStyle(color: Colors.white.withValues(alpha: 0.72), fontSize: 12, height: 1.35),
+          ),
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              Expanded(
+                child: OutlinedButton.icon(
+                  onPressed: () => _showQrDialog(context),
+                  icon: const Icon(Icons.qr_code_rounded, color: Colors.white, size: 18),
+                  label: Text(
+                    l.get('volunteer_triage_show_qr'),
+                    style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: FilledButton.icon(
+                  onPressed: () => unawaited(_onTapReport(context)),
+                  icon: const Icon(Icons.description_rounded, color: Colors.white, size: 18),
+                  label: Text(
+                    l.get('volunteer_triage_tap_report'),
+                    style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w800),
+                  ),
+                  style: FilledButton.styleFrom(
+                    backgroundColor: AppColors.primarySafe.withValues(alpha: 0.85),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
     );
   }
 }
@@ -3155,11 +3425,16 @@ class _VictimInfoSection extends StatelessWidget {
               borderRadius: BorderRadius.circular(16),
               border: Border.all(color: Colors.white10),
             ),
-            child: const Row(
+            child: Row(
               children: [
-                Icon(Icons.person_search_rounded, color: Colors.white54, size: 18),
-                SizedBox(width: 10),
-                Expanded(child: Text('Victim info loading…', style: TextStyle(color: Colors.white54, fontWeight: FontWeight.w700))),
+                const Icon(Icons.person_search_rounded, color: Colors.white54, size: 18),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    AppLocalizations.of(context).volunteerActiveVictimLoading,
+                    style: const TextStyle(color: Colors.white54, fontWeight: FontWeight.w700),
+                  ),
+                ),
               ],
             ),
           );
@@ -3203,10 +3478,6 @@ class _VictimInfoSection extends StatelessWidget {
         final sevScore = (score is num) ? score.toInt() : null;
         final bool critical = flags.contains('severe_bleeding') || flags.contains('unconscious') || flags.contains('breathing_trouble');
         final Color sevColor = critical ? AppColors.primaryDanger : (sevScore != null && sevScore >= 40 ? Colors.orangeAccent : AppColors.primarySafe);
-        final bloodType = (data['bloodType'] as String?)?.trim() ?? '';
-        final allergies = (data['allergies'] as String?)?.trim() ?? '';
-        final conditions = (data['medicalConditions'] as String?)?.trim() ?? '';
-
         final intakeDone = data['intakeCompleted'] == true;
         final forSomeoneElse = data['forSomeoneElse'];
         final peopleCount = data['peopleCount'];
@@ -3264,62 +3535,11 @@ class _VictimInfoSection extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Container(
-                width: double.infinity,
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: AppColors.primaryDanger.withValues(alpha: 0.12),
-                  borderRadius: BorderRadius.circular(14),
-                  border: Border.all(
-                    color: AppColors.primaryDanger.withValues(alpha: 0.45),
-                    width: 1.5,
-                  ),
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        Icon(Icons.medical_information_rounded,
-                            color: AppColors.primaryDanger.withValues(alpha: 0.95), size: 22),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: Text(
-                            l.get('volunteer_victim_medical_card'),
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontWeight: FontWeight.w900,
-                              fontSize: 15,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                    if (fromCache)
-                      Padding(
-                        padding: const EdgeInsets.only(top: 4),
-                        child: Text(
-                          l.get('volunteer_victim_medical_offline_hint'),
-                          style: TextStyle(
-                            color: Colors.white.withValues(alpha: 0.55),
-                            fontSize: 10.5,
-                            height: 1.35,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                      ),
-                    const SizedBox(height: 10),
-                    Row(
-                      children: [
-                        Expanded(child: _miniField(l.bloodType, bloodType.isEmpty ? '—' : bloodType)),
-                        const SizedBox(width: 10),
-                        Expanded(child: _miniField(l.allergies, allergies.isEmpty ? '—' : allergies)),
-                      ],
-                    ),
-                    const SizedBox(height: 8),
-                    _miniField(l.medicalConditions, conditions.isEmpty ? '—' : conditions),
-                  ],
-                ),
+              _VolunteerTriageQrReportCard(
+                incidentId: incidentId,
+                incidentLat: (data['lat'] as num?)?.toDouble(),
+                incidentLng: (data['lng'] as num?)?.toDouble(),
+                fromCache: fromCache,
               ),
               const SizedBox(height: 12),
               Text(

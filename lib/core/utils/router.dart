@@ -26,6 +26,8 @@ import '../../features/ptt/presentation/ptt_channel_screen.dart';
 import '../../features/staff/navigation/ops_admin_routes.dart';
 import '../../features/staff/presentation/admin_panel_screen.dart';
 import '../../features/staff/presentation/emergency_services_panel_screen.dart';
+import '../../features/staff/presentation/fleet_comms_operation_screen.dart';
+import '../../features/staff/presentation/fleet_emergency_bridge_screen.dart';
 import '../../core/widgets/main_navigation_shell.dart';
 import 'app_variant.dart';
 
@@ -91,6 +93,24 @@ GoRouter buildRouter(AppVariant variant) {
         builder: (context, state) => EmergencyServicesPanelScreen(
           focusIncidentId: state.uri.queryParameters['focus'],
         ),
+      ),
+      GoRoute(
+        path: '/fleet-live/emergency/:incidentId',
+        builder: (context, state) {
+          final id = state.pathParameters['incidentId'] ?? '';
+          return FleetEmergencyBridgeScreen(incidentId: id);
+        },
+      ),
+      GoRoute(
+        path: '/fleet-live/operation/:incidentId',
+        builder: (context, state) {
+          final id = state.pathParameters['incidentId'] ?? '';
+          final h = state.uri.queryParameters['h'];
+          return FleetCommsOperationScreen(
+            incidentId: id,
+            boundHospitalDocId: (h != null && h.isNotEmpty) ? h : null,
+          );
+        },
       ),
 
       // Keep legacy combined-app URL working, but prefer /fleet on fleet hosting.

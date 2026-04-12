@@ -36,6 +36,9 @@ class OpsIncidentHospitalAssignment {
   final String? reason;
   final DateTime? assignedAt;
   final String? ambulanceDispatchStatus;
+  /// Set when [dispatchStatus] becomes `failed_to_assist` (1h TTL after accept).
+  final DateTime? consignmentClosedAt;
+  final String? consignmentCloseReason;
   final String? assignedFleetCallSign;
   final String? assignedFleetOperatorUid;
   final DateTime? ambulanceDispatchedAt;
@@ -72,6 +75,8 @@ class OpsIncidentHospitalAssignment {
     required this.reason,
     required this.assignedAt,
     required this.ambulanceDispatchStatus,
+    this.consignmentClosedAt,
+    this.consignmentCloseReason,
     required this.assignedFleetCallSign,
     required this.assignedFleetOperatorUid,
     required this.ambulanceDispatchedAt,
@@ -110,6 +115,7 @@ class OpsIncidentHospitalAssignment {
     final ac = d['acceptedAt'];
     final ad = d['ambulanceDispatchedAt'];
     final aa = d['ambulanceAcceptedAt'];
+    final cc = d['consignmentClosedAt'];
     return OpsIncidentHospitalAssignment(
       incidentId: (d['incidentId'] as String?)?.trim().isNotEmpty == true ? (d['incidentId'] as String) : doc.id,
       zoneId: (d['zoneId'] as String?)?.trim(),
@@ -140,6 +146,8 @@ class OpsIncidentHospitalAssignment {
       reason: (d['reason'] as String?)?.trim(),
       assignedAt: at is Timestamp ? at.toDate() : null,
       ambulanceDispatchStatus: (d['ambulanceDispatchStatus'] as String?)?.trim(),
+      consignmentClosedAt: cc is Timestamp ? cc.toDate() : null,
+      consignmentCloseReason: (d['consignmentCloseReason'] as String?)?.trim(),
       assignedFleetCallSign: (d['assignedFleetCallSign'] as String?)?.trim(),
       assignedFleetOperatorUid: (d['assignedFleetOperatorUid'] as String?)?.trim(),
       ambulanceDispatchedAt: ad is Timestamp ? ad.toDate() : null,
@@ -245,6 +253,8 @@ class OpsIncidentHospitalAssignmentService {
       reason: null,
       assignedAt: DateTime.now(),
       ambulanceDispatchStatus: null,
+      consignmentClosedAt: null,
+      consignmentCloseReason: null,
       assignedFleetCallSign: null,
       assignedFleetOperatorUid: null,
       ambulanceDispatchedAt: null,

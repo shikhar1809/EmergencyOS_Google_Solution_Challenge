@@ -4,6 +4,7 @@ import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:intl/intl.dart';
 
 import '../../../../core/constants/india_ops_zones.dart';
+import '../../../../core/utils/fleet_unit_availability.dart';
 import '../../../../services/ops_hospital_service.dart';
 import '../../../../services/ops_zone_resource_catalog.dart';
 import '../../../../services/incident_service.dart';
@@ -246,7 +247,7 @@ class _MasterLiveOpsSidebarState extends State<MasterLiveOpsSidebar> {
                     final data = d.data();
                     final cs =
                         (data['fleetCallSign'] as String?)?.trim() ?? d.id;
-                    final avail = data['available'] == true;
+                    final avail = fleetUnitIsStaffedAvailable(data, d.id);
                     final aid =
                         (data['assignedIncidentId'] as String?)?.trim() ?? '';
                     return Material(
@@ -285,7 +286,9 @@ class _MasterLiveOpsSidebarState extends State<MasterLiveOpsSidebar> {
                                     ? (aid.isNotEmpty
                                           ? 'Responding · $aid'
                                           : 'Standby / available')
-                                    : 'Off duty / unavailable',
+                                    : (isFleetUnitPlaceholderDoc(d.id)
+                                          ? 'Registered · no operator signed in'
+                                          : 'Off duty / unavailable'),
                                 style: TextStyle(
                                   color: avail
                                       ? Colors.lightGreenAccent

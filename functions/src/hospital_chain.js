@@ -237,6 +237,9 @@ exports.enforceSosCreateLimits = onDocumentCreated("sos_incidents/{id}", async (
   }
 });
 
+// Not exported from `functions/index.js` unless you require this module there — the live app's 1h rule is
+// `expireStaleSosIncidents` in `index.js` (moves docs to `sos_incidents_archive`). This job only re-tags
+// very old *pending* rows in-place after 24h and does not replace that TTL.
 exports.autoArchiveStaleSosIncidents = onSchedule({ schedule: "every 15 minutes", timeoutSeconds: 300 }, async () => {
   const staleMs = 24 * 60 * 60 * 1000;
   const snaps = await db.collection("sos_incidents").where("status", "==", "pending").get();

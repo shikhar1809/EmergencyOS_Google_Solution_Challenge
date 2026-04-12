@@ -117,6 +117,16 @@
         'en':    ['Microsoft Neerja Online (Natural) - English (India)', 'Microsoft Ravi - English (India)', 'Google UK English Female', 'Google US English'],
         'hi':    ['Google हिन्दी', 'Microsoft Swara Online (Natural) - Hindi (India)', 'Microsoft Hemant - Hindi (India)'],
         'hi-IN': ['Google हिन्दी', 'Microsoft Swara Online (Natural) - Hindi (India)', 'Microsoft Hemant - Hindi (India)'],
+        'ta': ['Google தமிழ்'], 'ta-IN': ['Google தமிழ்'],
+        'te': ['Google తెలుగు'], 'te-IN': ['Google తెలుగు'],
+        'kn': ['Google ಕನ್ನಡ'], 'kn-IN': ['Google ಕನ್ನಡ'],
+        'ml': ['Google മലയാളം'], 'ml-IN': ['Google മലയാളം'],
+        'bn': ['Google বাংলা'], 'bn-IN': ['Google বাংলা'],
+        'mr': ['Google मराठी'], 'mr-IN': ['Google मराठी'],
+        'gu': ['Google ગુજરાતી'], 'gu-IN': ['Google ગુજરાતી'],
+        'pa': ['Google ਪੰਜਾਬੀ'], 'pa-IN': ['Google ਪੰਜਾਬੀ'],
+        'or': ['Google ଓଡ଼ିଆ'], 'or-IN': ['Google ଓଡ଼ିଆ'],
+        'ur': ['Google اردو'], 'ur-PK': ['Google اردو'], 'ur-IN': ['Google اردو'],
         'es': ['Google español', 'Microsoft Helena - Spanish (Spain)'],
         'es-ES': ['Google español', 'Microsoft Helena - Spanish (Spain)'],
         'fr': ['Google français', 'Microsoft Hortense - French (France)'],
@@ -130,19 +140,52 @@
         'ru': ['Google русский'], 'ru-RU': ['Google русский'],
       };
 
-      function _pickVoice(lang) {
-        if (!window.speechSynthesis) return null;
+      function _voiceLangBase(voice) {
+        if (!voice || !voice.lang) return '';
+        return String(voice.lang).replace(/_/g, '-').split('-')[0].toLowerCase();
+      }
+
+      function _requestedLangBase(lang) {
+        return (lang || 'en-IN').replace(/_/g, '-').split('-')[0].toLowerCase();
+      }
+
+      /** Pick a voice and an utterance.lang that stay consistent (avoids silent TTS when voice is English but lang was ml-IN). */
+      function _resolveVoiceAndUtterLang(requestedLang) {
+        var lang = requestedLang || 'en-IN';
+        var norm = lang.replace(/_/g, '-');
+        if (!window.speechSynthesis) return { voice: null, utterLang: norm };
+
         var voices = window.speechSynthesis.getVoices();
-        var prefs  = _voicePrefs[lang] || _voicePrefs[lang.split('-')[0]] || [];
-        for (var p = 0; p < prefs.length; p++)
-          for (var v = 0; v < voices.length; v++)
-            if (voices[v].name === prefs[p]) return voices[v];
-        var base = lang.split('-')[0];
-        for (var v = 0; v < voices.length; v++)
-          if (voices[v].lang && voices[v].lang.startsWith(base)) return voices[v];
-        for (var v = 0; v < voices.length; v++)
-          if (voices[v].lang && voices[v].lang.startsWith('en')) return voices[v];
-        return null;
+        var voice = null;
+        var prefs = _voicePrefs[lang] || _voicePrefs[norm] || _voicePrefs[norm.split('-')[0]] || [];
+        for (var p = 0; p < prefs.length; p++) {
+          for (var v = 0; v < voices.length; v++) {
+            if (voices[v].name === prefs[p]) { voice = voices[v]; break; }
+          }
+          if (voice) break;
+        }
+        var base = _requestedLangBase(norm);
+        if (!voice) {
+          for (var v = 0; v < voices.length; v++) {
+            var vl = voices[v].lang ? String(voices[v].lang).replace(/_/g, '-') : '';
+            if (vl && vl.toLowerCase().startsWith(base)) { voice = voices[v]; break; }
+          }
+        }
+        if (!voice) {
+          for (var v = 0; v < voices.length; v++) {
+            var vl = voices[v].lang ? String(voices[v].lang).replace(/_/g, '-') : '';
+            if (vl && vl.toLowerCase().startsWith('en')) { voice = voices[v]; break; }
+          }
+        }
+
+        var utterLang = norm;
+        if (voice && voice.lang) {
+          var vb = _voiceLangBase(voice);
+          if (vb && vb !== base) {
+            utterLang = String(voice.lang).replace(/_/g, '-');
+          }
+        }
+        return { voice: voice, utterLang: utterLang };
       }
 
       function _clearWatchdog() {
@@ -221,13 +264,6 @@
 
         _currentDoneCb = doneCb || null;
 
-        // Watchdog: estimated time + 4 s buffer. Prevents stuck queue on Firefox/WebKit.
-        var estMs = Math.max(Math.ceil(String(text).length * 88 + 2500), 5000);
-        _currentWatchdog = setTimeout(function() {
-          console.warn('[EOS-Audio] watchdog fired after ' + estMs + 'ms for text length=' + String(text).length);
-          _fireDone();
-        }, estMs);
-
         var _doSpeak = function() {
           if (!window.speechSynthesis) { _fireDone(); return; }
           try {
@@ -242,9 +278,9 @@
             utter.rate   = 0.92;
             utter.pitch  = 0.95;
             utter.volume = 1.0;
-            utter.lang   = lang;
-            var voice = _pickVoice(lang);
-            if (voice) utter.voice = voice;
+            var resolved = _resolveVoiceAndUtterLang(lang);
+            utter.lang = resolved.utterLang;
+            if (resolved.voice) utter.voice = resolved.voice;
             _ttsSpeaking = true;
             utter.onend   = function() { if (_ttsSpeaking) _fireDone(); };
             utter.onerror  = function(e) {
@@ -252,6 +288,17 @@
               if (_ttsSpeaking) _fireDone();
             };
             window.speechSynthesis.speak(utter);
+            // Stuck-queue fallback only: start AFTER speak(); be conservative so onend
+            // normally wins. Short watchdogs here caused the next eosSpeak to cancel()
+            // mid-utterance and cut TTS (Dart queue advanced too early).
+            _clearWatchdog();
+            var len = String(text).length;
+            var fallbackMs = Math.min(180000, Math.max(len * 220 + 12000, 20000));
+            _currentWatchdog = setTimeout(function() {
+              if (!_ttsSpeaking) return;
+              console.warn('[EOS-Audio] watchdog (stuck) after ' + fallbackMs + 'ms, len=' + len);
+              _fireDone();
+            }, fallbackMs);
           } catch(e) {
             console.warn('[EOS-Audio] eosSpeak exception:', e);
             _fireDone();

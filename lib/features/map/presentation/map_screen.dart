@@ -5,37 +5,40 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
-import '../../../core/maps/eos_hybrid_map.dart';
-import '../../../core/maps/ops_map_controller.dart';
+import 'package:emergency_os/core/maps/eos_hybrid_map.dart';
+import 'package:emergency_os/core/maps/ops_map_controller.dart';
 import 'package:http/http.dart' as http;
 import 'package:geolocator/geolocator.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import '../../../services/demo_fleet_route_cache.dart';
-import '../../../services/demo_fleet_routing.dart';
-import '../../../services/demo_fleet_simulation.dart';
-import '../../../services/fleet_unit_service.dart';
-import '../../../services/volunteer_presence_service.dart';
-import 'package:flutter_animate/flutter_animate.dart';
+import 'package:emergency_os/services/demo_fleet_route_cache.dart';
+import 'package:emergency_os/services/demo_fleet_routing.dart';
+import 'package:emergency_os/services/demo_fleet_simulation.dart';
+import 'package:emergency_os/services/fleet_unit_service.dart';
+import 'package:emergency_os/services/volunteer_presence_service.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:emergency_os/services/ops_hospital_service.dart';
 import 'package:url_launcher/url_launcher.dart';
-import '../../../core/theme/app_colors.dart';
-import '../../../core/utils/map_marker_generator.dart';
-import '../../../core/utils/fleet_map_icons.dart';
-import '../../hazards/data/hazard_repository.dart';
-import '../../hazards/domain/hazard_model.dart';
-import '../../../core/constants/app_constants.dart';
-import '../../../core/constants/india_ops_zones.dart';
-import '../../../services/places_service.dart';
-import '../../../services/bed_availability_service.dart';
-import '../../../services/connectivity_service.dart';
-import '../../../services/offline_cache_service.dart';
-import '../../../services/drill_map_demo_incidents.dart';
-import '../../../services/incident_service.dart';
-import '../../../services/offline_map_pack_service.dart';
-import '../../../core/utils/map_platform.dart';
-import '../domain/emergency_zone_classification.dart';
-import 'area_info_page.dart';
+import 'package:emergency_os/core/l10n/app_localizations.dart';
+import 'package:emergency_os/core/theme/app_colors.dart';
+import 'package:emergency_os/core/utils/map_marker_generator.dart';
+import 'package:emergency_os/core/utils/ops_map_markers.dart';
+import 'package:emergency_os/features/hazards/data/hazard_repository.dart';
+import 'package:emergency_os/features/hazards/domain/hazard_model.dart';
+import 'package:emergency_os/core/constants/app_constants.dart';
+import 'package:emergency_os/core/constants/google_maps_illustrative_light_style.dart';
+import 'package:emergency_os/core/config/build_config.dart';
+import 'package:emergency_os/core/constants/india_ops_zones.dart';
+import 'package:emergency_os/services/ops_zone_resource_catalog.dart';
+import 'package:emergency_os/services/places_service.dart';
+import 'package:emergency_os/services/bed_availability_service.dart';
+import 'package:emergency_os/services/connectivity_service.dart';
+import 'package:emergency_os/services/offline_cache_service.dart';
+import 'package:emergency_os/services/drill_map_demo_incidents.dart';
+import 'package:emergency_os/services/incident_service.dart';
+import 'package:emergency_os/services/offline_map_pack_service.dart';
+import 'package:emergency_os/core/utils/map_platform.dart';
+import 'package:emergency_os/features/map/domain/emergency_zone_classification.dart';
 import 'widgets/offline_emergency_directory.dart';
 
 class MapScreen extends ConsumerStatefulWidget {
@@ -49,17 +52,20 @@ class MapScreen extends ConsumerStatefulWidget {
 }
 
 class _MapScreenState extends ConsumerState<MapScreen> with TickerProviderStateMixin {
+  static const TextStyle _mapFilterCheckboxTitleStyle = TextStyle(
+    color: Color(0xFFFFF176),
+    fontSize: 11,
+    fontWeight: FontWeight.w700,
+  );
+
   final Completer<OpsMapController> _controller = Completer<OpsMapController>();
   Position? _currentPosition;
   LatLng? _prevUserForCourse;
   double _userCourseDeg = 0;
   double _emergencyRadius = 15000;
-  /// Used to pick fleet vehicle bitmap tier (zoom-responsive).
-  double _mapZoomForFleet = 12.0;
 
   static bool _scanCompleted = false;
   bool _isScanning = true;
-  Timer? _archiveSweepTimer;
 
   BitmapDescriptor? _hospitalIcon;
   BitmapDescriptor? _userIcon;
@@ -72,12 +78,16 @@ class _MapScreenState extends ConsumerState<MapScreen> with TickerProviderStateM
   /// Live SOS pins + past incidents in the area (chip: "Live SOS").
   bool _mapShowPastIncidents = true;
   /// Hex response zones (annulus tiers to 30 km) from grid radius + service counts.
-  bool _mapShowZoneClassification = true;
+  bool _mapShowZoneClassification = false;
   /// Other on-duty volunteers with fresh locations inside the grid radius.
   bool _mapShowVolunteers = true;
   bool _zonePanelExpanded = true;
-  bool _zoneClassHeaderHovered = false;
+  /// Main map: past incident pins for the current hex only (toggled via Zone Info).
+  bool _showPastIncidentsForZone = false;
   StreamSubscription<QuerySnapshot<Map<String, dynamic>>>? _volunteerDutySub;
+  StreamSubscription<List<OpsHospitalRow>>? _opsHospitalsSub;
+  List<OpsHospitalRow> _opsHospitalRows = [];
+  int? _cachedPackRadiusM;
   StreamSubscription<QuerySnapshot<Map<String, dynamic>>>? _fleetDemoSub;
   StreamSubscription<NetworkQuality>? _networkQualitySub;
   List<QueryDocumentSnapshot<Map<String, dynamic>>> _volunteerDutyDocs = [];
@@ -118,10 +128,10 @@ class _MapScreenState extends ConsumerState<MapScreen> with TickerProviderStateM
 
   CameraPosition _initialPosition = IndiaOpsZones.lucknowCameraPosition(zoom: 14.0);
 
-  /// Bottom inset of the horizontal layer chip bar (`Positioned.bottom`).
-  static const double _mapChipBarBottomInset = 96;
-  /// Approximate total height of that bar (padding + chips).
-  static const double _mapChipBarHeightEstimate = 56;
+  /// Bottom inset reserved above system nav (filters moved to the right).
+  static const double _mapChipBarBottomInset = 24;
+  /// No full-width bottom bar; used only for Nearest FAB offset math.
+  static const double _mapChipBarHeightEstimate = 0;
   /// Gap between chip bar top and nearest-service legend.
   static const double _mapLegendGapAboveChipBar = 10;
 
@@ -146,21 +156,23 @@ class _MapScreenState extends ConsumerState<MapScreen> with TickerProviderStateM
 
   bool _offlineHydrateRequested = false;
 
-  bool _archivedHistoryMapView = false;
-
-  /// Tracks the currently selected fleet unit id.
-  String? _selectedFleetKey;
 
   /// Countdown tick for periodic eviction of fallback straight-line routes.
   int _evictCountdown = 0;
 
   /// Nearest-service legend (bottom-right); chip bar leaves horizontal space when visible.
   bool _routeLegendVisible() {
-    if (_isScanning || _currentPosition == null) return false;
+    if (_isScanning) return false;
     if (_mapShowZoneClassification) return true;
-    return (_mapShowEmergencyServices && _hospitals.isNotEmpty) ||
-        (_mapShowPastIncidents && _pastIncidents.isNotEmpty) ||
-        (_mapShowVolunteers && _nearbyOnDutyVolunteers().isNotEmpty);
+    if (_currentPosition == null) return false;
+    final pastLegend = widget.isDrillShell
+        ? (_mapShowPastIncidents && _pastIncidents.isNotEmpty)
+        : (_showPastIncidentsForZone && _pastIncidentsInUserHex().isNotEmpty);
+    return (_mapShowEmergencyServices &&
+            (_hospitals.isNotEmpty ||
+                _opsHospitalRows.any((r) => r.lat != null && r.lng != null))) ||
+        pastLegend ||
+        (widget.isDrillShell && _mapShowVolunteers && _nearbyOnDutyVolunteers().isNotEmpty);
   }
 
   bool _placeWithinGrid(EmergencyPlace p) {
@@ -169,26 +181,49 @@ class _MapScreenState extends ConsumerState<MapScreen> with TickerProviderStateM
     return Geolocator.distanceBetween(pos.latitude, pos.longitude, p.lat, p.lng) <= _emergencyRadius;
   }
 
-  /// All in-range places, or only the nearest one when [_mapNearestOnly].
-  List<EmergencyPlace> _placesForMapLayer(List<EmergencyPlace> all) {
-    final inGrid = all.where(_placeWithinGrid).toList();
-    if (inGrid.isEmpty) return [];
-    if (!_mapNearestOnly) return inGrid;
-    return [_nearestPlace(inGrid)];
+  /// Hospitals within the grid ring, or only the nearest when [_mapNearestOnly].
+  /// If no hospital falls inside the ring, shows the globally nearest pin so the
+  /// layer is not empty when directory data exists.
+  List<EmergencyPlace> _hospitalsForMapMarkers() {
+    if (_hospitals.isEmpty || _currentPosition == null) return [];
+    final inGrid = _hospitals.where(_placeWithinGrid).toList();
+    if (inGrid.isNotEmpty) {
+      if (!_mapNearestOnly) return inGrid;
+      return [_nearestPlace(inGrid)];
+    }
+    return [_nearestPlace(_hospitals)];
+  }
+
+  /// Same fixed ops anchor as [AdminCommandCenterScreen._rebuildHexGrid].
+  IndiaOpsZone get _activeOpsZone => IndiaOpsZones.byId(BuildConfig.opsZoneId);
+
+  double _hexGridCoverRadiusM(IndiaOpsZone z) =>
+      math.min(z.radiusM, kCommandCenterHexCoverRadiusM);
+
+  List<EmergencyPlace> _hospitalsForHexModel(IndiaOpsZone zone) {
+    final fromCatalog = OpsZoneResourceCatalog.hospitalsInZoneMerged(
+      zone,
+      widget.isDrillShell ? const [] : _opsHospitalRows,
+    );
+    if (fromCatalog.isNotEmpty) return fromCatalog;
+    final c = zone.center;
+    final maxR = zone.radiusM + kMaxCoverageRadiusM;
+    return _hospitals.where((p) {
+      final m = Geolocator.distanceBetween(c.latitude, c.longitude, p.lat, p.lng);
+      return m <= maxR;
+    }).toList();
   }
 
   EmergencyHexZoneModel? _computeHexZoneModel() {
-    if (_currentPosition == null) return null;
-    final c = LatLng(_currentPosition!.latitude, _currentPosition!.longitude);
-    final volPts = VolunteerPresenceService.filterNearby(
-      _volunteerDutyDocs,
-      c,
-      _emergencyRadius,
-    ).map((v) => LatLng(v.lat, v.lng)).toList();
+    final zone = _activeOpsZone;
+    final coverM = _hexGridCoverRadiusM(zone);
+    final volPts = OpsZoneResourceCatalog.volunteersInZone(_volunteerDutyDocs, zone)
+        .map((v) => LatLng(v.lat, v.lng))
+        .toList();
     return buildEmergencyHexZones(
-      center: c,
-      coverRadiusM: _emergencyRadius,
-      hospitals: _hospitals,
+      center: zone.center,
+      coverRadiusM: coverM,
+      hospitals: _hospitalsForHexModel(zone),
       volunteerPositions: volPts,
       useMainAppHospitalDensityColors: true,
     );
@@ -252,10 +287,16 @@ class _MapScreenState extends ConsumerState<MapScreen> with TickerProviderStateM
     }
 
     if (!widget.isDrillShell) {
-      _archiveSweepTimer = Timer.periodic(
-        const Duration(minutes: 5),
-        (_) => IncidentService.autoArchiveExpiredIncidents(),
-      );
+      _mapShowPastIncidents = false;
+      _mapShowVolunteers = false;
+      _opsHospitalsSub = OpsHospitalService.watchHospitals().listen((rows) {
+        if (!context.mounted) return;
+        setState(() => _opsHospitalRows = rows);
+      });
+      unawaited(OfflineMapPackService.loadLastPackRadiusMeters().then((r) {
+        if (!context.mounted || r == null) return;
+        setState(() => _cachedPackRadiusM = r);
+      }));
     }
     // Demo fleet / seeded `demo_ops_*` playback: practice map only — main map is real incidents only.
     if (widget.isDrillShell) {
@@ -281,7 +322,7 @@ class _MapScreenState extends ConsumerState<MapScreen> with TickerProviderStateM
 
   @override
   void dispose() {
-    _archiveSweepTimer?.cancel();
+    _opsHospitalsSub?.cancel();
     _fleetDemoSub?.cancel();
     _demoFleetMotionTimer?.cancel();
     _networkQualitySub?.cancel();
@@ -319,6 +360,7 @@ class _MapScreenState extends ConsumerState<MapScreen> with TickerProviderStateM
   }
 
   Future<void> _loadCustomMarkers() async {
+    await OpsMapMarkers.preload();
     const subtleHospital = Color(0xFF26C6DA);
     _hospitalIcon = await MapMarkerGenerator.getMinimalPin(Icons.local_hospital_rounded, subtleHospital);
     _userIcon = await MapMarkerGenerator.getMinimalPin(Icons.navigation_rounded, AppColors.primaryInfo);
@@ -343,8 +385,6 @@ class _MapScreenState extends ConsumerState<MapScreen> with TickerProviderStateM
     _incidentStrokeMarker = await MapMarkerGenerator.getMinimalPin(Icons.psychology_rounded, const Color(0xFF9575CD));
     _incidentChokingMarker = await MapMarkerGenerator.getMinimalPin(Icons.air_rounded, const Color(0xFF26C6DA));
     _incidentDefaultMarker = await MapMarkerGenerator.getMinimalPin(Icons.emergency_rounded, AppColors.primaryDanger);
-
-    await FleetMapIcons.preload();
 
     if (context.mounted) setState(() {});
   }
@@ -672,37 +712,12 @@ class _MapScreenState extends ConsumerState<MapScreen> with TickerProviderStateM
     if (!_controller.isCompleted) _controller.complete(controller);
   }
 
-  Future<void> _toggleArchivedHistoryMapView() async {
-    final next = !_archivedHistoryMapView;
-    setState(() {
-      _archivedHistoryMapView = next;
-      if (next) {
-        _mapShowEmergencyServices = false;
-        _mapShowZoneClassification = false;
-        _mapShowPastIncidents = true;
-        _mapShowVolunteers = false;
-      } else {
-        _mapShowEmergencyServices = true;
-        _mapShowZoneClassification = true;
-        _mapShowPastIncidents = true;
-        _mapShowVolunteers = true;
-      }
-    });
-    _rotationController.duration = const Duration(seconds: 10);
-    if (_rotationController.isAnimating) {
-      _rotationController.repeat();
-    }
-    if (next && _currentPosition != null) {
-      unawaited(_loadPastIncidents(_currentPosition!));
-    }
-  }
-
   BitmapDescriptor _incidentStyleIconForCategory(String category) {
     if (category.contains('stroke')) {
       return _incidentStrokeMarker ?? BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueViolet);
     }
     if (category.contains('cardiac') || category.contains('heart')) {
-      return _incidentCardiacMarker ?? BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueRed);
+      return _incidentCardiacMarker ?? BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueRose);
     }
     if (category.contains('collision') ||
         category.contains('accident') ||
@@ -725,19 +740,6 @@ class _MapScreenState extends ConsumerState<MapScreen> with TickerProviderStateM
       return _incidentChokingMarker ?? BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueCyan);
     }
     return _incidentDefaultMarker ?? BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueViolet);
-  }
-
-  void _openAreaInfo() {
-    Navigator.of(context).push(
-      MaterialPageRoute<void>(
-        builder: (ctx) => AreaInfoPage(
-          currentPosition: _currentPosition,
-          hospitals: List<EmergencyPlace>.from(_hospitals),
-          areaIntel: _areaIntel,
-          pastIncidents: List<SosIncident>.from(_pastIncidents),
-        ),
-      ),
-    );
   }
 
   void _showMapDirectoryAccuracyDialog() {
@@ -826,6 +828,7 @@ class _MapScreenState extends ConsumerState<MapScreen> with TickerProviderStateM
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
     final activeHazards = ref.watch(activeHazardsProvider);
     final bedsAsync = ref.watch(bedAvailabilityProvider);
     final beds = bedsAsync.value ??
@@ -858,7 +861,7 @@ class _MapScreenState extends ConsumerState<MapScreen> with TickerProviderStateM
         })
         .where((s) => s.isNotEmpty)
         .join('|');
-    if (volSig != _lastVolunteerRouteRequestSig) {
+    if ((widget.isDrillShell || _mapShowVolunteers) && volSig != _lastVolunteerRouteRequestSig) {
       _lastVolunteerRouteRequestSig = volSig;
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (context.mounted) unawaited(_syncVolunteerResponderRoutes(mapLiveIncidents));
@@ -918,6 +921,7 @@ class _MapScreenState extends ConsumerState<MapScreen> with TickerProviderStateM
       });
     }
     final suppressMotion = suppressGoogleMapMarkerAnimations(context);
+    final hazardsForMap = widget.isDrillShell ? activeHazards : const <HazardModel>[];
 
     ref.listen<AsyncValue<bool>>(connectivityProvider, (prev, next) {
       if (next.value == true && context.mounted) {
@@ -948,10 +952,11 @@ class _MapScreenState extends ConsumerState<MapScreen> with TickerProviderStateM
         children: [
           EosHybridMap(
             mapType: MapType.normal,
+            forceGoogleTiles: !widget.isDrillShell,
             mapId: AppConstants.googleMapsDarkMapId.isNotEmpty
                 ? AppConstants.googleMapsDarkMapId
                 : null,
-            style: AppConstants.googleMapsDarkMapId.isEmpty ? _mapStyle : null,
+            style: effectiveGoogleMapsEmbeddedStyleJson(),
             trafficEnabled: false,
             gestureRecognizers: <Factory<OneSequenceGestureRecognizer>>{
               Factory<OneSequenceGestureRecognizer>(() => EagerGestureRecognizer()),
@@ -964,24 +969,13 @@ class _MapScreenState extends ConsumerState<MapScreen> with TickerProviderStateM
               preferZoom: _currentPosition != null ? 15.0 : _initialPosition.zoom,
             ),
             onMapCreated: _onMapCreated,
-            onCameraMove: (CameraPosition p) {
-              if (!context.mounted) return;
-              if (FleetMapIcons.zoomTierChanged(_mapZoomForFleet, p.zoom)) {
-                setState(() => _mapZoomForFleet = p.zoom);
-              }
-            },
             myLocationEnabled: false,
             myLocationButtonEnabled: false,
             zoomControlsEnabled: false,
             compassEnabled: false,
-            onTap: (_) {
-              if (_selectedFleetKey != null && context.mounted) {
-                setState(() => _selectedFleetKey = null);
-              }
-            },
             circles: _mapCircles(mapLiveIncidents),
             polygons: _mapZonePolygons(),
-            markers: _buildServiceMarkers(activeHazards, beds, mapLiveIncidents, suppressMotion, _mapZoomForFleet),
+            markers: _buildServiceMarkers(hazardsForMap, beds, mapLiveIncidents, suppressMotion),
             polylines: _buildRouteLines(),
           ),
 
@@ -1009,7 +1003,7 @@ class _MapScreenState extends ConsumerState<MapScreen> with TickerProviderStateM
                     Padding(
                       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
                       child: Text(
-                        'Caching area for offline — ${(_offlinePackProgress * 100).clamp(0, 100).round()}%',
+                        l10n.mapCachingOfflinePct((_offlinePackProgress * 100).clamp(0, 100).round()),
                         textAlign: TextAlign.center,
                         style: const TextStyle(color: Colors.white70, fontSize: 10, fontWeight: FontWeight.w700, letterSpacing: 0.3),
                       ),
@@ -1036,7 +1030,7 @@ class _MapScreenState extends ConsumerState<MapScreen> with TickerProviderStateM
                       const SizedBox(width: 8),
                       Expanded(
                         child: Text(
-                          'Practice Grid: pulsing pins = demo active alerts. Tap the folder icon (Archived SOS) for demo closed incidents — not real data.',
+                          l10n.mapDrillPracticeBanner,
                           style: TextStyle(
                             color: Colors.white.withValues(alpha: 0.94),
                             fontSize: 11,
@@ -1053,146 +1047,25 @@ class _MapScreenState extends ConsumerState<MapScreen> with TickerProviderStateM
 
           if (!_isScanning && !widget.isDrillShell)
             Positioned(
-              top: MediaQuery.of(context).padding.top + 10,
-              left: 12,
-              right: 80,
-              child: Semantics(
-                label:
-                    'Map accuracy notice. Facility pins may be wrong. Verify by phone before routing.',
-                child: Material(
-                  color: Colors.black.withValues(alpha: 0.72),
-                  borderRadius: BorderRadius.circular(10),
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                    child: Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const Icon(Icons.info_outline_rounded, color: Colors.amberAccent, size: 18),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: Text(
-                            'Pins can be wrong — verify hospitals and stations by phone before routing.',
-                            style: TextStyle(
-                              color: Colors.white.withValues(alpha: 0.88),
-                              fontSize: 11,
-                              height: 1.3,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                        ),
-                        TextButton(
-                          style: TextButton.styleFrom(
-                            padding: const EdgeInsets.only(left: 4),
-                            minimumSize: Size.zero,
-                            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                          ),
-                          onPressed: _showMapDirectoryAccuracyDialog,
-                          child: const Text('Details', style: TextStyle(fontSize: 11)),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
+              top: MediaQuery.of(context).padding.top + 8,
+              left: 10,
+              right: 220,
+              child: _buildMainIntelCard(isOnline),
             ),
 
-          // Top-right: re-center + map controls
+          // Top-right: re-center
           if (!_isScanning)
             Positioned(
               top: MediaQuery.of(context).padding.top + 12,
               right: 16,
-              child: Column(
-                children: [
-                  _MapActionButton(
-                    icon: Icons.my_location,
-                    tooltip: 'Re-center',
-                    onTap: () => _determinePosition(forcePlacesRefresh: true),
-                  ),
-                  const SizedBox(height: 10),
-                  _MapActionButton(
-                    icon: Icons.inventory_2_outlined,
-                    tooltip: _archivedHistoryMapView
-                        ? 'Exit archived SOS view'
-                        : (widget.isDrillShell
-                            ? 'Archived SOS — practice closed incidents'
-                            : 'Archived SOS — real incidents near you'),
-                    isActive: _archivedHistoryMapView,
-                    activeColor: Colors.amber,
-                    onTap: () => unawaited(_toggleArchivedHistoryMapView()),
-                  ),
-                ],
+              child: _MapActionButton(
+                icon: Icons.my_location,
+                tooltip: l10n.mapRecenterTooltip,
+                onTap: () => _determinePosition(forcePlacesRefresh: true),
               ),
             ),
 
-          if (!_isScanning && _archivedHistoryMapView)
-            Positioned(
-              bottom: 78 + MediaQuery.of(context).padding.bottom,
-              left: 12,
-              right: 12,
-              child: Material(
-                color: Colors.black.withValues(alpha: 0.78),
-                borderRadius: BorderRadius.circular(12),
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Icon(Icons.archive_outlined, color: Colors.amber.shade200, size: 22),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: Text(
-                          _pastIncidents.isEmpty
-                              ? (widget.isDrillShell
-                                  ? 'Practice archived view — demo list is empty (wait for location).'
-                                  : 'Archived SOS view — no closed incidents in this area yet. Data comes from real sos_incidents_archive.')
-                              : (widget.isDrillShell
-                                  ? 'Practice archived view — ${_pastIncidents.length} demo closed incident${_pastIncidents.length == 1 ? '' : 's'} (not Firestore).'
-                                  : 'Archived SOS view — ${_pastIncidents.length} real closed incident${_pastIncidents.length == 1 ? '' : 's'} in range (Firestore).'),
-                          style: TextStyle(
-                            color: Colors.white.withValues(alpha: 0.92),
-                            fontSize: 11,
-                            height: 1.3,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ),
-
-          // Avg emergency response on-map (hidden in drill shell — practice banner uses top space)
-          if (!_isScanning && !widget.isDrillShell)
-            Positioned(
-              top: MediaQuery.of(context).padding.top + 12,
-              left: 16,
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
-                decoration: BoxDecoration(
-                  color: AppColors.surface.withValues(alpha: 0.88),
-                  borderRadius: BorderRadius.circular(10),
-                  border: Border.all(color: Colors.white10),
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    const Icon(Icons.timer_outlined, color: AppColors.primaryInfo, size: 15),
-                    const SizedBox(width: 6),
-                    Text(
-                      'Avg response ${_areaIntel.avgResponseMinutes > 0 ? _areaIntel.avgResponseMinutes : '~8'} min',
-                      style: const TextStyle(
-                        color: Colors.white70,
-                        fontSize: 11,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-
-          // Route legend — above the layer chip bar (not overlapping it).
+          // Route legend — bottom-right; sits above system inset (no full-width chip bar).
           if (!_isScanning && _routeLegendVisible())
             Positioned(
               bottom: _mapChipBarBottomInset +
@@ -1213,28 +1086,35 @@ class _MapScreenState extends ConsumerState<MapScreen> with TickerProviderStateM
                   children: [
                     if (_mapShowZoneClassification) _buildZoneClassificationPanel(context),
                     if (_mapShowZoneClassification &&
-                        _mapShowPastIncidents &&
-                        _pastIncidents.isNotEmpty)
+                        ((widget.isDrillShell && _mapShowPastIncidents && _pastIncidents.isNotEmpty) ||
+                            (!widget.isDrillShell && _showPastIncidentsForZone && _pastIncidentsInUserHex().isNotEmpty)))
                       Padding(
                         padding: const EdgeInsets.only(top: 8, bottom: 4),
                         child: Container(height: 1, color: Colors.white24),
                       ),
                     if (!_mapShowZoneClassification) ...[
                       if (_mapShowEmergencyServices && _hospitals.isNotEmpty)
-                        _legendRow(const Color(0xFFFF1744), 'Hospital', _nearestDistLabel(_hospitals)),
+                        _legendRow(const Color(0xFFFF1744), l10n.mapLegendHospital, _nearestDistLabel(_hospitals)),
                     ],
-                    if (_mapShowPastIncidents && _pastIncidents.isNotEmpty) ...[
+                    if ((widget.isDrillShell && _mapShowPastIncidents && _pastIncidents.isNotEmpty) ||
+                        (!widget.isDrillShell && _showPastIncidentsForZone && _pastIncidentsInUserHex().isNotEmpty)) ...[
                       if (!_mapShowZoneClassification && (_mapShowEmergencyServices && _hospitals.isNotEmpty))
                         const SizedBox(height: 4),
-                      _legendRow(Colors.blueGrey, 'Live SOS / history', '${_pastIncidents.length} in area'),
+                      _legendRow(
+                        Colors.blueGrey,
+                        widget.isDrillShell ? l10n.mapLegendLiveSosHistory : l10n.mapLegendPastThisHex,
+                        widget.isDrillShell
+                            ? l10n.mapLegendIncidentsInArea(_pastIncidents.length)
+                            : l10n.mapLegendIncidentsInCell(_pastIncidentsInUserHex().length),
+                      ),
                     ],
                     if (_mapShowVolunteers && _nearbyOnDutyVolunteers().isNotEmpty)
                       Padding(
                         padding: const EdgeInsets.only(top: 6),
                         child: _legendRow(
                           const Color(0xFF69F0AE),
-                          'Volunteers on duty',
-                          '${_nearbyOnDutyVolunteers().length} in grid',
+                          l10n.mapLegendVolunteersOnDuty,
+                          l10n.mapLegendVolunteersInGrid(_nearbyOnDutyVolunteers().length),
                         ),
                       ),
                     if (_volunteerResponderPolylines.isNotEmpty)
@@ -1242,8 +1122,8 @@ class _MapScreenState extends ConsumerState<MapScreen> with TickerProviderStateM
                         padding: const EdgeInsets.only(top: 6),
                         child: _legendRow(
                           AppColors.primarySafe,
-                          'Responder → scene',
-                          '${_volunteerResponderPolylines.length} route${_volunteerResponderPolylines.length == 1 ? "" : "s"}',
+                          l10n.mapLegendResponderScene,
+                          l10n.mapResponderRoutes(_volunteerResponderPolylines.length),
                         ),
                       ),
                   ],
@@ -1251,119 +1131,129 @@ class _MapScreenState extends ConsumerState<MapScreen> with TickerProviderStateM
               ),
             ),
 
-          // Quick layer toggles (full width; legend sits above this bar).
-          if (!_isScanning && _currentPosition != null)
-            Positioned(
-              left: 10,
-              right: 10,
-              bottom: _mapChipBarBottomInset + MediaQuery.of(context).padding.bottom,
-              child: Material(
-                color: Colors.black.withValues(alpha: 0.78),
-                borderRadius: BorderRadius.circular(14),
-                elevation: 6,
-                child: SingleChildScrollView(
-                  scrollDirection: Axis.horizontal,
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
-                  child: Row(
-                    children: [
-                      _quickMapChip(
-                        'Zones',
-                        Icons.radar_rounded,
-                        AppColors.primarySafe,
-                        _mapShowZoneClassification,
-                        (v) => setState(() => _mapShowZoneClassification = v),
-                      ),
-                      _quickMapChip(
-                        'Emergency services',
-                        Icons.health_and_safety_rounded,
-                        const Color(0xFF2979FF),
-                        _mapShowEmergencyServices,
-                        (v) => setState(() => _mapShowEmergencyServices = v),
-                      ),
-                      _quickMapChip(
-                        'Live SOS',
-                        Icons.sos_rounded,
-                        Colors.blueGrey,
-                        _mapShowPastIncidents,
-                        (v) => setState(() => _mapShowPastIncidents = v),
-                      ),
-                      _quickMapChip(
-                        'Volunteers',
-                        Icons.groups_rounded,
-                        const Color(0xFF69F0AE),
-                        _mapShowVolunteers,
-                        (v) => setState(() => _mapShowVolunteers = v),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ),
-
-          // Area info (full insights panel)
+          // Bottom bar: Nearest (left) + layer toggles (right, semi-transparent panel).
           if (!_isScanning)
             Positioned(
-              bottom: 24 + MediaQuery.of(context).padding.bottom,
-              left: 16,
-              child: FloatingActionButton.extended(
-                heroTag: 'area_info_map',
-                onPressed: _openAreaInfo,
-                backgroundColor: AppColors.primaryInfo.withValues(alpha: 0.9),
-                foregroundColor: Colors.white,
-                icon: const Icon(Icons.info_outline_rounded, size: 20),
-                label: const Text(
-                  'Info',
-                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
-                ),
-              ).animate().scale(delay: 500.ms),
-            ),
-
-          // Nearest-only mode (one pin per service type) — dedicated control, not a layer chip.
-          if (!_isScanning && _currentPosition != null)
-            Positioned(
-              left: 16,
+              left: 8,
+              right: 8,
               bottom: _mapChipBarBottomInset +
                   MediaQuery.of(context).padding.bottom +
                   _mapChipBarHeightEstimate +
                   10,
-              child: Tooltip(
-                message: _mapNearestOnly
-                    ? 'Showing nearest facility per type. Tap to show all in range.'
-                    : 'Tap to show only the nearest hospital in range.',
-                child: Material(
-                  color: _mapNearestOnly
-                      ? const Color(0xFF26A69A).withValues(alpha: 0.95)
-                      : Colors.black.withValues(alpha: 0.78),
-                  borderRadius: BorderRadius.circular(14),
-                  elevation: 6,
-                  child: InkWell(
-                    onTap: () => setState(() => _mapNearestOnly = !_mapNearestOnly),
-                    borderRadius: BorderRadius.circular(14),
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(
-                            Icons.place_rounded,
-                            color: Colors.white,
-                            size: 20,
-                          ),
-                          const SizedBox(width: 8),
-                          Text(
-                            'Nearest',
-                            style: TextStyle(
-                              color: Colors.white,
-                              fontWeight: FontWeight.w800,
-                              fontSize: 12,
-                              letterSpacing: 0.3,
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  if (_currentPosition != null)
+                    Tooltip(
+                      message: _mapNearestOnly
+                          ? 'Showing nearest facility per type. Tap to show all in range.'
+                          : 'Tap to show only the nearest hospital in range.',
+                      child: Material(
+                        color: _mapNearestOnly
+                            ? const Color(0xFF26A69A).withValues(alpha: 0.95)
+                            : Colors.black.withValues(alpha: 0.78),
+                        borderRadius: BorderRadius.circular(14),
+                        elevation: 6,
+                        child: InkWell(
+                          onTap: () => setState(() => _mapNearestOnly = !_mapNearestOnly),
+                          borderRadius: BorderRadius.circular(14),
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                const Icon(
+                                  Icons.place_rounded,
+                                  color: Colors.white,
+                                  size: 20,
+                                ),
+                                const SizedBox(width: 8),
+                                Text(
+                                  'Nearest',
+                                  style: TextStyle(
+                                    color: Colors.white,
+                                    fontWeight: FontWeight.w800,
+                                    fontSize: 12,
+                                    letterSpacing: 0.3,
+                                  ),
+                                ),
+                              ],
                             ),
                           ),
-                        ],
+                        ),
+                      ),
+                    ),
+                  const Spacer(),
+                  Material(
+                    color: Colors.black.withValues(alpha: 0.78),
+                    elevation: 6,
+                    shadowColor: Colors.black26,
+                    borderRadius: BorderRadius.circular(14),
+                    clipBehavior: Clip.antiAlias,
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                      child: ConstrainedBox(
+                        constraints: const BoxConstraints(maxWidth: 220),
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          crossAxisAlignment: CrossAxisAlignment.end,
+                          children: [
+                            CheckboxListTile(
+                              dense: true,
+                              visualDensity: VisualDensity.compact,
+                              contentPadding: EdgeInsets.zero,
+                              tileColor: Colors.transparent,
+                              title: const Text('Zones', style: _mapFilterCheckboxTitleStyle),
+                              secondary: Icon(Icons.radar_rounded, size: 18, color: AppColors.primarySafe.withValues(alpha: _mapShowZoneClassification ? 1 : 0.5)),
+                              value: _mapShowZoneClassification,
+                              onChanged: (v) => setState(() => _mapShowZoneClassification = v ?? false),
+                              activeColor: AppColors.primarySafe,
+                              controlAffinity: ListTileControlAffinity.leading,
+                            ),
+                            CheckboxListTile(
+                              dense: true,
+                              visualDensity: VisualDensity.compact,
+                              contentPadding: EdgeInsets.zero,
+                              tileColor: Colors.transparent,
+                              title: const Text('Emergency services', style: _mapFilterCheckboxTitleStyle),
+                              secondary: Icon(Icons.health_and_safety_rounded, size: 18, color: const Color(0xFF2979FF).withValues(alpha: _mapShowEmergencyServices ? 1 : 0.5)),
+                              value: _mapShowEmergencyServices,
+                              onChanged: (v) => setState(() => _mapShowEmergencyServices = v ?? false),
+                              activeColor: const Color(0xFF2979FF),
+                              controlAffinity: ListTileControlAffinity.leading,
+                            ),
+                            if (widget.isDrillShell) ...[
+                              CheckboxListTile(
+                                dense: true,
+                                visualDensity: VisualDensity.compact,
+                                contentPadding: EdgeInsets.zero,
+                                tileColor: Colors.transparent,
+                                title: const Text('Live SOS', style: _mapFilterCheckboxTitleStyle),
+                                secondary: Icon(Icons.sos_rounded, size: 18, color: Colors.blueGrey.withValues(alpha: _mapShowPastIncidents ? 1 : 0.5)),
+                                value: _mapShowPastIncidents,
+                                onChanged: (v) => setState(() => _mapShowPastIncidents = v ?? false),
+                                activeColor: Colors.blueGrey,
+                                controlAffinity: ListTileControlAffinity.leading,
+                              ),
+                              CheckboxListTile(
+                                dense: true,
+                                visualDensity: VisualDensity.compact,
+                                contentPadding: EdgeInsets.zero,
+                                tileColor: Colors.transparent,
+                                title: const Text('Volunteers', style: _mapFilterCheckboxTitleStyle),
+                                secondary: Icon(Icons.groups_rounded, size: 18, color: const Color(0xFF69F0AE).withValues(alpha: _mapShowVolunteers ? 1 : 0.5)),
+                                value: _mapShowVolunteers,
+                                onChanged: (v) => setState(() => _mapShowVolunteers = v ?? false),
+                                activeColor: const Color(0xFF69F0AE),
+                                controlAffinity: ListTileControlAffinity.leading,
+                              ),
+                            ],
+                          ],
+                        ),
                       ),
                     ),
                   ),
-                ),
+                ],
               ),
             ),
 
@@ -1376,27 +1266,106 @@ class _MapScreenState extends ConsumerState<MapScreen> with TickerProviderStateM
   // MINIMAL SCAN OVERLAY
   // ═══════════════════════════════════════════════════════════════════════════
 
-  Widget _quickMapChip(
-    String label,
-    IconData icon,
-    Color color,
-    bool selected,
-    ValueChanged<bool> onSelected,
-  ) {
-    return Padding(
-      padding: const EdgeInsets.only(right: 6),
-      child: FilterChip(
-        label: Text(label, style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w800)),
-        avatar: Icon(icon, size: 16, color: selected ? color : Colors.white54),
-        selected: selected,
-        onSelected: onSelected,
-        selectedColor: color.withValues(alpha: 0.35),
-        checkmarkColor: Colors.white,
-        labelStyle: const TextStyle(color: Colors.white),
-        side: const BorderSide(color: Colors.white24),
-        backgroundColor: Colors.white10,
-        visualDensity: VisualDensity.compact,
-        materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+  Widget _buildMainIntelCard(bool isOnline) {
+    final ai = _areaIntel;
+    final ambM = ai.avgAmbulanceResponseMinutes;
+    final volM = ai.avgVolunteerResponseMinutes;
+    final legM = ai.avgResponseMinutes;
+    final ambLabel = ambM > 0 ? '$ambM min' : '—';
+    final volLabel = volM > 0 ? '$volM min' : '—';
+    final legacyLabel = legM > 0 ? '$legM min' : '~8 min';
+    final radiusM = _cachedPackRadiusM ?? _emergencyRadius.round();
+    final radiusKm = (radiusM / 1000).toStringAsFixed(1);
+    final nearestLine = _hospitals.isEmpty || _currentPosition == null
+        ? 'Nearest hospital: —'
+        : () {
+            final n = _nearestPlace(_hospitals);
+            final km = Geolocator.distanceBetween(
+                  _currentPosition!.latitude,
+                  _currentPosition!.longitude,
+                  n.lat,
+                  n.lng,
+                ) /
+                1000;
+            return 'Nearest: ${n.name} · ${km.toStringAsFixed(1)} km';
+          }();
+    final packPct = (_offlinePackProgress * 100).clamp(0, 100).round();
+    final syncLine = !isOnline
+        ? 'Device offline · last cached area ~$radiusKm km'
+        : (_offlinePackComplete
+            ? 'Online · offline pack ready ($packPct%) · ~$radiusKm km'
+            : (_offlinePackJobRunning || packPct > 4
+                ? 'Online · caching routes/places $packPct%'
+                : 'Online · grid data loading'));
+    final zonePast = _pastIncidentsInUserHex();
+    final zoneLine = _showPastIncidentsForZone
+        ? 'This hex: ${zonePast.length} past incident${zonePast.length == 1 ? '' : 's'}'
+        : 'Zone past: off — open Zone Info (legend) to plot this cell';
+
+    return Material(
+      color: Colors.black.withValues(alpha: 0.78),
+      borderRadius: BorderRadius.circular(12),
+      child: ConstrainedBox(
+        constraints: BoxConstraints(maxHeight: MediaQuery.sizeOf(context).height * 0.38),
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Icon(Icons.timer_outlined, color: AppColors.primaryInfo, size: 16),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'Ambulance avg $ambLabel · Volunteer avg $volLabel · blended $legacyLabel',
+                      style: const TextStyle(
+                        color: Colors.white70,
+                        fontSize: 10,
+                        fontWeight: FontWeight.w700,
+                        height: 1.3,
+                      ),
+                    ),
+                  ),
+                  TextButton(
+                    onPressed: _showMapDirectoryAccuracyDialog,
+                    style: TextButton.styleFrom(
+                      padding: EdgeInsets.zero,
+                      minimumSize: Size.zero,
+                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    ),
+                    child: const Text('Details', style: TextStyle(fontSize: 10)),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 6),
+              Text(
+                nearestLine,
+                style: TextStyle(color: Colors.white.withValues(alpha: 0.88), fontSize: 10, fontWeight: FontWeight.w600),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                syncLine,
+                style: TextStyle(color: Colors.white.withValues(alpha: 0.65), fontSize: 9, height: 1.25),
+              ),
+              Text(
+                'Caches places + routes within ~$radiusKm km (map tiles not stored offline).',
+                style: TextStyle(color: Colors.white.withValues(alpha: 0.5), fontSize: 9, height: 1.25),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                zoneLine,
+                style: TextStyle(
+                  color: _showPastIncidentsForZone ? Colors.blueGrey.shade200 : Colors.white38,
+                  fontSize: 9,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
@@ -1513,7 +1482,7 @@ class _MapScreenState extends ConsumerState<MapScreen> with TickerProviderStateM
   // ═══════════════════════════════════════════════════════════════════════════
 
   Set<Polygon> _mapZonePolygons() {
-    if (!_mapShowZoneClassification || _currentPosition == null) return {};
+    if (!_mapShowZoneClassification) return {};
     final model = _computeHexZoneModel();
     if (model == null) return {};
     return model.polygons;
@@ -1542,26 +1511,25 @@ class _MapScreenState extends ConsumerState<MapScreen> with TickerProviderStateM
       ));
     }
 
-    if (_currentPosition == null) return circles;
-    final LatLng c = LatLng(_currentPosition!.latitude, _currentPosition!.longitude);
-
     if (_mapShowZoneClassification) {
+      final zone = _activeOpsZone;
       circles.add(Circle(
         circleId: const CircleId('emergency_radius_hex_zones'),
-        center: c,
-        radius: _emergencyRadius,
+        center: zone.center,
+        radius: _hexGridCoverRadiusM(zone),
         fillColor: Colors.transparent,
-        strokeColor: Colors.white.withValues(alpha: 0.22),
+        strokeColor: const Color(0xFF37474F).withValues(alpha: 0.42),
         strokeWidth: 1,
         zIndex: 0,
       ));
-    } else {
+    } else if (_currentPosition != null) {
+      final LatLng c = LatLng(_currentPosition!.latitude, _currentPosition!.longitude);
       circles.add(Circle(
         circleId: const CircleId('emergency_radius'),
         center: c,
         radius: _emergencyRadius,
         fillColor: AppColors.primaryInfo.withValues(alpha: 0.05),
-        strokeColor: AppColors.primaryInfo.withValues(alpha: 0.5),
+        strokeColor: const Color(0xFF0D47A1).withValues(alpha: 0.65),
         strokeWidth: 2,
       ));
     }
@@ -1639,66 +1607,23 @@ class _MapScreenState extends ConsumerState<MapScreen> with TickerProviderStateM
       lines.add(Polyline(
         polylineId: const PolylineId('route_hospital'),
         points: _hospitalRoute,
-        color: const Color(0xFFFF1744),
-        width: 5,
+        color: const Color(0xFFB71C1C),
+        width: 6,
         patterns: [PatternItem.dash(12), PatternItem.gap(8)],
       ));
     }
 
-    for (final e in _volunteerResponderPolylines.entries) {
-      if (e.value.length < 2) continue;
-      lines.add(Polyline(
-        polylineId: PolylineId('volunteer_resp_${e.key}'),
-        points: e.value,
-        color: AppColors.primarySafe,
-        width: 6,
-        zIndex: 24,
-        patterns: [PatternItem.dash(14), PatternItem.gap(8)],
-      ));
-    }
-
     if (widget.isDrillShell) {
-      final z = IndiaOpsZones.lucknow;
-      final liveIncidents = widget.isDrillShell
-          ? DrillMapDemoIncidents.activeNear(
-              LatLng(_currentPosition!.latitude, _currentPosition!.longitude),
-              DateTime.now())
-          : [];
-      final pins = <String, LatLng>{
-        for (final inc in liveIncidents)
-          if (inc.id.startsWith('demo_ops_')) inc.id: inc.liveVictimPin,
-      };
-
-      for (final d in _fleetDemoDocs) {
-        if (!DemoFleetSimulation.isDemoDoc(d.id)) continue;
-        final data = d.data();
-        if (data['available'] != true) continue;
-
-        final aid = (data['assignedIncidentId'] as String?)?.trim();
-        if (aid != null && aid.isNotEmpty) {
-          final pin = pins[aid];
-          final (a, b) = DemoFleetRouting.fleetEndpoints(d.id, z, aid, pin, pins);
-          final route = DemoFleetRouteCache.loopForKey(
-            DemoFleetRouting.fleetCacheKey(d.id, z, a, b),
-          );
-          
-          // Skip if route hasn't loaded yet or is still a fallback straight-line
-          if (route == null || DemoFleetRouteCache.isFallbackLine(route)) continue;
-
-            const routeColor = Colors.lightBlueAccent;
-
-            final isSelected = _selectedFleetKey == d.id;
-            final isDimmed = _selectedFleetKey != null && !isSelected;
-
-            lines.add(Polyline(
-              polylineId: PolylineId('demofleet_${d.id}'),
-              points: route,
-              color: isDimmed ? routeColor.withValues(alpha: 0.15) : routeColor.withValues(alpha: 0.85),
-              width: isSelected ? 8 : (isDimmed ? 3 : 5),
-              zIndex: isSelected ? 4 : 1,
-              patterns: isSelected ? [] : [PatternItem.dash(16), PatternItem.gap(10)],
-            ));
-        }
+      for (final e in _volunteerResponderPolylines.entries) {
+        if (e.value.length < 2) continue;
+        lines.add(Polyline(
+          polylineId: PolylineId('volunteer_resp_${e.key}'),
+          points: e.value,
+          color: const Color(0xFF1B5E20),
+          width: 7,
+          zIndex: 24,
+          patterns: [PatternItem.dash(14), PatternItem.gap(8)],
+        ));
       }
     }
 
@@ -1720,6 +1645,155 @@ class _MapScreenState extends ConsumerState<MapScreen> with TickerProviderStateM
     return nearest;
   }
 
+  HexAxial? _userHexAxial() {
+    final p = _currentPosition;
+    if (p == null) return null;
+    final zone = _activeOpsZone;
+    return volunteerToHex(
+      kZoneHexCircumRadiusM,
+      zone.center.latitude,
+      zone.center.longitude,
+      p.latitude,
+      p.longitude,
+    );
+  }
+
+  List<SosIncident> _pastIncidentsInUserHex() {
+    final u = _userHexAxial();
+    if (u == null) return [];
+    final zone = _activeOpsZone;
+    return _pastIncidents.where((inc) {
+      final h = volunteerToHex(
+        kZoneHexCircumRadiusM,
+        zone.center.latitude,
+        zone.center.longitude,
+        inc.location.latitude,
+        inc.location.longitude,
+      );
+      return h == u;
+    }).toList();
+  }
+
+  List<SosIncident> _pastIncidentsForMapMarkers() {
+    if (widget.isDrillShell) {
+      if (!_mapShowPastIncidents) return [];
+      return _pastIncidents;
+    }
+    if (!_showPastIncidentsForZone) return [];
+    return _pastIncidentsInUserHex();
+  }
+
+  OpsHospitalRow? _opsHospitalNearPlace(EmergencyPlace place, {double meters = 450}) {
+    for (final row in _opsHospitalRows) {
+      final lat = row.lat;
+      final lng = row.lng;
+      if (lat == null || lng == null) continue;
+      final d = Geolocator.distanceBetween(place.lat, place.lng, lat, lng);
+      if (d <= meters) return row;
+    }
+    return null;
+  }
+
+  EmergencyPlace _emergencyPlaceFromOpsRow(OpsHospitalRow row) {
+    return EmergencyPlace(
+      name: row.name,
+      vicinity: row.region,
+      lat: row.lat!,
+      lng: row.lng!,
+      placeId: 'ops_hospital_${row.id}',
+      types: const ['hospital'],
+    );
+  }
+
+  /// Firestore [ops_hospitals] pins not already represented by a Places directory marker.
+  List<OpsHospitalRow> _opsHospitalsForMapMarkers() {
+    if (!_mapShowEmergencyServices || widget.isDrillShell || _currentPosition == null) {
+      return const [];
+    }
+    final lat = _currentPosition!.latitude;
+    final lng = _currentPosition!.longitude;
+    final placePins = _hospitals.isEmpty ? <EmergencyPlace>[] : _hospitalsForMapMarkers();
+    final eligible = <OpsHospitalRow>[];
+    for (final row in _opsHospitalRows) {
+      final olat = row.lat;
+      final olng = row.lng;
+      if (olat == null || olng == null) continue;
+      if (Geolocator.distanceBetween(lat, lng, olat, olng) > _emergencyRadius) continue;
+      var dup = false;
+      for (final p in placePins) {
+        if (Geolocator.distanceBetween(p.lat, p.lng, olat, olng) <= kOpsHospitalPlacesDedupeRadiusM) {
+          dup = true;
+          break;
+        }
+      }
+      if (dup) continue;
+      eligible.add(row);
+    }
+    if (eligible.isEmpty) return const [];
+    if (_mapNearestOnly) {
+      eligible.sort((a, b) {
+        final da = Geolocator.distanceBetween(lat, lng, a.lat!, a.lng!);
+        final db = Geolocator.distanceBetween(lat, lng, b.lat!, b.lng!);
+        return da.compareTo(db);
+      });
+      return [eligible.first];
+    }
+    return eligible;
+  }
+
+  BitmapDescriptor? _incidentCategoryMarkerOrNull(String category) {
+    if (category.contains('cardiac') || category.contains('heart')) {
+      return _incidentCardiacMarker;
+    }
+    if (category.contains('collision') ||
+        category.contains('accident') ||
+        category.contains('traffic') ||
+        category.contains('pedestrian') ||
+        category.contains('casualty')) {
+      return _incidentCollisionMarker;
+    }
+    if (category.contains('bleeding') || category.contains('hemorrhage')) {
+      return _incidentBleedingMarker;
+    }
+    if (category.contains('fire')) {
+      return _incidentFireMarker;
+    }
+    if (category.contains('drown')) {
+      return _incidentDrowningMarker;
+    }
+    if (category.contains('stroke')) {
+      return _incidentStrokeMarker;
+    }
+    if (category.contains('choking') || category.contains('airway')) {
+      return _incidentChokingMarker;
+    }
+    return _incidentDefaultMarker;
+  }
+
+  BitmapDescriptor _bitmapForLiveSos(SosIncident incident, String category) {
+    final catPin = _incidentCategoryMarkerOrNull(category);
+    switch (incident.status) {
+      case IncidentStatus.pending:
+        return catPin ??
+            OpsMapMarkers.liveSosPendingOr(
+              BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueOrange),
+            );
+      case IncidentStatus.dispatched:
+        return OpsMapMarkers.ambulanceOr(
+          catPin ?? BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueAzure),
+        );
+      case IncidentStatus.blocked:
+        return OpsMapMarkers.sceneOr(
+          BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueViolet),
+        );
+      case IncidentStatus.resolved:
+        return catPin ??
+            OpsMapMarkers.incidentOr(
+              BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueMagenta),
+            );
+    }
+  }
+
   // ═══════════════════════════════════════════════════════════════════════════
   // MARKERS
   // ═══════════════════════════════════════════════════════════════════════════
@@ -1729,7 +1803,6 @@ class _MapScreenState extends ConsumerState<MapScreen> with TickerProviderStateM
     HospitalBedState beds,
     List<SosIncident> liveIncidents,
     bool suppressMarkerMotion,
-    double fleetMapZoom,
   ) {
     final Set<Marker> markers = {};
 
@@ -1742,24 +1815,7 @@ class _MapScreenState extends ConsumerState<MapScreen> with TickerProviderStateM
       final String timeAgo = _timeAgo(incident.timestamp);
       final String category = incident.type.toLowerCase();
 
-      BitmapDescriptor icon;
-      if (category.contains('cardiac') || category.contains('heart')) {
-        icon = _incidentCardiacMarker ?? BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueRed);
-      } else if (category.contains('collision') || category.contains('accident') || category.contains('traffic') || category.contains('pedestrian') || category.contains('casualty')) {
-        icon = _incidentCollisionMarker ?? BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueOrange);
-      } else if (category.contains('bleeding') || category.contains('hemorrhage')) {
-        icon = _incidentBleedingMarker ?? BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueRose);
-      } else if (category.contains('fire')) {
-        icon = _incidentFireMarker ?? BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueYellow);
-      } else if (category.contains('drown')) {
-        icon = _incidentDrowningMarker ?? BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueAzure);
-      } else if (category.contains('stroke')) {
-        icon = _incidentStrokeMarker ?? BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueViolet);
-      } else if (category.contains('choking') || category.contains('airway')) {
-        icon = _incidentChokingMarker ?? BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueCyan);
-      } else {
-        icon = _incidentDefaultMarker ?? BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueMagenta);
-      }
+      final BitmapDescriptor icon = _bitmapForLiveSos(incident, category);
 
       markers.add(Marker(
         markerId: MarkerId('sos_${incident.id}'),
@@ -1774,85 +1830,9 @@ class _MapScreenState extends ConsumerState<MapScreen> with TickerProviderStateM
       ));
     }
 
-    final fbFleetAz = BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueAzure);
-    final lucknowZ = IndiaOpsZones.lucknow;
-    final simNow = DateTime.now();
-    final demoVictimPins = <String, LatLng>{
-      for (final inc in liveIncidents)
-        if (inc.id.startsWith('demo_ops_')) inc.id: inc.liveVictimPin,
-    };
-    for (final incident in liveIncidents) {
-      final scene = incident.liveVictimPin;
-      final amb = incident.ambulanceLiveLocation;
-      if (amb != null) {
-        final sim = widget.isDrillShell && DemoResponderSimulation.isDemoIncident(incident.id)
-            ? DemoResponderSimulation.respondingUnitNearScene(incident.id, 'amb', scene, simNow)
-            : null;
-        markers.add(Marker(
-          markerId: MarkerId('sos_${incident.id}_amb'),
-          position: sim?.latLng ?? amb,
-          zIndexInt: 175,
-          icon: FleetMapIcons.ambulanceForZoom(fleetMapZoom, fbFleetAz),
-          rotation: sim?.headingDeg ?? (incident.ambulanceLiveHeadingDeg ?? 0),
-          flat: true,
-          anchor: const Offset(0.5, 0.5),
-          infoWindow: InfoWindow(
-            title: 'Ambulance unit',
-            snippet: incident.userDisplayName,
-          ),
-        ));
-      }
-    }
-
-    if (widget.isDrillShell) {
-      for (final d in _fleetDemoDocs) {
-        final data = d.data();
-        if (data['available'] != true) continue;
-        final aid = (data['assignedIncidentId'] as String?)?.trim();
-        final pin = aid != null ? demoVictimPins[aid] : null;
-        final pose = DemoFleetSimulation.poseFor(
-          d.id,
-          simNow,
-          lucknowZ,
-          assignedIncidentId: aid,
-          assignedIncidentScene: pin,
-          demoIncidentScenes: demoVictimPins,
-        );
-        final icon = FleetMapIcons.ambulanceForZoom(fleetMapZoom, fbFleetAz);
-        final cs = (data['fleetCallSign'] as String?)?.trim() ?? d.id;
-        
-        final isSelected = _selectedFleetKey == d.id;
-        final isDimmed = _selectedFleetKey != null && !isSelected;
-        final alpha = isDimmed ? 0.45 : 1.0;
-
-        markers.add(Marker(
-          markerId: MarkerId('demofleet_${d.id}'),
-          position: pose.latLng,
-          zIndexInt: isSelected ? 200 : 174,
-          icon: icon,
-          rotation: pose.headingDeg,
-          alpha: alpha,
-          flat: true,
-          anchor: const Offset(0.5, 0.5),
-          infoWindow: InfoWindow(
-            title: cs,
-            snippet: aid != null && aid.isNotEmpty
-                ? 'Practice · response/return ↔ $aid'
-                : 'Practice fleet · simulation',
-          ),
-          onTap: () {
-            if (context.mounted) {
-              setState(() {
-                _selectedFleetKey = _selectedFleetKey == d.id ? null : d.id;
-              });
-            }
-          },
-        ));
-      }
-    }
-
-    if (_mapShowPastIncidents) {
-      for (final inc in _pastIncidents) {
+    final pastForMarkers = _pastIncidentsForMapMarkers();
+    if (pastForMarkers.isNotEmpty) {
+      for (final inc in pastForMarkers) {
         final cat = inc.type.toLowerCase();
         markers.add(Marker(
           markerId: MarkerId('past_${inc.id}'),
@@ -1882,7 +1862,7 @@ class _MapScreenState extends ConsumerState<MapScreen> with TickerProviderStateM
       infoWindow: const InfoWindow(title: 'You', snippet: 'Active Unit'),
     ));
 
-    if (_mapShowVolunteers) {
+    if (widget.isDrillShell && _mapShowVolunteers) {
       for (final v in _nearbyOnDutyVolunteers()) {
         final dist = Geolocator.distanceBetween(lat, lng, v.lat, v.lng);
         final distLabel = dist >= 1000
@@ -1911,24 +1891,54 @@ class _MapScreenState extends ConsumerState<MapScreen> with TickerProviderStateM
 
     if (_mapShowEmergencyServices) {
       var hi = 0;
-      for (var h in _placesForMapLayer(_hospitals)) {
+      for (var h in _hospitalsForMapMarkers()) {
         final suffix = h.placeId.isNotEmpty ? h.placeId : 'noid_${h.lat}_${h.lng}_$hi';
         final sLat = h.lat;
         final sLng = h.lng;
         final dist = Geolocator.distanceBetween(lat, lng, sLat, sLng);
         final hospital = h;
+        final matched = !widget.isDrillShell ? _opsHospitalNearPlace(hospital) : null;
+        final listing =
+            matched == null ? '' : (matched.mapListingOnline ? ' · Online' : ' · Offline');
         markers.add(Marker(
           markerId: MarkerId('hospital_${hi}_$suffix'),
           position: LatLng(sLat, sLng),
           icon: _hospitalIcon ?? BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueCyan),
-          infoWindow: InfoWindow(title: h.name, snippet: _markerSnippet(hospital, 'hospital', dist)),
+          infoWindow: InfoWindow(
+            title: '${h.name}$listing',
+            snippet: _markerSnippet(hospital, 'hospital', dist),
+          ),
           onTap: () => _showHospitalDetailSheet(hospital),
         ));
         hi++;
       }
+
+      var oi = 0;
+      for (final row in _opsHospitalsForMapMarkers()) {
+        final olat = row.lat!;
+        final olng = row.lng!;
+        final dist = Geolocator.distanceBetween(lat, lng, olat, olng);
+        final listing = row.mapListingOnline ? '' : ' · Offline';
+        markers.add(Marker(
+          markerId: MarkerId('ops_hospital_${row.id}_$oi'),
+          position: LatLng(olat, olng),
+          zIndexInt: 66,
+          icon: _hospitalIcon ??
+              OpsMapMarkers.hospitalOr(
+                BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueCyan),
+              ),
+          infoWindow: InfoWindow(
+            title: '${row.name}$listing',
+            snippet: '${row.region} · ${dist >= 1000 ? '${(dist / 1000).toStringAsFixed(1)} km' : '${dist.round()} m'}',
+          ),
+          onTap: () => _showHospitalDetailSheet(_emergencyPlaceFromOpsRow(row)),
+        ));
+        oi++;
+      }
     }
 
-    markers.addAll(activeHazards.map((hazard) {
+    final hazardsForMap = widget.isDrillShell ? activeHazards : const <HazardModel>[];
+    markers.addAll(hazardsForMap.map((hazard) {
       BitmapDescriptor icon;
       switch (hazard.type) {
         case HazardType.cardiacArrest: icon = _cardiacIcon ?? BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueRed); break;
@@ -1972,65 +1982,47 @@ class _MapScreenState extends ConsumerState<MapScreen> with TickerProviderStateM
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        MouseRegion(
-          onEnter: (_) {
-            if (!_zoneClassHeaderHovered) setState(() => _zoneClassHeaderHovered = true);
-          },
-          onExit: (_) {
-            if (_zoneClassHeaderHovered) setState(() => _zoneClassHeaderHovered = false);
-          },
-          child: AnimatedContainer(
-            duration: const Duration(milliseconds: 280),
-            curve: Curves.easeOutCubic,
-            decoration: BoxDecoration(
-              color: _zoneClassHeaderHovered ? AppColors.primaryInfo : baseHeaderColor,
-              borderRadius: BorderRadius.circular(8),
-            ),
-            clipBehavior: Clip.antiAlias,
-            child: Material(
-              color: Colors.transparent,
-              child: InkWell(
-                onTap: () => setState(() => _zonePanelExpanded = !_zonePanelExpanded),
-                borderRadius: BorderRadius.circular(8),
-                splashColor: Colors.white24,
-                highlightColor: Colors.white10,
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-                  child: Row(
-                    children: [
-                      Icon(
-                        _zonePanelExpanded ? Icons.expand_less : Icons.expand_more,
-                        color: Colors.white70,
-                        size: 18,
-                      ),
-                      const SizedBox(width: 4),
-                      Expanded(
-                        child: Align(
-                          alignment: Alignment.centerLeft,
-                          child: AnimatedSwitcher(
-                            duration: const Duration(milliseconds: 240),
-                            switchInCurve: Curves.easeOut,
-                            switchOutCurve: Curves.easeIn,
-                            transitionBuilder: (child, anim) =>
-                                FadeTransition(opacity: anim, child: child),
-                            child: Text(
-                              _zoneClassHeaderHovered
-                                  ? '$coverPct% high-density (3+ hospitals)'
-                                  : 'Zone classification',
-                              key: ValueKey(_zoneClassHeaderHovered),
-                              style: const TextStyle(
-                                color: Colors.white,
-                                fontSize: 11,
-                                fontWeight: FontWeight.w900,
-                                letterSpacing: 0.3,
-                              ),
-                            ),
-                          ),
-                        ),
-                      ),
-                    ],
+        Material(
+          color: baseHeaderColor,
+          borderRadius: BorderRadius.circular(8),
+          clipBehavior: Clip.antiAlias,
+          child: InkWell(
+            onTap: () {
+              if (widget.isDrillShell) {
+                setState(() => _zonePanelExpanded = !_zonePanelExpanded);
+              } else {
+                setState(() {
+                  final next = !_zonePanelExpanded;
+                  _zonePanelExpanded = next;
+                  _showPastIncidentsForZone = next;
+                });
+              }
+            },
+            borderRadius: BorderRadius.circular(8),
+            splashColor: Colors.white24,
+            highlightColor: Colors.white10,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+              child: Row(
+                children: [
+                  Icon(
+                    _zonePanelExpanded ? Icons.expand_less : Icons.expand_more,
+                    color: Colors.white70,
+                    size: 18,
                   ),
-                ),
+                  const SizedBox(width: 4),
+                  Expanded(
+                    child: Text(
+                      'Zone Info',
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 11,
+                        fontWeight: FontWeight.w900,
+                        letterSpacing: 0.3,
+                      ),
+                    ),
+                  ),
+                ],
               ),
             ),
           ),
@@ -2170,14 +2162,15 @@ class _MapScreenState extends ConsumerState<MapScreen> with TickerProviderStateM
     });
     await OfflineMapPackService.saveRoutePolylines(hospital: h, crane: const []);
     if (!context.mounted) return;
+    final radiusM = _emergencyRadius.round();
+    unawaited(OfflineMapPackService.saveLastPackRadiusMeters(radiusM));
     setState(() {
       _offlinePackProgress = 1.0;
       _offlinePackComplete = true;
       _offlinePackJobRunning = false;
+      _cachedPackRadiusM = radiusM;
     });
   }
-
-  final String _mapStyle = '[{"featureType":"poi","elementType":"labels","stylers":[{"visibility":"off"}]},{"featureType":"transit","elementType":"labels","stylers":[{"visibility":"off"}]},{"elementType":"geometry","stylers":[{"color":"#212121"}]},{"elementType":"labels.text.stroke","stylers":[{"color":"#212121"}]},{"elementType":"labels.text.fill","stylers":[{"color":"#757575"}]},{"featureType":"water","elementType":"geometry","stylers":[{"color":"#000000"}]}]';
 }
 
 // ═══════════════════════════════════════════════════════════════════════════

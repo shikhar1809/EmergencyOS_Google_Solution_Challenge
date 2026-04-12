@@ -10,97 +10,8 @@ import '../../../core/theme/app_colors.dart';
 import '../domain/admin_panel_access.dart';
 import '../../../services/ops_hospital_service.dart';
 
-/// Live operational status for a bound hospital (medical role) — beds, staffing, services, blood.
-class HospitalLiveOpsScreen extends StatefulWidget {
-  const HospitalLiveOpsScreen({super.key, required this.access});
-
-  final AdminPanelAccess access;
-
-  @override
-  State<HospitalLiveOpsScreen> createState() => _HospitalLiveOpsScreenState();
-}
-
-class _HospitalLiveOpsScreenState extends State<HospitalLiveOpsScreen> {
-  @override
-  Widget build(BuildContext context) {
-    final bound = (widget.access.boundHospitalDocId ?? '').trim();
-    final scopeNote = widget.access.role == AdminConsoleRole.medical
-        ? (bound.isEmpty
-            ? 'LiveOps · Medical console — no hospital ID bound.'
-            : 'LiveOps · Medical console (hospital $bound)')
-        : 'LiveOps (medical console only)';
-
-    return Scaffold(
-      primary: false,
-      backgroundColor: AppColors.slate900,
-      body: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(24, 20, 24, 8),
-            child: Text(
-              'Hospital Dashboard',
-              style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                    color: Colors.white,
-                    fontWeight: FontWeight.w800,
-                  ),
-            ),
-          ),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 24),
-            child: Text(
-              scopeNote,
-              style: const TextStyle(color: Colors.white54, fontSize: 13),
-            ),
-          ),
-          const SizedBox(height: 16),
-          Expanded(
-            child: StreamBuilder(
-              stream: OpsHospitalService.watchHospitals(),
-              builder: (context, snap) {
-                if (snap.hasError) {
-                  return Center(
-                    child: Text('${snap.error}', style: const TextStyle(color: Colors.white54)),
-                  );
-                }
-                if (!snap.hasData) {
-                  return const Center(child: CircularProgressIndicator(color: AppColors.accentBlue));
-                }
-                var rows = snap.data!;
-                if (widget.access.role == AdminConsoleRole.medical) {
-                  if (bound.isEmpty) {
-                    rows = [];
-                  } else {
-                    rows = rows.where((r) => r.id == bound).toList();
-                  }
-                }
-                if (rows.isEmpty) {
-                  return const Center(
-                    child: Text(
-                      'No hospital rows for your scope.',
-                      style: TextStyle(color: Colors.white38),
-                    ),
-                  );
-                }
-                final hospitalIds = rows.map((r) => r.id).toList();
-                return ListView(
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                  children: [
-                    _IncomingEmergencyAlerts(hospitalIds: hospitalIds),
-                    for (final r in rows) _LiveOpsHospitalCard(row: r),
-                    _AcceptedConsignmentSection(hospitalIds: hospitalIds),
-                  ],
-                );
-              },
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-const _kLiveOpsServices = <String>[
+/// Service ids for [OpsHospitalRow.offeredServices] — allocators match incidents to these.
+const kLiveOpsServiceIds = <String>[
   'trauma',
   'trauma_support',
   'cardiology',
@@ -122,7 +33,28 @@ const _kLiveOpsServices = <String>[
   'cardiac_cathlab',
 ];
 
-String _liveOpsServiceLabel(String id) {
+String _notifiedHospitalIdForAction(Map<String, dynamic> d, List<String> hospitalIds) {
+  final fromDoc = (d['notifiedHospitalId'] as String?)?.trim();
+  if (fromDoc != null && fromDoc.isNotEmpty) return fromDoc;
+  if (hospitalIds.isNotEmpty) return hospitalIds.first;
+  return '';
+}
+
+/// Relative age for UI (e.g. "12m ago"); falls back to full date if older than 24h.
+String _acceptedAtDisplayLabel(Timestamp? acceptedAt) {
+  if (acceptedAt == null) return '';
+  final t = acceptedAt.toDate().toLocal();
+  final diff = DateTime.now().difference(t);
+  if (diff.isNegative) return DateFormat.MMMd().add_Hm().format(t);
+  if (diff.inMinutes < 60) {
+    final m = diff.inMinutes.clamp(0, 59);
+    return '${m}m ago';
+  }
+  if (diff.inHours < 24) return '${diff.inHours}h ago';
+  return DateFormat.MMMd().add_Hm().format(t);
+}
+
+String liveOpsServiceLabel(String id) {
   switch (id) {
     case 'icu':
       return 'ICU';
@@ -148,23 +80,113 @@ String _liveOpsServiceLabel(String id) {
   }
 }
 
-class _LiveOpsHospitalCard extends StatefulWidget {
-  const _LiveOpsHospitalCard({required this.row});
+/// Medical console tab: SOS dispatch alerts, specialties for allocators, map online toggle.
+class HospitalLiveOperationsScreen extends StatelessWidget {
+  const HospitalLiveOperationsScreen({super.key, required this.access});
+
+  final AdminPanelAccess access;
+
+  @override
+  Widget build(BuildContext context) {
+    final bound = (access.boundHospitalDocId ?? '').trim();
+    final scopeNote = access.role == AdminConsoleRole.medical
+        ? (bound.isEmpty
+            ? 'No hospital ID bound — sign in with a facility document ID.'
+            : 'Facility $bound')
+        : 'Medical console only';
+
+    return Scaffold(
+      primary: false,
+      backgroundColor: AppColors.slate900,
+      body: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(24, 20, 24, 8),
+            child: Text(
+              'Live Operations',
+              style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                    color: Colors.white,
+                    fontWeight: FontWeight.w800,
+                  ),
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 24),
+            child: Text(
+              scopeNote,
+              style: const TextStyle(color: Colors.white54, fontSize: 13),
+            ),
+          ),
+          const SizedBox(height: 16),
+          Expanded(
+            child: StreamBuilder(
+              stream: OpsHospitalService.watchHospitals(),
+              builder: (context, snap) {
+                if (snap.hasError) {
+                  return Center(
+                    child: Text(
+                      '${snap.error}',
+                      style: const TextStyle(color: Colors.white54),
+                    ),
+                  );
+                }
+                if (!snap.hasData) {
+                  return const Center(
+                    child: CircularProgressIndicator(color: AppColors.accentBlue),
+                  );
+                }
+                var rows = snap.data!;
+                if (access.role == AdminConsoleRole.medical) {
+                  if (bound.isEmpty) {
+                    rows = [];
+                  } else {
+                    rows = rows.where((r) => r.id == bound).toList();
+                  }
+                }
+                if (rows.isEmpty) {
+                  return const Center(
+                    child: Text(
+                      'No hospital rows for your scope.',
+                      style: TextStyle(color: Colors.white38),
+                    ),
+                  );
+                }
+                final hospitalIds = rows.map((r) => r.id).toList();
+                return ListView(
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                  children: [
+                    _IncomingEmergencyAlerts(hospitalIds: hospitalIds),
+                    for (final r in rows) _LiveOperationsFacilityCard(row: r),
+                    _AcceptedConsignmentSection(hospitalIds: hospitalIds),
+                  ],
+                );
+              },
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Beds, staffing, blood — for Overview; preserves [OpsHospitalRow.offeredServices] on save.
+class HospitalCapacityCard extends StatefulWidget {
+  const HospitalCapacityCard({super.key, required this.row});
 
   final OpsHospitalRow row;
 
   @override
-  State<_LiveOpsHospitalCard> createState() => _LiveOpsHospitalCardState();
+  State<HospitalCapacityCard> createState() => _HospitalCapacityCardState();
 }
 
-class _LiveOpsHospitalCardState extends State<_LiveOpsHospitalCard> {
+class _HospitalCapacityCardState extends State<HospitalCapacityCard> {
   late final TextEditingController _avail;
   late final TextEditingController _total;
   late final TextEditingController _note;
   late final TextEditingController _doctors;
   late final TextEditingController _specialists;
   late final TextEditingController _bloodUnits;
-  late Set<String> _selectedServices;
   late bool _hasBloodBank;
   bool _saving = false;
 
@@ -175,7 +197,6 @@ class _LiveOpsHospitalCardState extends State<_LiveOpsHospitalCard> {
     _doctors.text = '${r.doctorsOnDuty}';
     _specialists.text = '${r.specialistsOnCall}';
     _bloodUnits.text = '${r.bloodUnitsAvailable}';
-    _selectedServices = Set<String>.from(r.offeredServices);
     _hasBloodBank = r.hasBloodBank;
   }
 
@@ -192,14 +213,11 @@ class _LiveOpsHospitalCardState extends State<_LiveOpsHospitalCard> {
     if (oldR.bloodUnitsAvailable != r.bloodUnitsAvailable) {
       _bloodUnits.text = '${r.bloodUnitsAvailable}';
     }
-    if (!listEquals(oldR.offeredServices, r.offeredServices)) {
-      _selectedServices = Set<String>.from(r.offeredServices);
-    }
     if (oldR.hasBloodBank != r.hasBloodBank) _hasBloodBank = r.hasBloodBank;
   }
 
   @override
-  void didUpdateWidget(covariant _LiveOpsHospitalCard oldWidget) {
+  void didUpdateWidget(covariant HospitalCapacityCard oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.row.id != widget.row.id) {
       _resyncAllFromRow(widget.row);
@@ -218,7 +236,6 @@ class _LiveOpsHospitalCardState extends State<_LiveOpsHospitalCard> {
     _doctors = TextEditingController(text: '${r.doctorsOnDuty}');
     _specialists = TextEditingController(text: '${r.specialistsOnCall}');
     _bloodUnits = TextEditingController(text: '${r.bloodUnitsAvailable}');
-    _selectedServices = Set<String>.from(r.offeredServices);
     _hasBloodBank = r.hasBloodBank;
   }
 
@@ -239,14 +256,15 @@ class _LiveOpsHospitalCardState extends State<_LiveOpsHospitalCard> {
     final doc = int.tryParse(_doctors.text.trim()) ?? 0;
     final spec = int.tryParse(_specialists.text.trim()) ?? 0;
     final blood = int.tryParse(_bloodUnits.text.trim()) ?? 0;
+    final r = widget.row;
     setState(() => _saving = true);
     try {
       await OpsHospitalService.updateLiveOpsFull(
-        id: widget.row.id,
+        id: r.id,
         bedsAvailable: a,
         bedsTotal: t,
         traumaBedsNote: _note.text.trim().isEmpty ? null : _note.text.trim(),
-        offeredServices: _selectedServices.toList(),
+        offeredServices: r.offeredServices,
         hasBloodBank: _hasBloodBank,
         doctorsOnDuty: doc,
         specialistsOnCall: spec,
@@ -254,7 +272,7 @@ class _LiveOpsHospitalCardState extends State<_LiveOpsHospitalCard> {
       );
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('LiveOps updated')),
+        const SnackBar(content: Text('Capacity updated')),
       );
     } finally {
       if (mounted) setState(() => _saving = false);
@@ -275,7 +293,11 @@ class _LiveOpsHospitalCardState extends State<_LiveOpsHospitalCard> {
           children: [
             Text(
               '${r.id} · ${r.name}',
-              style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 16),
+              style: const TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.w800,
+                fontSize: 16,
+              ),
             ),
             Text(
               '${r.region} · last update ${df.format(r.updatedAt.toLocal())}',
@@ -284,7 +306,11 @@ class _LiveOpsHospitalCardState extends State<_LiveOpsHospitalCard> {
             const SizedBox(height: 16),
             const Text(
               'Bed capacity',
-              style: TextStyle(color: Colors.white70, fontWeight: FontWeight.w700, fontSize: 13),
+              style: TextStyle(
+                color: Colors.white70,
+                fontWeight: FontWeight.w700,
+                fontSize: 13,
+              ),
             ),
             const SizedBox(height: 8),
             Row(
@@ -294,7 +320,7 @@ class _LiveOpsHospitalCardState extends State<_LiveOpsHospitalCard> {
                     controller: _avail,
                     keyboardType: TextInputType.number,
                     style: const TextStyle(color: Colors.white),
-                    decoration: _deco('Beds available'),
+                    decoration: _capacityDeco('Beds available'),
                   ),
                 ),
                 const SizedBox(width: 12),
@@ -303,7 +329,7 @@ class _LiveOpsHospitalCardState extends State<_LiveOpsHospitalCard> {
                     controller: _total,
                     keyboardType: TextInputType.number,
                     style: const TextStyle(color: Colors.white),
-                    decoration: _deco('Beds total'),
+                    decoration: _capacityDeco('Beds total'),
                   ),
                 ),
               ],
@@ -313,12 +339,16 @@ class _LiveOpsHospitalCardState extends State<_LiveOpsHospitalCard> {
               controller: _note,
               maxLines: 2,
               style: const TextStyle(color: Colors.white70, fontSize: 13),
-              decoration: _deco('Trauma / capacity notes'),
+              decoration: _capacityDeco('Trauma / capacity notes'),
             ),
             const SizedBox(height: 20),
             const Text(
               'Doctor availability',
-              style: TextStyle(color: Colors.white70, fontWeight: FontWeight.w700, fontSize: 13),
+              style: TextStyle(
+                color: Colors.white70,
+                fontWeight: FontWeight.w700,
+                fontSize: 13,
+              ),
             ),
             const SizedBox(height: 8),
             Row(
@@ -328,7 +358,7 @@ class _LiveOpsHospitalCardState extends State<_LiveOpsHospitalCard> {
                     controller: _doctors,
                     keyboardType: TextInputType.number,
                     style: const TextStyle(color: Colors.white),
-                    decoration: _deco('Doctors on duty'),
+                    decoration: _capacityDeco('Doctors on duty'),
                   ),
                 ),
                 const SizedBox(width: 12),
@@ -337,7 +367,7 @@ class _LiveOpsHospitalCardState extends State<_LiveOpsHospitalCard> {
                     controller: _specialists,
                     keyboardType: TextInputType.number,
                     style: const TextStyle(color: Colors.white),
-                    decoration: _deco('Specialists on call'),
+                    decoration: _capacityDeco('Specialists on call'),
                   ),
                 ),
               ],
@@ -345,36 +375,276 @@ class _LiveOpsHospitalCardState extends State<_LiveOpsHospitalCard> {
             const SizedBox(height: 20),
             const Text(
               'Blood bank',
-              style: TextStyle(color: Colors.white70, fontWeight: FontWeight.w700, fontSize: 13),
+              style: TextStyle(
+                color: Colors.white70,
+                fontWeight: FontWeight.w700,
+                fontSize: 13,
+              ),
             ),
             const SizedBox(height: 8),
             TextField(
               controller: _bloodUnits,
               keyboardType: TextInputType.number,
               style: const TextStyle(color: Colors.white),
-              decoration: _deco('Blood units available (approx.)'),
+              decoration: _capacityDeco('Blood units available (approx.)'),
             ),
             const SizedBox(height: 8),
             SwitchListTile(
               contentPadding: EdgeInsets.zero,
-              title: const Text('Has blood bank on-site', style: TextStyle(color: Colors.white70, fontSize: 14)),
+              title: const Text(
+                'Has blood bank on-site',
+                style: TextStyle(color: Colors.white70, fontSize: 14),
+              ),
               value: _hasBloodBank,
               onChanged: (v) => setState(() => _hasBloodBank = v),
               activeThumbColor: AppColors.accentBlue,
             ),
-            const SizedBox(height: 12),
-            const Text(
-              'Services & capabilities',
-              style: TextStyle(color: Colors.white70, fontWeight: FontWeight.w700, fontSize: 13),
+            const SizedBox(height: 16),
+            Align(
+              alignment: Alignment.centerRight,
+              child: FilledButton(
+                onPressed: _saving ? null : _save,
+                style: FilledButton.styleFrom(backgroundColor: AppColors.accentBlue),
+                child: _saving
+                    ? const SizedBox(
+                        width: 20,
+                        height: 20,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: Colors.white,
+                        ),
+                      )
+                    : const Text('Save capacity'),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  InputDecoration _capacityDeco(String hint) => InputDecoration(
+        labelText: hint,
+        labelStyle: const TextStyle(color: Colors.white54),
+        hintStyle: const TextStyle(color: Colors.white30),
+        filled: true,
+        fillColor: AppColors.slate900,
+        border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+      );
+}
+
+/// Expandable block for the medical Overview (command center) body.
+class HospitalOverviewCapacitySection extends StatelessWidget {
+  const HospitalOverviewCapacitySection({super.key, required this.hospitalDocId});
+
+  final String hospitalDocId;
+
+  @override
+  Widget build(BuildContext context) {
+    final id = hospitalDocId.trim();
+    if (id.isEmpty) return const SizedBox.shrink();
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(12, 4, 12, 8),
+      child: StreamBuilder<OpsHospitalRow?>(
+        stream: OpsHospitalService.watchHospital(id),
+        builder: (context, snap) {
+          if (snap.hasError) {
+            return Text(
+              '${snap.error}',
+              style: const TextStyle(color: Colors.white38, fontSize: 12),
+            );
+          }
+          final row = snap.data;
+          if (row == null) {
+            return const Padding(
+              padding: EdgeInsets.all(8),
+              child: Center(
+                child: SizedBox(
+                  width: 24,
+                  height: 24,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    color: AppColors.accentBlue,
+                  ),
+                ),
+              ),
+            );
+          }
+          return Theme(
+            data: Theme.of(context).copyWith(dividerColor: Colors.white24),
+            child: ExpansionTile(
+              initiallyExpanded: false,
+              tilePadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+              collapsedShape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+                side: const BorderSide(color: Colors.white12),
+              ),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+                side: const BorderSide(color: Colors.white12),
+              ),
+              backgroundColor: Colors.black.withValues(alpha: 0.45),
+              collapsedBackgroundColor: Colors.black.withValues(alpha: 0.35),
+              title: const Text(
+                'Hospital capacity & staffing',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.w800,
+                  fontSize: 14,
+                ),
+              ),
+              subtitle: const Text(
+                'Beds, staffing, and blood — edits apply to the allocator grid.',
+                style: TextStyle(color: Colors.white54, fontSize: 11),
+              ),
+              children: [
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(8, 0, 8, 12),
+                  child: HospitalCapacityCard(row: row),
+                ),
+              ],
+            ),
+          );
+        },
+      ),
+    );
+  }
+}
+
+class _LiveOperationsFacilityCard extends StatefulWidget {
+  const _LiveOperationsFacilityCard({required this.row});
+
+  final OpsHospitalRow row;
+
+  @override
+  State<_LiveOperationsFacilityCard> createState() =>
+      _LiveOperationsFacilityCardState();
+}
+
+class _LiveOperationsFacilityCardState extends State<_LiveOperationsFacilityCard> {
+  late Set<String> _selectedServices;
+  late bool _mapListingOnline;
+  bool _saving = false;
+
+  @override
+  void initState() {
+    super.initState();
+    final r = widget.row;
+    _selectedServices = Set<String>.from(r.offeredServices);
+    _mapListingOnline = r.mapListingOnline;
+  }
+
+  @override
+  void didUpdateWidget(covariant _LiveOperationsFacilityCard oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.row.id != widget.row.id) {
+      _selectedServices = Set<String>.from(widget.row.offeredServices);
+      _mapListingOnline = widget.row.mapListingOnline;
+      return;
+    }
+    final r = widget.row;
+    if (!listEquals(oldWidget.row.offeredServices, r.offeredServices)) {
+      _selectedServices = Set<String>.from(r.offeredServices);
+    }
+    if (oldWidget.row.mapListingOnline != r.mapListingOnline) {
+      _mapListingOnline = r.mapListingOnline;
+    }
+  }
+
+  Future<void> _saveServices() async {
+    setState(() => _saving = true);
+    try {
+      await OpsHospitalService.updateOfferedServicesOnly(
+        id: widget.row.id,
+        offeredServices: _selectedServices.toList(),
+      );
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Capabilities saved')),
+      );
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final r = widget.row;
+    return Card(
+      color: AppColors.slate800,
+      margin: const EdgeInsets.only(bottom: 12),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Text(
+              '${r.id} · ${r.name}',
+              style: const TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.w800,
+                fontSize: 16,
+              ),
             ),
             const SizedBox(height: 8),
+            SwitchListTile(
+              contentPadding: EdgeInsets.zero,
+              title: const Text(
+                'Public map listing (online)',
+                style: TextStyle(
+                  color: Colors.white70,
+                  fontWeight: FontWeight.w700,
+                  fontSize: 13,
+                ),
+              ),
+              subtitle: const Text(
+                'When off, the main grid map shows this hospital as offline.',
+                style: TextStyle(color: Colors.white38, fontSize: 11),
+              ),
+              value: _mapListingOnline,
+              onChanged: (v) async {
+                setState(() => _mapListingOnline = v);
+                try {
+                  await OpsHospitalService.updateMapListingOnline(
+                    id: widget.row.id,
+                    mapListingOnline: v,
+                  );
+                  if (!context.mounted) return;
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text(v ? 'Map: online' : 'Map: offline')),
+                  );
+                } catch (e) {
+                  if (mounted) setState(() => _mapListingOnline = !v);
+                  if (context.mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(content: Text('Update failed: $e')),
+                    );
+                  }
+                }
+              },
+            ),
+            const SizedBox(height: 12),
+            const Text(
+              'Capabilities for allocators',
+              style: TextStyle(
+                color: Colors.white70,
+                fontWeight: FontWeight.w700,
+                fontSize: 13,
+              ),
+            ),
+            const SizedBox(height: 4),
+            const Text(
+              'Select specialties this facility can take (e.g. child care / pediatrics for pediatric referrals; cardiology & cath lab for cardiac).',
+              style: TextStyle(color: Colors.white38, fontSize: 11),
+            ),
+            const SizedBox(height: 10),
             Wrap(
               spacing: 8,
               runSpacing: 8,
-              children: _kLiveOpsServices.map((id) {
+              children: kLiveOpsServiceIds.map((id) {
                 final selected = _selectedServices.contains(id);
                 return FilterChip(
-                  label: Text(_liveOpsServiceLabel(id)),
+                  label: Text(liveOpsServiceLabel(id)),
                   selected: selected,
                   onSelected: (v) {
                     setState(() {
@@ -391,7 +661,9 @@ class _LiveOpsHospitalCardState extends State<_LiveOpsHospitalCard> {
                     color: selected ? Colors.white : Colors.white70,
                     fontSize: 11,
                   ),
-                  side: BorderSide(color: selected ? AppColors.accentBlue : Colors.white24),
+                  side: BorderSide(
+                    color: selected ? AppColors.accentBlue : Colors.white24,
+                  ),
                   backgroundColor: AppColors.slate900,
                 );
               }).toList(),
@@ -400,15 +672,18 @@ class _LiveOpsHospitalCardState extends State<_LiveOpsHospitalCard> {
             Align(
               alignment: Alignment.centerRight,
               child: FilledButton(
-                onPressed: _saving ? null : _save,
+                onPressed: _saving ? null : _saveServices,
                 style: FilledButton.styleFrom(backgroundColor: AppColors.accentBlue),
                 child: _saving
                     ? const SizedBox(
                         width: 20,
                         height: 20,
-                        child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: Colors.white,
+                        ),
                       )
-                    : const Text('Save LiveOps'),
+                    : const Text('Save capabilities'),
               ),
             ),
           ],
@@ -416,19 +691,8 @@ class _LiveOpsHospitalCardState extends State<_LiveOpsHospitalCard> {
       ),
     );
   }
-
-  InputDecoration _deco(String hint) => InputDecoration(
-        labelText: hint,
-        labelStyle: const TextStyle(color: Colors.white54),
-        hintStyle: const TextStyle(color: Colors.white30),
-        filled: true,
-        fillColor: AppColors.slate900,
-        border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
-      );
 }
 
-/// Flashing incoming emergency alert when this hospital is the currently notified
-/// target of a dispatch chain. Shows ACCEPT / REFER buttons with a 2-minute countdown.
 class _IncomingEmergencyAlerts extends StatelessWidget {
   const _IncomingEmergencyAlerts({required this.hospitalIds});
   final List<String> hospitalIds;
@@ -517,14 +781,28 @@ class _FlashingAlertCardState extends State<_FlashingAlertCard>
     setState(() => _acting = true);
     try {
       final incId = widget.assignmentDoc.id;
-      final hospId = widget.hospitalIds.first;
+      final hospId = _notifiedHospitalIdForAction(widget.assignmentDoc.data(), widget.hospitalIds);
+      if (hospId.isEmpty) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Missing notified hospital for this assignment.'),
+              backgroundColor: AppColors.primaryDanger,
+            ),
+          );
+        }
+        return;
+      }
       await FirebaseFunctions.instanceFor(region: 'us-east1')
           .httpsCallable('acceptHospitalDispatch')
           .call({'incidentId': incId, 'hospitalId': hospId});
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Accept failed: $e'), backgroundColor: AppColors.primaryDanger),
+          SnackBar(
+            content: Text('Accept failed: $e'),
+            backgroundColor: AppColors.primaryDanger,
+          ),
         );
       }
     } finally {
@@ -536,14 +814,28 @@ class _FlashingAlertCardState extends State<_FlashingAlertCard>
     setState(() => _acting = true);
     try {
       final incId = widget.assignmentDoc.id;
-      final hospId = widget.hospitalIds.first;
+      final hospId = _notifiedHospitalIdForAction(widget.assignmentDoc.data(), widget.hospitalIds);
+      if (hospId.isEmpty) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Missing notified hospital for this assignment.'),
+              backgroundColor: AppColors.primaryDanger,
+            ),
+          );
+        }
+        return;
+      }
       await FirebaseFunctions.instanceFor(region: 'us-east1')
           .httpsCallable('declineHospitalDispatch')
           .call({'incidentId': incId, 'hospitalId': hospId});
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Refer failed: $e'), backgroundColor: AppColors.primaryDanger),
+          SnackBar(
+            content: Text('Refer failed: $e'),
+            backgroundColor: AppColors.primaryDanger,
+          ),
         );
       }
     } finally {
@@ -555,10 +847,13 @@ class _FlashingAlertCardState extends State<_FlashingAlertCard>
   Widget build(BuildContext context) {
     final d = widget.assignmentDoc.data();
     final incId = widget.assignmentDoc.id;
-    final reqSvc = (d['requiredServices'] as List?)?.map((e) => e.toString()).join(', ') ?? '—';
+    final reqSvc =
+        (d['requiredServices'] as List?)?.map((e) => e.toString()).join(', ') ??
+            '—';
     final mins = _secondsLeft ~/ 60;
     final secs = _secondsLeft % 60;
-    final countdown = '${mins.toString().padLeft(2, '0')}:${secs.toString().padLeft(2, '0')}';
+    final countdown =
+        '${mins.toString().padLeft(2, '0')}:${secs.toString().padLeft(2, '0')}';
 
     return AnimatedBuilder(
       animation: _pulse,
@@ -620,7 +915,11 @@ class _FlashingAlertCardState extends State<_FlashingAlertCard>
           const SizedBox(height: 10),
           Text(
             'Incident: ${incId.length > 20 ? '${incId.substring(0, 18)}...' : incId}',
-            style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w700),
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 12,
+              fontWeight: FontWeight.w700,
+            ),
           ),
           const SizedBox(height: 4),
           Text(
@@ -665,10 +964,18 @@ class _FlashingAlertCardState extends State<_FlashingAlertCard>
   }
 }
 
-/// Shows only accepted consignment assignments for this hospital.
 class _AcceptedConsignmentSection extends StatelessWidget {
   const _AcceptedConsignmentSection({required this.hospitalIds});
   final List<String> hospitalIds;
+
+  static const _activeWindow = Duration(hours: 1);
+
+  static bool _isWithinActiveWindow(QueryDocumentSnapshot<Map<String, dynamic>> doc) {
+    final ac = doc.data()['acceptedAt'];
+    if (ac is! Timestamp) return false;
+    final accepted = ac.toDate();
+    return DateTime.now().difference(accepted) <= _activeWindow;
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -682,7 +989,7 @@ class _AcceptedConsignmentSection extends StatelessWidget {
           .snapshots(),
       builder: (context, snap) {
         if (snap.hasError || !snap.hasData) return const SizedBox.shrink();
-        final docs = snap.data!.docs;
+        final docs = snap.data!.docs.where(_isWithinActiveWindow).toList();
         if (docs.isEmpty) {
           return Padding(
             padding: const EdgeInsets.symmetric(vertical: 12),
@@ -715,15 +1022,15 @@ class _AcceptedConsignmentSection extends StatelessWidget {
               final incId = doc.id;
               final hospName = (d['acceptedHospitalName'] as String?)?.trim() ?? '—';
               final acceptedAt = d['acceptedAt'];
-              String acceptedLabel = '';
-              if (acceptedAt is Timestamp) {
-                acceptedLabel = DateFormat.MMMd().add_Hm().format(acceptedAt.toDate().toLocal());
-              }
+              final acceptedLabel = acceptedAt is Timestamp
+                  ? _acceptedAtDisplayLabel(acceptedAt)
+                  : '';
               final reqSvc = (d['requiredServices'] as List?)
                       ?.map((e) => e.toString())
                       .join(', ') ??
                   '';
-              final ambStatus = (d['ambulanceDispatchStatus'] as String?)?.replaceAll('_', ' ') ?? '';
+              final ambStatus =
+                  (d['ambulanceDispatchStatus'] as String?)?.replaceAll('_', ' ') ?? '';
               return Card(
                 color: AppColors.slate800,
                 margin: const EdgeInsets.only(bottom: 8),
@@ -742,27 +1049,47 @@ class _AcceptedConsignmentSection extends StatelessWidget {
                             ),
                             child: const Text(
                               'ACCEPTED',
-                              style: TextStyle(color: Colors.greenAccent, fontSize: 9, fontWeight: FontWeight.w800),
+                              style: TextStyle(
+                                color: Colors.greenAccent,
+                                fontSize: 9,
+                                fontWeight: FontWeight.w800,
+                              ),
                             ),
                           ),
                           const SizedBox(width: 8),
                           Expanded(
                             child: Text(
                               'Incident: ${incId.length > 16 ? '${incId.substring(0, 14)}...' : incId}',
-                              style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.w700),
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 11,
+                                fontWeight: FontWeight.w700,
+                              ),
                               overflow: TextOverflow.ellipsis,
                             ),
                           ),
                         ],
                       ),
                       const SizedBox(height: 4),
-                      Text('Hospital: $hospName', style: const TextStyle(color: Colors.white70, fontSize: 11)),
+                      Text(
+                        'Hospital: $hospName',
+                        style: const TextStyle(color: Colors.white70, fontSize: 11),
+                      ),
                       if (reqSvc.isNotEmpty)
-                        Text('Services: $reqSvc', style: const TextStyle(color: Colors.white38, fontSize: 10)),
+                        Text(
+                          'Services: $reqSvc',
+                          style: const TextStyle(color: Colors.white38, fontSize: 10),
+                        ),
                       if (ambStatus.isNotEmpty)
-                        Text('Ambulance: $ambStatus', style: const TextStyle(color: Colors.white38, fontSize: 10)),
+                        Text(
+                          'Ambulance: $ambStatus',
+                          style: const TextStyle(color: Colors.white38, fontSize: 10),
+                        ),
                       if (acceptedLabel.isNotEmpty)
-                        Text('Accepted: $acceptedLabel', style: const TextStyle(color: Colors.white38, fontSize: 10)),
+                        Text(
+                          'Accepted $acceptedLabel',
+                          style: const TextStyle(color: Colors.white38, fontSize: 10),
+                        ),
                     ],
                   ),
                 ),

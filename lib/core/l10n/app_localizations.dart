@@ -62,7 +62,85 @@ class AppLocalizations {
   String get lifeline => get('lifeline');
   String get navHome => get('nav_home');
   String get navMap => get('nav_map');
+  String get navGrid => get('nav_grid');
   String get navProfile => get('nav_profile');
+  String mapCachingOfflinePct(int pct) =>
+      get('map_caching_offline_pct').replaceAll('{pct}', '$pct');
+  String get mapDrillPracticeBanner => get('map_drill_practice_banner');
+  String get mapRecenterTooltip => get('map_recenter_tooltip');
+  String get mapLegendHospital => get('map_legend_hospital');
+  String get mapLegendLiveSosHistory => get('map_legend_live_sos_history');
+  String get mapLegendPastThisHex => get('map_legend_past_this_hex');
+  String mapLegendIncidentsInArea(int n) =>
+      get('map_legend_in_area').replaceAll('{n}', '$n');
+  String mapLegendIncidentsInCell(int n) =>
+      get('map_legend_in_cell').replaceAll('{n}', '$n');
+  String get mapLegendVolunteersOnDuty => get('map_legend_volunteers_on_duty');
+  String mapLegendVolunteersInGrid(int n) =>
+      get('map_legend_volunteers_in_grid').replaceAll('{n}', '$n');
+  String get mapLegendResponderScene => get('map_legend_responder_scene');
+  String mapResponderRoutes(int n) => (n == 1
+          ? get('map_responder_routes_one')
+          : get('map_responder_routes_many'))
+      .replaceAll('{n}', '$n');
+  String get mapFiltersTitle => get('map_filters_title');
+  String get volunteerActiveBrowserLocationOff =>
+      get('volunteer_active_browser_location_off');
+  String get volunteerActiveLocationRequired =>
+      get('volunteer_active_location_required');
+  String volunteerActiveMapLoadFailed(String detail) =>
+      get('volunteer_active_map_load_failed').replaceAll('{detail}', detail);
+  String get volunteerActiveNoMapCoords => get('volunteer_active_no_map_coords');
+  String get volunteerActiveGpsUnavailable =>
+      get('volunteer_active_gps_unavailable');
+  String get volunteerActiveOfflineQrTitle =>
+      get('volunteer_active_offline_qr_title');
+  String get volunteerActiveOfflineQrBody =>
+      get('volunteer_active_offline_qr_body');
+  String get volunteerActiveClose => get('volunteer_active_close');
+  String get volunteerActiveDispatchedServices =>
+      get('volunteer_active_dispatched_services');
+  String get volunteerActiveAmbulance => get('volunteer_active_ambulance');
+  String get volunteerActiveOnScene => get('volunteer_active_on_scene');
+  String get volunteerActiveEnRoute => get('volunteer_active_en_route');
+  String get volunteerActiveExitTitle => get('volunteer_active_exit_title');
+  String get volunteerActiveLeaveVictim => get('volunteer_active_leave_victim');
+  String get volunteerActiveLeaveVolunteer =>
+      get('volunteer_active_leave_volunteer');
+  String get volunteerActiveStay => get('volunteer_active_stay');
+  String get volunteerActiveExit => get('volunteer_active_exit');
+  String get volunteerActiveSosExpired => get('volunteer_active_sos_expired');
+  String get volunteerActiveBackToResponse =>
+      get('volunteer_active_back_to_response');
+  String get volunteerActiveOfflineQrAccess =>
+      get('volunteer_active_offline_qr_access');
+  String get volunteerActiveHospitalEvLabel =>
+      get('volunteer_active_hospital_ev_label');
+  String get volunteerActiveHospitalEvSubtitle =>
+      get('volunteer_active_hospital_ev_subtitle');
+  String get volunteerActiveNearbyHospitalsMaps =>
+      get('volunteer_active_nearby_hospitals_maps');
+  String get volunteerActiveChecklistSaved =>
+      get('volunteer_active_checklist_saved');
+  String volunteerActiveSaveFailed(String detail) =>
+      get('volunteer_active_save_failed').replaceAll('{detail}', detail);
+  String get volunteerActivePhotoLimit => get('volunteer_active_photo_limit');
+  String volunteerActivePhotoError(String detail) =>
+      get('volunteer_active_photo_error').replaceAll('{detail}', detail);
+  String get volunteerActiveVictimLoading =>
+      get('volunteer_active_victim_loading');
+  String get sosActiveUpdateSentLivekit => get('sos_active_update_sent_livekit');
+  String get sosActiveUpdateSentChannel => get('sos_active_update_sent_channel');
+  String get sosActiveCouldNotSendUpdate =>
+      get('sos_active_could_not_send_update');
+  String get sosActiveVoiceTextSent => get('sos_active_voice_text_sent');
+  String get sosActiveCouldNotSendVoice => get('sos_active_could_not_send_voice');
+  String get sosActiveVoiceUpdateSent => get('sos_active_voice_update_sent');
+  String get sosActiveVoiceRecordFailed => get('sos_active_voice_record_failed');
+  String get sosActiveRoutesToYou => get('sos_active_routes_to_you');
+  String get sosActiveAvgResponseTime => get('sos_active_avg_response_time');
+  String get sosActiveRecentVolume => get('sos_active_recent_volume');
+  String get sosActiveCongestionWarning => get('sos_active_congestion_warning');
   String get stepPrefix => get('step_prefix');
   String get highlightsSteps => get('highlights_steps');
   String get offlineMode => get('offline_mode');
@@ -347,7 +425,72 @@ class AppLocalizations {
       'lifeline': 'Lifeline',
       'nav_home': 'Home',
       'nav_map': 'Map',
+      'nav_grid': 'Grid',
       'nav_profile': 'Profile',
+      'map_caching_offline_pct': 'Caching area for offline — {pct}%',
+      'map_drill_practice_banner':
+          'Practice Grid: pulsing pins = demo active alerts. Use Map filters for layers — not real data.',
+      'map_recenter_tooltip': 'Re-center',
+      'map_legend_hospital': 'Hospital',
+      'map_legend_live_sos_history': 'Live SOS / history',
+      'map_legend_past_this_hex': 'Past (this hex)',
+      'map_legend_in_area': '{n} in area',
+      'map_legend_in_cell': '{n} in cell',
+      'map_legend_volunteers_on_duty': 'Volunteers on duty',
+      'map_legend_volunteers_in_grid': '{n} in grid',
+      'map_legend_responder_scene': 'Responder → scene',
+      'map_responder_routes_one': '{n} route',
+      'map_responder_routes_many': '{n} routes',
+      'map_filters_title': 'Map filters',
+      'volunteer_active_browser_location_off':
+          'Browser location is off or blocked. You can still view the incident map — enable location in the site settings to show your position.',
+      'volunteer_active_location_required':
+          'Location permission is required for this consignment.',
+      'volunteer_active_map_load_failed': 'Could not load consignment map. {detail}',
+      'volunteer_active_no_map_coords':
+          'This incident has no map coordinates. Cannot open consignment.',
+      'volunteer_active_gps_unavailable':
+          'Could not read your GPS yet. Open again outdoors or enable precise location.',
+      'volunteer_active_offline_qr_title': 'Offline Location QR',
+      'volunteer_active_offline_qr_body':
+          'Scan to share incident location access offline.',
+      'volunteer_active_close': 'Close',
+      'volunteer_active_dispatched_services': 'Dispatched Services',
+      'volunteer_active_ambulance': 'Ambulance',
+      'volunteer_active_on_scene': 'On Scene',
+      'volunteer_active_en_route': 'En Route',
+      'volunteer_active_exit_title': 'Exit response window?',
+      'volunteer_active_leave_victim': 'Leave this incident view?',
+      'volunteer_active_leave_volunteer':
+          'You will stop responding to this incident. Your assignment is cleared so the app will not send you back here automatically.',
+      'volunteer_active_stay': 'Stay',
+      'volunteer_active_exit': 'Exit',
+      'volunteer_active_sos_expired':
+          'This SOS has expired (1 hour) and was archived.',
+      'volunteer_active_back_to_response': 'Back to response',
+      'volunteer_active_offline_qr_access': 'Offline QR Access',
+      'volunteer_active_hospital_ev_label': 'Hospital & emergency vehicles',
+      'volunteer_active_hospital_ev_subtitle':
+          'Routed estimates are written to this incident as you approach. Open Maps for real facilities near the pin.',
+      'volunteer_active_nearby_hospitals_maps': 'Nearby hospitals in Google Maps',
+      'volunteer_active_checklist_saved':
+          'Scene checklist saved for dispatch and other responders.',
+      'volunteer_active_save_failed': 'Could not save: {detail}',
+      'volunteer_active_photo_limit': 'You can upload up to 3 scene photos.',
+      'volunteer_active_photo_error': 'Photo error: {detail}',
+      'volunteer_active_victim_loading': 'Victim info loading…',
+      'sos_active_update_sent_livekit': 'Update sent to Live emergency bridge.',
+      'sos_active_update_sent_channel': 'Update sent to incident channel.',
+      'sos_active_could_not_send_update': 'Could not send update.',
+      'sos_active_voice_text_sent': 'Voice text update sent to the emergency channel.',
+      'sos_active_could_not_send_voice': 'Could not send voice update. Try again.',
+      'sos_active_voice_update_sent': 'Voice update sent.',
+      'sos_active_voice_record_failed':
+          'Voice recording failed to send. Try again.',
+      'sos_active_routes_to_you': 'Routes to you',
+      'sos_active_avg_response_time': 'Avg Response Time:',
+      'sos_active_recent_volume': 'Recent Incident Volume:',
+      'sos_active_congestion_warning': 'Congestion Warning:',
       'step_prefix': 'Step',
       'highlights_steps': 'Highlights steps one by one',
       'offline_mode': 'OFFLINE MODE — Network disconnected',
@@ -459,10 +602,26 @@ class AppLocalizations {
       'sos_tts_interview_saved':
           'All victim interview data has been saved. Responders now have detailed information. Consciousness checks will continue every 60 seconds.',
       'sos_tts_map_routes':
-          'Open the map tab for colored routes: red ambulance and green volunteer, with times when available. Stay on the emergency voice channel so responders can hear you.',
+          'Open the map tab: solid red is the driving route to the assigned hospital when dispatch sets one, or a short approach path until then. Green shows the assigned volunteer live GPS marker. Stay on the emergency voice channel so responders can hear you.',
+      'sos_tts_emergency_contacts_on_file':
+          'Your emergency contact from your profile is attached to this SOS. SMS updates may be sent when that option is enabled.',
       'sos_tts_conscious_no_answer_attempt':
           'No answer. Consciousness check attempt {n} of {max}. We will ask again in one minute.',
       'volunteer_victim_medical_card': 'Victim medical card',
+      'volunteer_dispatch_milestone_title': 'Dispatch updates',
+      'volunteer_dispatch_milestone_hospital': 'Hospital accepted: {hospital}',
+      'volunteer_dispatch_milestone_unit': 'Ambulance unit: {unit}',
+      'volunteer_dispatch_milestone_crew_pending': 'Ambulance crew: coordinating…',
+      'volunteer_dispatch_milestone_en_route': 'Ambulance en route',
+      'volunteer_triage_qr_report_title': 'QR or tap report',
+      'volunteer_triage_qr_report_subtitle':
+          'Scan the code for a handoff payload or tap to save a narrative report on this incident.',
+      'volunteer_triage_show_qr': 'Show QR',
+      'volunteer_triage_tap_report': 'Tap report',
+      'volunteer_triage_qr_title': 'Incident handoff QR',
+      'volunteer_triage_qr_body': 'Share this code with receiving staff or EMS for a structured payload.',
+      'volunteer_triage_report_saved': 'Report saved under this incident.',
+      'volunteer_triage_report_failed': 'Could not save report: ',
       'volunteer_victim_medical_offline_hint':
           'From SOS packet — available from device cache when offline.',
       'volunteer_victim_consciousness_title': 'Consciousness',
@@ -482,6 +641,14 @@ class AppLocalizations {
           '{hospital} has accepted the emergency. Ambulance coordination underway.',
       'volunteer_dispatch_all_hospitals_notified':
           'All hospitals notified. Escalating to emergency services.',
+      'sos_dispatch_alerting_nearest_trying':
+          'Alerting nearest hospital in your area. Trying {hospital}.',
+      'sos_dispatch_escalating_tier_trying':
+          'No response. Escalating to tier {tier}. Trying {hospital}.',
+      'sos_dispatch_retry_previous_trying':
+          'No response from previous hospital. Trying {hospital}.',
+      'sos_dispatch_all_hospitals_call_112':
+          'All hospitals notified. Please call 112 for emergency services.',
       'profile_synced': 'Synced',
       'profile_not_synced': 'Not synced',
       'profile_saving': 'Saving…',
@@ -680,7 +847,66 @@ class AppLocalizations {
       'lifeline': 'लाइफलाइन',
       'nav_home': 'होम',
       'nav_map': 'मानचित्र',
+      'nav_grid': 'ग्रिड',
       'nav_profile': 'प्रोफ़ाइल',
+      'map_caching_offline_pct': 'ऑफ़लाइन के लिए क्षेत्र कैश हो रहा है — {pct}%',
+      'map_drill_practice_banner':
+          'अभ्यास ग्रिड: पल्सिंग पिन = डेमो सक्रिय अलर्ट। लेयर्स के लिए मानचित्र फ़िल्टर — वास्तविक डेटा नहीं।',
+      'map_recenter_tooltip': 'फिर केंद्रित करें',
+      'map_legend_hospital': 'अस्पताल',
+      'map_legend_live_sos_history': 'लाइव SOS / इतिहास',
+      'map_legend_past_this_hex': 'पिछला (यह हेक्स)',
+      'map_legend_in_area': '{n} क्षेत्र में',
+      'map_legend_in_cell': '{n} सेल में',
+      'map_legend_volunteers_on_duty': 'ड्यूटी पर स्वयंसेवक',
+      'map_legend_volunteers_in_grid': 'ग्रिड में {n}',
+      'map_legend_responder_scene': 'प्रतिक्रिया → दृश्य',
+      'map_responder_routes_one': '{n} मार्ग',
+      'map_responder_routes_many': '{n} मार्ग',
+      'map_filters_title': 'मानचित्र फ़िल्टर',
+      'volunteer_active_browser_location_off':
+          'ब्राउज़र लोकेशन बंद या ब्लॉक है। आप फिर भी घटना मानचित्र देख सकते हैं — अपनी स्थिति दिखाने के लिए साइट सेटिंग में लोकेशन चालू करें।',
+      'volunteer_active_location_required': 'इस कंसाइनमेंट के लिए स्थान अनुमति आवश्यक है।',
+      'volunteer_active_map_load_failed': 'कंसाइनमेंट मानचित्र लोड नहीं हो सका। {detail}',
+      'volunteer_active_no_map_coords': 'इस घटना के मानचित्र निर्देशांक नहीं हैं। कंसाइनमेंट नहीं खोल सकते।',
+      'volunteer_active_gps_unavailable':
+          'अभी GPS नहीं पढ़ सके। बाहर खोलें या सटीक स्थान चालू करें।',
+      'volunteer_active_offline_qr_title': 'ऑफ़लाइन स्थान QR',
+      'volunteer_active_offline_qr_body': 'ऑफ़लाइन घटना स्थान पहुँच साझा करने के लिए स्कैन करें।',
+      'volunteer_active_close': 'बंद करें',
+      'volunteer_active_dispatched_services': 'भेजी गई सेवाएँ',
+      'volunteer_active_ambulance': 'एम्बुलेंस',
+      'volunteer_active_on_scene': 'मौके पर',
+      'volunteer_active_en_route': 'रास्ते में',
+      'volunteer_active_exit_title': 'प्रतिक्रिया विंडो बंद करें?',
+      'volunteer_active_leave_victim': 'इस घटना दृश्य से बाहर निकलें?',
+      'volunteer_active_leave_volunteer':
+          'आप इस घटना पर प्रतिक्रिया बंद कर देंगे। असाइनमेंट साफ़ हो जाएगा ताकि ऐप आपको यहाँ वापस न भेजे।',
+      'volunteer_active_stay': 'रुकें',
+      'volunteer_active_exit': 'बाहर निकलें',
+      'volunteer_active_sos_expired': 'यह SOS समाप्त (1 घंटा) हो चुका है और संग्रहीत किया गया।',
+      'volunteer_active_back_to_response': 'प्रतिक्रिया पर वापस',
+      'volunteer_active_offline_qr_access': 'ऑफ़लाइन QR पहुँच',
+      'volunteer_active_hospital_ev_label': 'अस्पताल और आपात वाहन',
+      'volunteer_active_hospital_ev_subtitle':
+          'जैसे-जैसे आप पास आते हैं, मार्ग अनुमान इस घटना में लिखे जाते हैं। पिन के पास वास्तविक सुविधाओं के लिए मानचित्र खोलें।',
+      'volunteer_active_nearby_hospitals_maps': 'Google मानचित्र में पास के अस्पताल',
+      'volunteer_active_checklist_saved': 'दृश्य चेकलिस्ट डिस्पैच और अन्य प्रतिक्रियाकर्ताओं के लिए सहेजी गई।',
+      'volunteer_active_save_failed': 'सहेज नहीं सके: {detail}',
+      'volunteer_active_photo_limit': 'अधिकतम 3 दृश्य फ़ोटो अपलोड कर सकते हैं।',
+      'volunteer_active_photo_error': 'फ़ोटो त्रुटि: {detail}',
+      'volunteer_active_victim_loading': 'पीड़ित जानकारी लोड हो रही है…',
+      'sos_active_update_sent_livekit': 'लाइव आपातकालीन ब्रिज पर अपडेट भेजा गया।',
+      'sos_active_update_sent_channel': 'घटना चैनल पर अपडेट भेजा गया।',
+      'sos_active_could_not_send_update': 'अपडेट नहीं भेज सके।',
+      'sos_active_voice_text_sent': 'आवाज़ टेक्स्ट अपडेट आपात चैनल पर भेजा गया।',
+      'sos_active_could_not_send_voice': 'आवाज़ अपडेट नहीं भेज सके। फिर कोशिश करें।',
+      'sos_active_voice_update_sent': 'आवाज़ अपडेट भेजा गया।',
+      'sos_active_voice_record_failed': 'आवाज़ रिकॉर्डिंग भेजी नहीं जा सकी। फिर कोशिश करें।',
+      'sos_active_routes_to_you': 'आपकी ओर मार्ग',
+      'sos_active_avg_response_time': 'औसत प्रतिक्रिया समय:',
+      'sos_active_recent_volume': 'हाल की घटना मात्रा:',
+      'sos_active_congestion_warning': 'भीड़ चेतावनी:',
       'step_prefix': 'चरण',
       'highlights_steps': 'एक-एक करके चरण दिखाता है',
       'offline_mode': 'ऑफ़लाइन मोड — नेटवर्क डिस्कनेक्ट',
@@ -791,10 +1017,26 @@ class AppLocalizations {
       'sos_tts_interview_saved':
           'सभी पीड़ित साक्षात्कार डेटा सहेज लिया गया। बचावकर्ताओं के पास विस्तृत जानकारी है। हर 60 सेकंड में चेतना जांच जारी रहेगी।',
       'sos_tts_map_routes':
-          'रंगीन मार्गों के लिए मानचित्र टैब खोलें: लाल एम्बुलेंस और हरा स्वयंसेवक, जहाँ उपलब्ध हो समय के साथ। आपातकालीन आवाज़ चैनल पर बने रहें ताकि बचावकर्ता आपको सुन सकें।',
+          'मानचित्र टैब खोलें: ठोस लाल असाइन किए गए अस्पताल की सड़क मार्ग है जब डिस्पैच सेट करता है, अन्यथा तब तक एक छोटा पहुँच मार्ग। हरा असाइन किए गए स्वयंसेवक की मार्ग है। आपातकालीन आवाज़ चैनल पर बने रहें ताकि बचावकर्ता आपको सुन सकें।',
+      'sos_tts_emergency_contacts_on_file':
+          'आपकी प्रोफ़ाइल का आपातकालीन संपर्क इस SOS से जुड़ा है। विकल्प चालू होने पर SMS अपडेट भेजे जा सकते हैं।',
       'sos_tts_conscious_no_answer_attempt':
           'कोई जवाब नहीं। चेतना जांच प्रयास {n} में से {max}। हम एक मिनट में फिर पूछेंगे।',
       'volunteer_victim_medical_card': 'पीड़ित चिकित्सा कार्ड',
+      'volunteer_dispatch_milestone_title': 'डिस्पैच अपडेट',
+      'volunteer_dispatch_milestone_hospital': 'अस्पताल स्वीकृत: {hospital}',
+      'volunteer_dispatch_milestone_unit': 'एम्बुलेंस यूनिट: {unit}',
+      'volunteer_dispatch_milestone_crew_pending': 'एम्बुलेंस क्रू: समन्वय…',
+      'volunteer_dispatch_milestone_en_route': 'एम्बुलेंस रास्ते में',
+      'volunteer_triage_qr_report_title': 'QR या टैप रिपोर्ट',
+      'volunteer_triage_qr_report_subtitle':
+          'हैंडऑफ़ के लिए कोड स्कैन करें या घटना पर रिपोर्ट सहेजने के लिए टैप करें।',
+      'volunteer_triage_show_qr': 'QR दिखाएँ',
+      'volunteer_triage_tap_report': 'रिपोर्ट',
+      'volunteer_triage_qr_title': 'इंसिडेंट हैंडऑफ़ QR',
+      'volunteer_triage_qr_body': 'संरचित पेलोड के लिए स्टाफ़ या EMS के साथ साझा करें।',
+      'volunteer_triage_report_saved': 'रिपोर्ट इस घटना के तहत सहेजी गई।',
+      'volunteer_triage_report_failed': 'रिपोर्ट सहेजी नहीं जा सकी: ',
       'volunteer_victim_medical_offline_hint':
           'SOS पैकेट से — ऑफ़लाइन होने पर डिवाइस कैश से उपलब्ध।',
       'volunteer_victim_consciousness_title': 'चेतना',
@@ -814,6 +1056,14 @@ class AppLocalizations {
           'अस्पताल {hospital} ने आपात स्थिति स्वीकार कर ली है। एम्बुलेंस समन्वय जारी है।',
       'volunteer_dispatch_all_hospitals_notified':
           'सभी अस्पतालों को सूचित किया गया। आपात सेवाओं तक बढ़ाया जा रहा है।',
+      'sos_dispatch_alerting_nearest_trying':
+          'आपके क्षेत्र के निकटतम अस्पताल को सूचित किया जा रहा है। {hospital} से संपर्क कर रहे हैं।',
+      'sos_dispatch_escalating_tier_trying':
+          'कोई जवाब नहीं। टियर {tier} तक बढ़ा रहे हैं। {hospital} आज़मा रहे हैं।',
+      'sos_dispatch_retry_previous_trying':
+          'पिछले अस्पताल से कोई जवाब नहीं। {hospital} आज़मा रहे हैं।',
+      'sos_dispatch_all_hospitals_call_112':
+          'सभी अस्पतालों को सूचित किया गया। आपात सेवाओं के लिए कृपया 112 पर कॉल करें।',
       'profile_synced': 'सिंक हो गया',
       'profile_not_synced': 'सिंक नहीं',
       'profile_saving': 'सहेज रहा है…',
@@ -969,7 +1219,23 @@ class AppLocalizations {
       'lifeline': 'லைஃப்லைன்',
       'nav_home': 'முகப்பு',
       'nav_map': 'வரைபடம்',
+      'nav_grid': 'கிரிட்',
       'nav_profile': 'சுயவிவரம்',
+      'map_caching_offline_pct': 'ஆஃப்லைனுக்கு பகுதி தற்காலிகச் சேமிப்பு — {pct}%',
+      'map_drill_practice_banner':
+          'பயிற்சி கிரிட்: துடிக்கும் பின்கள் = டெமோ செயலில் எச்சரிக்கைகள். அடுக்குகளுக்கு வரைபட வடிகட்டிகள் — உண்மையான தரவு அல்ல.',
+      'map_recenter_tooltip': 'மீண்டும் மையப்படுத்து',
+      'map_legend_hospital': 'மருத்துவமனை',
+      'map_legend_live_sos_history': 'நேரடி SOS / வரலாறு',
+      'map_legend_past_this_hex': 'கடந்த (இந்த ஹெக்ஸ்)',
+      'map_legend_in_area': 'பகுதியில் {n}',
+      'map_legend_in_cell': 'செல்லில் {n}',
+      'map_legend_volunteers_on_duty': 'கடமையில் தன்னார்வலர்கள்',
+      'map_legend_volunteers_in_grid': 'கிரிட்டில் {n}',
+      'map_legend_responder_scene': 'பதிலளிப்பாளர் → இடம்',
+      'map_responder_routes_one': '{n} பாதை',
+      'map_responder_routes_many': '{n} பாதைகள்',
+      'map_filters_title': 'வரைபட வடிகட்டிகள்',
       'step_prefix': 'படி',
       'highlights_steps': 'ஒவ்வொன்றாக படிகளை காட்டுகிறது',
       'offline_mode': 'ஆஃப்லைன் — நெட்வொர்க் துண்டிக்கப்பட்டது',
@@ -1042,15 +1308,46 @@ class AppLocalizations {
       'sos_tts_interview_saved':
           'பாதிக்கப்பட்டவர் பேட்டி தரவு அனைத்தும் சேமிக்கப்பட்டது. மீட்பவர்களுக்கு விவரங்கள் உள்ளன. ஒவ்வொரு 60 வினாடியிலும் உணர்வு சோதனை தொடரும்.',
       'sos_tts_map_routes':
-          'வண்ண வழிகளுக்கு வரைபடத் தாவலைத் திறக்கவும்: சிவப்பு ஆம்புலன்ஸ் மற்றும் பச்சை தன்னார்வலர். அவசர குரல் சேனலில் இருங்கள்.',
+          'வரைபடத் தாவலைத் திறக்கவும்: சிவப்பு ஒதுக்கப்பட்ட மருத்துவமனைக்கு சாலை வழி; இல்லையெனில் அணுகல் பாதை. பச்சை தன்னார்வலர் வழி. அவசர குரல் சேனலில் இருங்கள்.',
+      'sos_tts_emergency_contacts_on_file':
+          'Your emergency contact from your profile is attached to this SOS. SMS updates may be sent when that option is enabled.',
       'sos_tts_conscious_no_answer_attempt':
           'பதில் இல்லை. உணர்வு சோதனை {max} இல் {n}. ஒரு நிமிடத்தில் மீண்டும் கேட்கிறோம்.',
       'volunteer_victim_medical_card': 'பாதிக்கப்பட்டவர் மருத்துவ அட்டை',
+      'volunteer_dispatch_milestone_title': 'டிஸ்பैச் புதுப்பிப்புகள்',
+      'volunteer_dispatch_milestone_hospital': 'மருத்துவமனை ஏற்றுக்கொண்டது: {hospital}',
+      'volunteer_dispatch_milestone_unit': 'ஆம்புலன்ஸ் யூனிட்: {unit}',
+      'volunteer_dispatch_milestone_crew_pending': 'ஆம்புலன்ஸ் குழு: ஒருங்கிணைப்பு…',
+      'volunteer_dispatch_milestone_en_route': 'ஆம்புலன்ஸ் வழியில்',
+      'volunteer_triage_qr_report_title': 'QR அல்லது தட்டவும் அறிக்கை',
+      'volunteer_triage_qr_report_subtitle':
+          'கையளிப்புக்கு குறியீட்டை ஸ்கேன் செய்யவும் அல்லது சம்பவ அறிக்கையைச் சேமிக்க தட்டவும்.',
+      'volunteer_triage_show_qr': 'QR காட்டு',
+      'volunteer_triage_tap_report': 'அறிக்கை',
+      'volunteer_triage_qr_title': 'சம்பவ கையளிப்பு QR',
+      'volunteer_triage_qr_body': 'கட்டமைக்கப்பட்ட தரவுக்கு ஊழியர்கள் அல்லது EMS உடன் பகிரவும்.',
+      'volunteer_triage_report_saved': 'அறிக்கை இந்த சம்பவத்தின் கீழ் சேமிக்கப்பட்டது.',
+      'volunteer_triage_report_failed': 'அறிக்கையைச் சேமிக்க முடியவில்லை: ',
       'volunteer_victim_medical_offline_hint':
           'SOS பாக்கெட்டிலிருந்து — ஆஃப்லைனில் சாதன கேச் மூலம்.',
       'volunteer_victim_consciousness_title': 'உணர்வு',
       'volunteer_victim_three_questions': 'ஆரம்ப பாதிக்கப்பட்டவர் பதில்கள்',
       'volunteer_major_updates_log': 'முக்கியமான புதுப்பிப்புகள் மட்டும்',
+      'volunteer_dispatch_escalating_tier_trying_hospital':
+          'அடுக்கு {tier} வரை உயர்த்துகிறோம். மருத்துவமனை {hospital} முயற்சிக்கிறோம்.',
+      'volunteer_dispatch_trying_hospital': 'மருத்துவமனை {hospital} முயற்சிக்கிறோம்.',
+      'volunteer_dispatch_hospital_accepted':
+          '{hospital} அவசரத்தை ஏற்றது. ஆம்புலன்ஸ் ஒருங்கிணைப்பு நடக்கிறது.',
+      'volunteer_dispatch_all_hospitals_notified':
+          'அனைத்து மருத்துவமனைகளுக்கும் அறிவிக்கப்பட்டது. அவசர சேவைகளுக்கு மேலே செல்கிறோம்.',
+      'sos_dispatch_alerting_nearest_trying':
+          'உங்கள் பகுதியில் அருகிலுள்ள மருத்துவமனையை அழைக்கிறோம். {hospital} முயற்சிக்கிறோம்.',
+      'sos_dispatch_escalating_tier_trying':
+          'பதில் இல்லை. அடுக்கு {tier} வரை உயர்த்துகிறோம். {hospital} முயற்சிக்கிறோம்.',
+      'sos_dispatch_retry_previous_trying':
+          'முந்தைய மருத்துவமனையில் இருந்து பதில் இல்லை. {hospital} முயற்சிக்கிறோம்.',
+      'sos_dispatch_all_hospitals_call_112':
+          'அனைத்து மருத்துவமனைகளுக்கும் அறிவிக்கப்பட்டது. அவசர சேவைகளுக்கு 112 ஐ அழைக்கவும்.',
       'quick_sos_victim_breathing_q': 'அந்த நபர் சுவாசிக்கிறாரா?',
       'quick_sos_label_yes': 'ஆம்',
       'quick_sos_label_no': 'இல்லை',
@@ -1136,7 +1433,23 @@ class AppLocalizations {
       'lifeline': 'లైఫ్‌లైన్',
       'nav_home': 'హోమ్',
       'nav_map': 'మ్యాప్',
+      'nav_grid': 'గ్రిడ్',
       'nav_profile': 'ప్రొఫైల్',
+      'map_caching_offline_pct': 'ఆఫ్‌లైన్ కోసం ప్రాంతం క్యాష్ — {pct}%',
+      'map_drill_practice_banner':
+          'ప్రాక్టీస్ గ్రిడ్: పల్సింగ్ పిన్‌లు = డెమో సక్రియ హెచ్చరికలు. పొరల కోసం మ్యాప్ ఫిల్టర్‌లు — నిజమైన డేటా కాదు.',
+      'map_recenter_tooltip': 'మళ్లీ కేంద్రీకరించు',
+      'map_legend_hospital': 'ఆసుపత్రి',
+      'map_legend_live_sos_history': 'లైవ్ SOS / చరిత్ర',
+      'map_legend_past_this_hex': 'గత (ఈ హెక్స్)',
+      'map_legend_in_area': 'ప్రాంతంలో {n}',
+      'map_legend_in_cell': 'సెల్‌లో {n}',
+      'map_legend_volunteers_on_duty': 'డ్యూటీలో స్వయంసేవకులు',
+      'map_legend_volunteers_in_grid': 'గ్రిడ్‌లో {n}',
+      'map_legend_responder_scene': 'ప్రతిస్పందిక → దృశ్యం',
+      'map_responder_routes_one': '{n} మార్గం',
+      'map_responder_routes_many': '{n} మార్గాలు',
+      'map_filters_title': 'మ్యాప్ ఫిల్టర్‌లు',
       'step_prefix': 'దశ',
       'highlights_steps': 'ఒక్కొక్కటిగా దశలను చూపిస్తుంది',
       'offline_mode': 'ఆఫ్‌లైన్ — నెట్‌వర్క్ డిస్‌కనెక్ట్',
@@ -1178,15 +1491,46 @@ class AppLocalizations {
       'sos_tts_interview_saved':
           'బాధిత ఇంటర్వ్యూ డేటా అంతా సేవ్ చేయబడింది. రెస్పాండర్లకు వివరాలు ఉన్నాయి. ప్రతి 60 సెకన్లకు అవగాహన తనిఖీ కొనసాగుతుంది.',
       'sos_tts_map_routes':
-          'రంగు మార్గాల కోసం మ్యాప్ ట్యాబ్ తెరవండి: ఎరుపు అంబులెన్స్ మరియు ఆకుపచ్చ వాలంటీర్. అత్యవసర వాయిస్ ఛానెల్‌లో ఉండండి.',
+          'మ్యాప్ ట్యాబ్ తెరవండి: ఎరుపు కేటాయించిన ఆసుపత్రికి రోడ్ మార్గం లేదా సమీప మార్గం; ఆకుపచ్చ వాలంటీర్ మార్గం. అత్యవసర వాయిస్ ఛానెల్‌లో ఉండండి.',
+      'sos_tts_emergency_contacts_on_file':
+          'Your emergency contact from your profile is attached to this SOS. SMS updates may be sent when that option is enabled.',
       'sos_tts_conscious_no_answer_attempt':
           'సమాధానం లేదు. అవగాహన తనిఖీ {max}లో {n}. ఒక నిమిషంలో మళ్లీ అడుగుతాము.',
       'volunteer_victim_medical_card': 'బాధిత వైద్య కార్డ్',
+      'volunteer_dispatch_milestone_title': 'డిస్పాచ్ నవీకరణలు',
+      'volunteer_dispatch_milestone_hospital': 'ఆసుపత్రి అంగీకరించింది: {hospital}',
+      'volunteer_dispatch_milestone_unit': 'అంబులెన్స్ యూనిట్: {unit}',
+      'volunteer_dispatch_milestone_crew_pending': 'అంబులెన్స్ క్రూ: సమన్వయం…',
+      'volunteer_dispatch_milestone_en_route': 'అంబులెన్స్ మార్గంలో',
+      'volunteer_triage_qr_report_title': 'QR లేదా నొక్కండి నివేదిక',
+      'volunteer_triage_qr_report_subtitle':
+          'హ్యాండ్‌ఆఫ్ కోసం కోడ్ స్కాన్ చేయండి లేదా నివేదికను సేవ్ చేయడానికి నొక్కండి.',
+      'volunteer_triage_show_qr': 'QR చూపు',
+      'volunteer_triage_tap_report': 'నివేదిక',
+      'volunteer_triage_qr_title': 'ఘటన హ్యాండ్‌ఆఫ్ QR',
+      'volunteer_triage_qr_body': 'జోడించిన సిబ్బంది లేదా EMSతో పంచుకోండి.',
+      'volunteer_triage_report_saved': 'నివేదిక ఈ ఘటన కింద సేవ్ చేయబడింది.',
+      'volunteer_triage_report_failed': 'నివేదికను సేవ్ చేయలేకపోయాము: ',
       'volunteer_victim_medical_offline_hint':
           'SOS ప్యాకెట్ నుండి — ఆఫ్‌లైన్‌లో పరికర కాష్ నుండి అందుబాటులో.',
       'volunteer_victim_consciousness_title': 'అవగాహన',
       'volunteer_victim_three_questions': 'ప్రారంభ బాధిత సమాధానాలు',
       'volunteer_major_updates_log': 'ప్రధాన అప్‌డేట్‌లు మాత్రమే',
+      'volunteer_dispatch_escalating_tier_trying_hospital':
+          'టియర్ {tier} వరకు పెంచుతున్నాము. ఆసుపత్రి {hospital} ప్రయత్నిస్తున్నాము.',
+      'volunteer_dispatch_trying_hospital': 'ఆసుపత్రి {hospital} ప్రయత్నిస్తున్నాము.',
+      'volunteer_dispatch_hospital_accepted':
+          '{hospital} అత్యవసరాన్ని అంగీకరించింది. అంబులెన్స్ సమన్వయం ప్రగతిలో ఉంది.',
+      'volunteer_dispatch_all_hospitals_notified':
+          'అన్ని ఆసుపత్రులకు తెలియజేశాము. అత్యవసర సేవలకు పైకి పంపుతున్నాము.',
+      'sos_dispatch_alerting_nearest_trying':
+          'మీ ప్రాంతంలో సమీప ఆసుపత్రిని అలర్ట్ చేస్తున్నాము. {hospital} ప్రయత్నిస్తున్నాము.',
+      'sos_dispatch_escalating_tier_trying':
+          'ప్రతిస్పందన లేదు. టియర్ {tier} వరకు పెంచుతున్నాము. {hospital} ప్రయత్నిస్తున్నాము.',
+      'sos_dispatch_retry_previous_trying':
+          'మునపటి ఆసుపత్రి నుండి ప్రతిస్పందన లేదు. {hospital} ప్రయత్నిస్తున్నాము.',
+      'sos_dispatch_all_hospitals_call_112':
+          'అన్ని ఆసుపత్రులకు తెలియజేశాము. అత్యవసర సేవలకు దయచేసి 112 కు కాల్ చేయండి.',
     },
 
     // ── Kannada (ಕನ್ನಡ) ────────────────────────────────────────────────────
@@ -1235,7 +1579,23 @@ class AppLocalizations {
       'lifeline': 'ಲೈಫ್‌ಲೈನ್',
       'nav_home': 'ಹೋಮ್',
       'nav_map': 'ನಕ್ಷೆ',
+      'nav_grid': 'ಗ್ರಿಡ್',
       'nav_profile': 'ಪ್ರೊಫೈಲ್',
+      'map_caching_offline_pct': 'ಆಫ್‌ಲೈನ್‌ಗಾಗಿ ಪ್ರದೇಶ ಕ್ಯಾಶ್ — {pct}%',
+      'map_drill_practice_banner':
+          'ಅಭ್ಯಾಸ ಗ್ರಿಡ್: ಪಲ್ಸಿಂಗ್ ಪಿನ್‌ಗಳು = ಡೆಮೋ ಸಕ್ರಿಯ ಎಚ್ಚರಿಕೆಗಳು. ಪದರಗಳಿಗೆ ನಕ್ಷೆ ಫಿಲ್ಟರ್‌ಗಳು — ನಿಜವಾದ ಡೇಟಾ ಅಲ್ಲ.',
+      'map_recenter_tooltip': 'ಮತ್ತೆ ಕೇಂದ್ರೀಕರಿಸಿ',
+      'map_legend_hospital': 'ಆಸ್ಪತ್ರೆ',
+      'map_legend_live_sos_history': 'ಲೈವ್ SOS / ಇತಿಹಾಸ',
+      'map_legend_past_this_hex': 'ಹಿಂದಿನ (ಈ ಹೆಕ್ಸ್)',
+      'map_legend_in_area': 'ಪ್ರದೇಶದಲ್ಲಿ {n}',
+      'map_legend_in_cell': 'ಸೆಲ್‌ನಲ್ಲಿ {n}',
+      'map_legend_volunteers_on_duty': 'ಕರ್ತವ್ಯದಲ್ಲಿ ಸ್ವಯಂಸೇವಕರು',
+      'map_legend_volunteers_in_grid': 'ಗ್ರಿಡ್‌ನಲ್ಲಿ {n}',
+      'map_legend_responder_scene': 'ಪ್ರತಿಕ್ರಿಯೆ → ದೃಶ್ಯ',
+      'map_responder_routes_one': '{n} ಮಾರ್ಗ',
+      'map_responder_routes_many': '{n} ಮಾರ್ಗಗಳು',
+      'map_filters_title': 'ನಕ್ಷೆ ಫಿಲ್ಟರ್‌ಗಳು',
       'step_prefix': 'ಹಂತ',
       'highlights_steps': 'ಒಂದೊಂದಾಗಿ ಹಂತಗಳನ್ನು ತೋರಿಸುತ್ತದೆ',
       'offline_mode': 'ಆಫ್‌ಲೈನ್ — ನೆಟ್‌ವರ್ಕ್ ಸಂಪರ್ಕ ಕಡಿತ',
@@ -1277,14 +1637,45 @@ class AppLocalizations {
       'sos_tts_interview_saved':
           'ಬಾಧಿತ ಸಂದರ್ಶನ ಡೇಟಾ ಉಳಿಸಲಾಗಿದೆ. ಪ್ರತಿಕ್ರಿಯಿಸುವವರಿಗೆ ವಿವರಗಳಿವೆ. ಪ್ರತಿ 60 ಸೆಕೆಂಡುಗಳಿಗೆ ಪ್ರಜ್ಞೆ ಪರಿಶೀಲನೆ ಮುಂದುವರಿಯುತ್ತದೆ.',
       'sos_tts_map_routes':
-          'ಬಣ್ಣದ ಮಾರ್ಗಗಳಿಗೆ ನಕ್ಷೆ ಟ್ಯಾಬ್ ತೆರೆಯಿರಿ. ತುರ್ತು ಧ್ವನಿ ಚಾನೆಲ್‌ನಲ್ಲಿ ಇರಿ.',
+          'ನಕ್ಷೆ ಟ್ಯಾಬ್ ತೆರೆಯಿರಿ: ಕೆಂಪು ನಿಯೋಜಿತ ಆಸ್ಪತ್ರೆಗೆ ರಸ್ತೆ ಮಾರ್ಗ ಅಥವಾ ಹತ್ತಿರದ ಮಾರ್ಗ; ಹಸಿರು ಸ್ವಯಂಸೇವಕ ಮಾರ್ಗ. ತುರ್ತು ಧ್ವನಿ ಚಾನೆಲ್‌ನಲ್ಲಿ ಇರಿ.',
+      'sos_tts_emergency_contacts_on_file':
+          'Your emergency contact from your profile is attached to this SOS. SMS updates may be sent when that option is enabled.',
       'sos_tts_conscious_no_answer_attempt':
           'ಉತ್ತರವಿಲ್ಲ. ಪ್ರಜ್ಞೆ ಪರಿಶೀಲನೆ {max}ರಲ್ಲಿ {n}. ಒಂದು ನಿಮಿಷದಲ್ಲಿ ಮತ್ತೆ ಕೇಳುತ್ತೇವೆ.',
       'volunteer_victim_medical_card': 'ಬಾಧಿತ ವೈದ್ಯಕೀಯ ಕಾರ್ಡ್',
+      'volunteer_dispatch_milestone_title': 'ಡಿಸ್ಪ್ಯಾಚ್ ನವೀಕರಣಗಳು',
+      'volunteer_dispatch_milestone_hospital': 'ಆಸ್ಪತ್ರೆ ಸ್ವೀಕರಿಸಿದೆ: {hospital}',
+      'volunteer_dispatch_milestone_unit': 'ಆಂಬುಲೆನ್ಸ್ ಘಟಕ: {unit}',
+      'volunteer_dispatch_milestone_crew_pending': 'ಆಂಬುಲೆನ್ಸ್ ತಂಡ: ಸಮನ್ವಯ…',
+      'volunteer_dispatch_milestone_en_route': 'ಆಂಬುಲೆನ್ಸ್ ಮಾರ್ಗದಲ್ಲಿ',
+      'volunteer_triage_qr_report_title': 'QR ಅಥವಾ ಟ್ಯಾಪ್ ವರದಿ',
+      'volunteer_triage_qr_report_subtitle':
+          'ಹ್ಯಾಂಡ್‌ಆಫ್‌ಗಾಗಿ ಕೋಡ್ ಸ್ಕ್ಯಾನ್ ಮಾಡಿ ಅಥವಾ ಘಟನೆಯ ವರದಿಯನ್ನು ಉಳಿಸಲು ಟ್ಯಾಪ್ ಮಾಡಿ.',
+      'volunteer_triage_show_qr': 'QR ತೋರಿಸಿ',
+      'volunteer_triage_tap_report': 'ವರದಿ',
+      'volunteer_triage_qr_title': 'ಘಟನೆ ಹ್ಯಾಂಡ್‌ಆಫ್ QR',
+      'volunteer_triage_qr_body': 'ರಚನಾತ್ಮಕ ಡೇಟಾಗಾಗಿ ಸಿಬ್ಬಂದಿ ಅಥವಾ EMS ಜೊತೆ ಹಂಚಿಕೊಳ್ಳಿ.',
+      'volunteer_triage_report_saved': 'ವರದಿ ಈ ಘಟನೆಯ ಅಡಿಯಲ್ಲಿ ಉಳಿಸಲಾಗಿದೆ.',
+      'volunteer_triage_report_failed': 'ವರದಿಯನ್ನು ಉಳಿಸಲು ಸಾಧ್ಯವಾಗಲಿಲ್ಲ: ',
       'volunteer_victim_medical_offline_hint': 'SOS ಪ್ಯಾಕೆಟ್‌ನಿಂದ — ಆಫ್‌ಲೈನ್‌ನಲ್ಲಿ ಕ್ಯಾಶ್‌ನಿಂದ.',
       'volunteer_victim_consciousness_title': 'ಪ್ರಜ್ಞೆ',
       'volunteer_victim_three_questions': 'ಆರಂಭಿಕ ಉತ್ತರಗಳು',
       'volunteer_major_updates_log': 'ಪ್ರಮುಖ ನವೀಕರಣಗಳು ಮಾತ್ರ',
+      'volunteer_dispatch_escalating_tier_trying_hospital':
+          'ಟಿಯರ್ {tier} ಗೆ ಏರಿಸುತ್ತಿದ್ದೇವೆ. ಆಸ್ಪತ್ರೆ {hospital} ಪ್ರಯತ್ನಿಸುತ್ತಿದ್ದೇವೆ.',
+      'volunteer_dispatch_trying_hospital': 'ಆಸ್ಪತ್ರೆ {hospital} ಪ್ರಯತ್ನಿಸುತ್ತಿದ್ದೇವೆ.',
+      'volunteer_dispatch_hospital_accepted':
+          '{hospital} ತುರ್ತನ್ನು ಸ್ವೀಕರಿಸಿದೆ. ಆಂಬುಲೆನ್ಸ್ ಸಮನ್ವಯ ನಡೆಯುತ್ತಿದೆ.',
+      'volunteer_dispatch_all_hospitals_notified':
+          'ಎಲ್ಲಾ ಆಸ್ಪತ್ರೆಗಳಿಗೆ ತಿಳಿಸಲಾಗಿದೆ. ತುರ್ತು ಸೇವೆಗಳಿಗೆ ಮುಂದಕ್ಕೆ ಕಳುಹಿಸುತ್ತಿದ್ದೇವೆ.',
+      'sos_dispatch_alerting_nearest_trying':
+          'ನಿಮ್ಮ ಪ್ರದೇಶದ ಹತ್ತಿರದ ಆಸ್ಪತ್ರೆಗೆ ಎಚ್ಚರಿಕೆ. {hospital} ಪ್ರಯತ್ನಿಸುತ್ತಿದ್ದೇವೆ.',
+      'sos_dispatch_escalating_tier_trying':
+          'ಪ್ರತಿಕ್ರಿಯೆ ಇಲ್ಲ. ಟಿಯರ್ {tier} ಗೆ ಏರಿಸುತ್ತಿದ್ದೇವೆ. {hospital} ಪ್ರಯತ್ನಿಸುತ್ತಿದ್ದೇವೆ.',
+      'sos_dispatch_retry_previous_trying':
+          'ಹಿಂದಿನ ಆಸ್ಪತ್ರೆಯಿಂದ ಪ್ರತಿಕ್ರಿಯೆ ಇಲ್ಲ. {hospital} ಪ್ರಯತ್ನಿಸುತ್ತಿದ್ದೇವೆ.',
+      'sos_dispatch_all_hospitals_call_112':
+          'ಎಲ್ಲಾ ಆಸ್ಪತ್ರೆಗಳಿಗೆ ತಿಳಿಸಲಾಗಿದೆ. ತುರ್ತು ಸೇವೆಗಳಿಗೆ ದಯವಿಟ್ಟು 112 ಗೆ ಕರೆ ಮಾಡಿ.',
     },
 
     // ── Malayalam (മലയാളം) ─────────────────────────────────────────────────
@@ -1333,7 +1724,23 @@ class AppLocalizations {
       'lifeline': 'ലൈഫ്‌ലൈൻ',
       'nav_home': 'ഹോം',
       'nav_map': 'മാപ്പ്',
+      'nav_grid': 'ഗ്രിഡ്',
       'nav_profile': 'പ്രൊഫൈൽ',
+      'map_caching_offline_pct': 'ഓഫ്‌ലൈനായി പ്രദേശം കാഷ് ചെയ്യുന്നു — {pct}%',
+      'map_drill_practice_banner':
+          'പരിശീലന ഗ്രിഡ്: പൾസിംഗ് പിൻ = ഡെമോ സജീവ അലേർട്ടുകൾ. ലെയറുകൾക്ക് മാപ്പ് ഫിൽട്ടറുകൾ — യഥാർത്ഥ ഡാറ്റ അല്ല.',
+      'map_recenter_tooltip': 'വീണ്ടും കേന്ദ്രീകരിക്കുക',
+      'map_legend_hospital': 'ആശുപത്രി',
+      'map_legend_live_sos_history': 'ലൈവ് SOS / ചരിത്രം',
+      'map_legend_past_this_hex': 'കഴിഞ്ഞ (ഈ ഹെക്സ്)',
+      'map_legend_in_area': 'പ്രദേശത്ത് {n}',
+      'map_legend_in_cell': 'സെല്ലിൽ {n}',
+      'map_legend_volunteers_on_duty': 'ഡ്യൂട്ടിയിലെ സ്വയംസേവകർ',
+      'map_legend_volunteers_in_grid': 'ഗ്രിഡിൽ {n}',
+      'map_legend_responder_scene': 'പ്രതികരണക്കാരൻ → ദൃശ്യം',
+      'map_responder_routes_one': '{n} പാത',
+      'map_responder_routes_many': '{n} പാതകൾ',
+      'map_filters_title': 'മാപ്പ് ഫിൽട്ടറുകൾ',
       'step_prefix': 'ഘട്ടം',
       'highlights_steps': 'ഓരോന്നായി ഘട്ടങ്ങൾ കാണിക്കുന്നു',
       'offline_mode': 'ഓഫ്‌ലൈൻ — നെറ്റ്‌വർക്ക് വിച്ഛേദിച്ചു',
@@ -1375,14 +1782,45 @@ class AppLocalizations {
       'sos_tts_interview_saved':
           'ബാധിത ഇന്റർവ്യൂ ഡാറ്റ സേവ് ചെയ്തു. പ്രതികരിക്കുന്നവർക്ക് വിശദാംശങ്ങൾ ഉണ്ട്.',
       'sos_tts_map_routes':
-          'നിറമാർഗ്ഗങ്ങൾക്ക് മാപ്പ് ടാബ് തുറക്കുക. അടിയന്തര വോയ്സ് ചാനലിൽ തുടരുക.',
+          'മാപ്പ് ടാബ് തുറക്കുക: ചുവപ്പ് നിയോഗിച്ച ആശുപത്രിയിലേക്ക് റോഡ് മാർഗ്ഗം അല്ലെങ്കിൽ സമീപ മാർഗ്ഗം; പച്ച സ്വയംസേവക മാർഗ്ഗം. അടിയന്തര വോയ്സ് ചാനലിൽ തുടരുക.',
+      'sos_tts_emergency_contacts_on_file':
+          'Your emergency contact from your profile is attached to this SOS. SMS updates may be sent when that option is enabled.',
       'sos_tts_conscious_no_answer_attempt':
           'മറുപടിയില്ല. ബോധ പരിശോധന {max}ൽ {n}. ഒരു മിനിറ്റിന് ശേഷം വീണ്ടും ചോദിക്കും.',
       'volunteer_victim_medical_card': 'ബാധിത മെഡിക്കൽ കാർഡ്',
+      'volunteer_dispatch_milestone_title': 'ഡിസ്പാച്ച് അപ്‌ഡേറ്റുകൾ',
+      'volunteer_dispatch_milestone_hospital': 'ആശുപത്രി സ്വീകരിച്ചു: {hospital}',
+      'volunteer_dispatch_milestone_unit': 'ആംബുലൻസ് യൂണിറ്റ്: {unit}',
+      'volunteer_dispatch_milestone_crew_pending': 'ആംബുലൻസ് ക്രൂ: ഏകോപനം…',
+      'volunteer_dispatch_milestone_en_route': 'ആംബുലൻസ് വഴിയിൽ',
+      'volunteer_triage_qr_report_title': 'QR അല്ലെങ്കിൽ ടാപ്പ് റിപ്പോർട്ട്',
+      'volunteer_triage_qr_report_subtitle':
+          'ഹാൻഡ്‌ഓഫിനായി കോഡ് സ്കാൻ ചെയ്യുക അല്ലെങ്കിൽ സംഭവ റിപ്പോർട്ട് സേവ് ചെയ്യാൻ ടാപ്പ് ചെയ്യുക.',
+      'volunteer_triage_show_qr': 'QR കാണിക്കുക',
+      'volunteer_triage_tap_report': 'റിപ്പോർട്ട്',
+      'volunteer_triage_qr_title': 'സംഭവ ഹാൻഡ്‌ഓഫ് QR',
+      'volunteer_triage_qr_body': 'ഘടനാപരമായ ഡാറ്റിനായി സ്റ്റാഫ് അല്ലെങ്കിൽ EMS ഉടൻ പങ്കിടുക.',
+      'volunteer_triage_report_saved': 'റിപ്പോർട്ട് ഈ സംഭവത്തിന് കീഴിൽ സേവ് ചെയ്തു.',
+      'volunteer_triage_report_failed': 'റിപ്പോർട്ട് സേവ് ചെയ്യാൻ കഴിഞ്ഞില്ല: ',
       'volunteer_victim_medical_offline_hint': 'SOS പാക്കറ്റിൽ നിന്ന് — ഓഫ്‌ലൈനിൽ കാഷിൽ.',
       'volunteer_victim_consciousness_title': 'ബോധം',
       'volunteer_victim_three_questions': 'ആദ്യ മറുപടികൾ',
       'volunteer_major_updates_log': 'പ്രധാന അപ്‌ഡേറ്റുകൾ മാത്രം',
+      'volunteer_dispatch_escalating_tier_trying_hospital':
+          'ടിയർ {tier} വരെ ഉയർത്തുന്നു. ആശുപത്രി {hospital} ശ്രമിക്കുന്നു.',
+      'volunteer_dispatch_trying_hospital': 'ആശുപത്രി {hospital} ശ്രമിക്കുന്നു.',
+      'volunteer_dispatch_hospital_accepted':
+          '{hospital} അടിയന്തരം സ്വീകരിച്ചു. ആംബുലൻസ് ഏകോപനം നടക്കുന്നു.',
+      'volunteer_dispatch_all_hospitals_notified':
+          'എല്ലാ ആശുപത്രികളെയും അറിയിച്ചു. അടിയന്തര സേവനങ്ങളിലേക്ക് ഉയർത്തുന്നു.',
+      'sos_dispatch_alerting_nearest_trying':
+          'നിങ്ങളുടെ പ്രദേശത്തെ അടുത്തുള്ള ആശുപത്രിയെ അലേർട്ട് ചെയ്യുന്നു. {hospital} ശ്രമിക്കുന്നു.',
+      'sos_dispatch_escalating_tier_trying':
+          'പ്രതികരണമില്ല. ടിയർ {tier} വരെ ഉയർത്തുന്നു. {hospital} ശ്രമിക്കുന്നു.',
+      'sos_dispatch_retry_previous_trying':
+          'മുമ്പത്തെ ആശുപത്രിയിൽ നിന്ന് പ്രതികരണമില്ല. {hospital} ശ്രമിക്കുന്നു.',
+      'sos_dispatch_all_hospitals_call_112':
+          'എല്ലാ ആശുപത്രികളെയും അറിയിച്ചു. അടിയന്തര സേവനങ്ങൾക്ക് ദയവായി 112 വിളിക്കുക.',
     },
 
     // ── Bengali (বাংলা) ────────────────────────────────────────────────────
@@ -1431,7 +1869,23 @@ class AppLocalizations {
       'lifeline': 'লাইফলাইন',
       'nav_home': 'হোম',
       'nav_map': 'ম্যাপ',
+      'nav_grid': 'গ্রিড',
       'nav_profile': 'প্রোফাইল',
+      'map_caching_offline_pct': 'অফলাইনের জন্য এলাকা ক্যাশ হচ্ছে — {pct}%',
+      'map_drill_practice_banner':
+          'অনুশীলন গ্রিড: পালসিং পিন = ডেমো সক্রিয় সতর্কতা। স্তরের জন্য মানচিত্র ফিল্টার — আসল ডেটা নয়।',
+      'map_recenter_tooltip': 'আবার কেন্দ্রে আনুন',
+      'map_legend_hospital': 'হাসপাতাল',
+      'map_legend_live_sos_history': 'লাইভ SOS / ইতিহাস',
+      'map_legend_past_this_hex': 'অতীত (এই হেক্স)',
+      'map_legend_in_area': 'এলাকায় {n}',
+      'map_legend_in_cell': 'সেলে {n}',
+      'map_legend_volunteers_on_duty': 'ডিউটিতে স্বেচ্ছাসেবক',
+      'map_legend_volunteers_in_grid': 'গ্রিডে {n}',
+      'map_legend_responder_scene': 'প্রতিকারকারী → দৃশ্য',
+      'map_responder_routes_one': '{n} রুট',
+      'map_responder_routes_many': '{n} রুট',
+      'map_filters_title': 'মানচিত্র ফিল্টার',
       'step_prefix': 'ধাপ',
       'highlights_steps': 'একটি একটি করে ধাপ দেখায়',
       'offline_mode': 'অফলাইন — নেটওয়ার্ক বিচ্ছিন্ন',
@@ -1504,14 +1958,45 @@ class AppLocalizations {
       'sos_tts_interview_saved':
           'সব ভুক্তভোগী সাক্ষাৎকার ডেটা সংরক্ষিত। উদ্ধারকারীদের বিস্তারিত আছে।',
       'sos_tts_map_routes':
-          'রঙিন রুটের জন্য মানচিত্র ট্যাব খুলুন। জরুরি ভয়েস চ্যানেলে থাকুন।',
+          'মানচিত্র ট্যাব খুলুন: লাল নির্ধারিত হাসপাতালের রাস্তার পথ, নাহলে সংক্ষিপ্ত পথ; সবুজ স্বেচ্ছাসেবক পথ। জরুরি ভয়েস চ্যানেলে থাকুন।',
+      'sos_tts_emergency_contacts_on_file':
+          'Your emergency contact from your profile is attached to this SOS. SMS updates may be sent when that option is enabled.',
       'sos_tts_conscious_no_answer_attempt':
           'উত্তর নেই। সচেতনতা পরীক্ষা {max} এর {n}। এক মিনিট পর আবার জিজ্ঞাসা করব।',
       'volunteer_victim_medical_card': 'ভুক্তভোগী মেডিকেল কার্ড',
+      'volunteer_dispatch_milestone_title': 'ডিসপ্যাচ আপডেট',
+      'volunteer_dispatch_milestone_hospital': 'হাসপাতাল গ্রহণ: {hospital}',
+      'volunteer_dispatch_milestone_unit': 'অ্যাম্বুলেন্স ইউনিট: {unit}',
+      'volunteer_dispatch_milestone_crew_pending': 'অ্যাম্বুলেন্স ক্রু: সমন্বয়…',
+      'volunteer_dispatch_milestone_en_route': 'অ্যাম্বুলেন্স পথে',
+      'volunteer_triage_qr_report_title': 'QR বা ট্যাপ রিপোর্ট',
+      'volunteer_triage_qr_report_subtitle':
+          'হ্যান্ডঅফের জন্য কোড স্ক্যান করুন বা ঘটনার রিপোর্ট সেভ করতে ট্যাপ করুন।',
+      'volunteer_triage_show_qr': 'QR দেখান',
+      'volunteer_triage_tap_report': 'রিপোর্ট',
+      'volunteer_triage_qr_title': 'ঘটনা হ্যান্ডঅফ QR',
+      'volunteer_triage_qr_body': 'কাঠামোগত ডেটার জন্য স্টাফ বা EMS-এর সাথে শেয়ার করুন।',
+      'volunteer_triage_report_saved': 'রিপোর্ট এই ঘটনার অধীনে সংরক্ষিত।',
+      'volunteer_triage_report_failed': 'রিপোর্ট সংরক্ষণ ব্যর্থ: ',
       'volunteer_victim_medical_offline_hint': 'SOS প্যাকেট থেকে — অফলাইনে ক্যাশে।',
       'volunteer_victim_consciousness_title': 'সচেতনতা',
       'volunteer_victim_three_questions': 'প্রাথমিক উত্তর',
       'volunteer_major_updates_log': 'শুধু গুরুত্বপূর্ণ আপডেট',
+      'volunteer_dispatch_escalating_tier_trying_hospital':
+          'টিয়ার {tier} এ উন্নীত করছি। হাসপাতাল {hospital} চেষ্টা করছি।',
+      'volunteer_dispatch_trying_hospital': 'হাসপাতাল {hospital} চেষ্টা করছি।',
+      'volunteer_dispatch_hospital_accepted':
+          '{hospital} জরুরি গ্রহণ করেছে। অ্যাম্বুলেন্স সমন্বয় চলছে।',
+      'volunteer_dispatch_all_hospitals_notified':
+          'সব হাসপাতালকে জানানো হয়েছে। জরুরি সেবায় এসকেলেট করছি।',
+      'sos_dispatch_alerting_nearest_trying':
+          'আপনার এলাকার নিকটতম হাসপাতালে সতর্ক করছি। {hospital} চেষ্টা করছি।',
+      'sos_dispatch_escalating_tier_trying':
+          'কোনো সাড়া নেই। টিয়ার {tier} এ উন্নীত করছি। {hospital} চেষ্টা করছি।',
+      'sos_dispatch_retry_previous_trying':
+          'আগের হাসপাতাল থেকে সাড়া নেই। {hospital} চেষ্টা করছি।',
+      'sos_dispatch_all_hospitals_call_112':
+          'সব হাসপাতালকে জানানো হয়েছে। জরুরি সেবার জন্য ১১২ কল করুন।',
       'quick_sos_victim_breathing_q': 'ব্যক্তি শ্বাস নিচ্ছে?',
       'quick_sos_label_yes': 'হ্যাঁ',
       'quick_sos_label_no': 'না',
@@ -1598,7 +2083,23 @@ class AppLocalizations {
       'lifeline': 'लाइफलाइन',
       'nav_home': 'होम',
       'nav_map': 'नकाशा',
+      'nav_grid': 'ग्रिड',
       'nav_profile': 'प्रोफाइल',
+      'map_caching_offline_pct': 'ऑफलाइनसाठी क्षेत्र कॅश होत आहे — {pct}%',
+      'map_drill_practice_banner':
+          'सराव ग्रिड: पल्सिंग पिन = डेमो सक्रिय सतर्कता. थरांसाठी नकाशा फिल्टर — खरे डेटा नाही.',
+      'map_recenter_tooltip': 'पुन्हा केंद्रित करा',
+      'map_legend_hospital': 'रुग्णालय',
+      'map_legend_live_sos_history': 'लाइव्ह SOS / इतिहास',
+      'map_legend_past_this_hex': 'मागील (हा हेक्स)',
+      'map_legend_in_area': 'क्षेत्रात {n}',
+      'map_legend_in_cell': 'सेलमध्ये {n}',
+      'map_legend_volunteers_on_duty': 'ड्युटीवर स्वयंसेवक',
+      'map_legend_volunteers_in_grid': 'ग्रिडमध्ये {n}',
+      'map_legend_responder_scene': 'प्रतिसाद देणारा → दृश्य',
+      'map_responder_routes_one': '{n} मार्ग',
+      'map_responder_routes_many': '{n} मार्ग',
+      'map_filters_title': 'नकाशा फिल्टर',
       'step_prefix': 'पायरी',
       'highlights_steps': 'एक एक करून पायऱ्या दाखवतो',
       'offline_mode': 'ऑफलाइन — नेटवर्क डिस्कनेक्ट',
@@ -1640,14 +2141,45 @@ class AppLocalizations {
       'sos_tts_interview_saved':
           'सर्व मुलाखत डेटा जतन केला. प्रतिसादकर्त्यांना तपशील आहेत.',
       'sos_tts_map_routes':
-          'रंगीत मार्गांसाठी नकाशा टॅब उघडा. आपत्कालीन आवाज चॅनेलवर रहा.',
+          'नकाशा टॅब उघडा: ठोस लाल नियुक्त रुग्णालयाचा रस्ता किंवा जवळचा मार्ग; हिरवा स्वयंसेवक मार्ग. आपत्कालीन आवाज चॅनेलवर रहा.',
+      'sos_tts_emergency_contacts_on_file':
+          'Your emergency contact from your profile is attached to this SOS. SMS updates may be sent when that option is enabled.',
       'sos_tts_conscious_no_answer_attempt':
           'उत्तर नाही. होश तपासणी {max} पैकी {n}. एका मिनिटात पुन्हा विचारू.',
       'volunteer_victim_medical_card': 'बाधित वैद्यकीय कार्ड',
+      'volunteer_dispatch_milestone_title': 'डिस्पॅच अपडेट',
+      'volunteer_dispatch_milestone_hospital': 'रुग्णालय स्वीकारले: {hospital}',
+      'volunteer_dispatch_milestone_unit': 'रुग्णवाहिका युनिट: {unit}',
+      'volunteer_dispatch_milestone_crew_pending': 'रुग्णवाहिका क्रू: समन्वय…',
+      'volunteer_dispatch_milestone_en_route': 'रुग्णवाहिका मार्गावर',
+      'volunteer_triage_qr_report_title': 'QR किंवा टॅप अहवाल',
+      'volunteer_triage_qr_report_subtitle':
+          'हँडऑफसाठी कोड स्कॅन करा किंवा घटनेचा अहवाल जतन करण्यासाठी टॅप करा.',
+      'volunteer_triage_show_qr': 'QR दाखवा',
+      'volunteer_triage_tap_report': 'अहवाल',
+      'volunteer_triage_qr_title': 'घटना हँडऑफ QR',
+      'volunteer_triage_qr_body': 'संरचित डेटासाठी कर्मचारी किंवा EMS सोबत शेअर करा.',
+      'volunteer_triage_report_saved': 'अहवाल या घटनेखाली जतन केला.',
+      'volunteer_triage_report_failed': 'अहवाल जतन करता आला नाही: ',
       'volunteer_victim_medical_offline_hint': 'SOS पॅकेटमधून — ऑफलाइन कॅशमधून.',
       'volunteer_victim_consciousness_title': 'होश',
       'volunteer_victim_three_questions': 'सुरुवातीची उत्तरे',
       'volunteer_major_updates_log': 'फक्त मुख्य अपडेट',
+      'volunteer_dispatch_escalating_tier_trying_hospital':
+          'टियर {tier} पर्यंत वाढवत आहोत. रुग्णालय {hospital} प्रयत्न करत आहोत.',
+      'volunteer_dispatch_trying_hospital': 'रुग्णालय {hospital} प्रयत्न करत आहोत.',
+      'volunteer_dispatch_hospital_accepted':
+          '{hospital} ने आपत्काल स्वीकारला. रुग्णवाहिका समन्वय सुरू आहे.',
+      'volunteer_dispatch_all_hospitals_notified':
+          'सर्व रुग्णालयांना कळवले. आपत्कालीन सेवांकडे पाठवत आहोत.',
+      'sos_dispatch_alerting_nearest_trying':
+          'तुमच्या क्षेत्रातील जवळच्या रुग्णालयाला सूचित करत आहोत. {hospital} प्रयत्न करत आहोत.',
+      'sos_dispatch_escalating_tier_trying':
+          'प्रतिसाद नाही. टियर {tier} पर्यंत वाढवत आहोत. {hospital} प्रयत्न करत आहोत.',
+      'sos_dispatch_retry_previous_trying':
+          'मागील रुग्णालयाकडून प्रतिसाद नाही. {hospital} प्रयत्न करत आहोत.',
+      'sos_dispatch_all_hospitals_call_112':
+          'सर्व रुग्णालयांना कळवले. आपत्कालीन सेवांसाठी कृपया 112 वर कॉल करा.',
     },
 
     // ── Gujarati (ગુજરાતી) ─────────────────────────────────────────────────
@@ -1696,7 +2228,23 @@ class AppLocalizations {
       'lifeline': 'લાઇફલાઇન',
       'nav_home': 'હોમ',
       'nav_map': 'નકશો',
+      'nav_grid': 'ગ્રિડ',
       'nav_profile': 'પ્રોફાઇલ',
+      'map_caching_offline_pct': 'ઑફલાઇન માટે વિસ્તાર કેશ થઈ રહ્યો છે — {pct}%',
+      'map_drill_practice_banner':
+          'અભ્યાસ ગ્રિડ: પલ્સિંગ પિન = ડેમો સક્રિય અલર્ટ્સ. પરતો માટે નકશા ફિલ્ટર — વાસ્તવિક ડેટા નહીં.',
+      'map_recenter_tooltip': 'ફરીથી કેન્દ્રિત કરો',
+      'map_legend_hospital': 'હોસ્પિટલ',
+      'map_legend_live_sos_history': 'લાઇવ SOS / ઇતિહાસ',
+      'map_legend_past_this_hex': 'ગત (આ હેક્સ)',
+      'map_legend_in_area': 'વિસ્તારમાં {n}',
+      'map_legend_in_cell': 'સેલમાં {n}',
+      'map_legend_volunteers_on_duty': 'ડ્યુટી પર સ્વયંસેવકો',
+      'map_legend_volunteers_in_grid': 'ગ્રિડમાં {n}',
+      'map_legend_responder_scene': 'પ્રતિસાદ આપનાર → દૃશ્ય',
+      'map_responder_routes_one': '{n} માર્ગ',
+      'map_responder_routes_many': '{n} માર્ગો',
+      'map_filters_title': 'નકશા ફિલ્ટર',
       'step_prefix': 'પગલું',
       'highlights_steps': 'એક એક કરીને પગલાં બતાવે છે',
       'offline_mode': 'ઓફલાઇન — નેટવર્ક ડિસ્કનેક્ટ',
@@ -1738,14 +2286,45 @@ class AppLocalizations {
       'sos_tts_interview_saved':
           'બધો ઇન્ટરવ્યૂ ડેટા સાચવ્યો. પ્રતિસાદકર્તાઓ પાસે વિગતો છે.',
       'sos_tts_map_routes':
-          'રંગીન માર્ગો માટે નકશો ટૅબ ખોલો. કટોકટી અવાજ ચેનલ પર રહો.',
+          'નકશો ટૅબ ખોલો: લાલ સોંપેલ હોસ્પિટલનો રોડ માર્ગ અથવા નજીકનો માર્ગ; લીલો સ્વયંસેવક માર્ગ. કટોકટી અવાજ ચેનલ પર રહો.',
+      'sos_tts_emergency_contacts_on_file':
+          'Your emergency contact from your profile is attached to this SOS. SMS updates may be sent when that option is enabled.',
       'sos_tts_conscious_no_answer_attempt':
           'જવાબ નહીં. સચેત તપાસ {max} માંથી {n}. એક મિનિટ પછી ફરી પૂછીશું.',
       'volunteer_victim_medical_card': 'પીડિત તબીબી કાર્ડ',
+      'volunteer_dispatch_milestone_title': 'ડિસ્પેચ અપડેટ',
+      'volunteer_dispatch_milestone_hospital': 'હોસ્પિટલ સ્વીકારી: {hospital}',
+      'volunteer_dispatch_milestone_unit': 'એમ્બ્યુલન્સ યુનિટ: {unit}',
+      'volunteer_dispatch_milestone_crew_pending': 'એમ્બ્યુલન્સ ક્રૂ: સંકલન…',
+      'volunteer_dispatch_milestone_en_route': 'એમ્બ્યુલન્સ માર્ગ પર',
+      'volunteer_triage_qr_report_title': 'QR અથવા ટૅપ રિપોર્ટ',
+      'volunteer_triage_qr_report_subtitle':
+          'હેન્ડઓફ માટે કોડ સ્કેન કરો અથવા ઘટનાનો રિપોર્ટ સાચવવા ટૅપ કરો.',
+      'volunteer_triage_show_qr': 'QR બતાવો',
+      'volunteer_triage_tap_report': 'રિપોર્ટ',
+      'volunteer_triage_qr_title': 'ઘટના હેન્ડઓફ QR',
+      'volunteer_triage_qr_body': 'રચનાત્મક ડેટા માટે સ્ટાફ અથવા EMS સાથે શેર કરો.',
+      'volunteer_triage_report_saved': 'રિપોર્ટ આ ઘટના હેઠળ સાચવ્યો.',
+      'volunteer_triage_report_failed': 'રિપોર્ટ સાચવી શકાયો નહીં: ',
       'volunteer_victim_medical_offline_hint': 'SOS પેકેટમાંથી — ઑફલાઇન કેશમાંથી.',
       'volunteer_victim_consciousness_title': 'સચેતતા',
       'volunteer_victim_three_questions': 'પ્રારંભિક જવાબો',
       'volunteer_major_updates_log': 'ફક્ત મુખ્ય અપડેટ',
+      'volunteer_dispatch_escalating_tier_trying_hospital':
+          'ટિયર {tier} સુધી વધારી રહ્યા છીએ. હોસ્પિટલ {hospital} પ્રયાસ કરી રહ્યા છીએ.',
+      'volunteer_dispatch_trying_hospital': 'હોસ્પિટલ {hospital} પ્રયાસ કરી રહ્યા છીએ.',
+      'volunteer_dispatch_hospital_accepted':
+          '{hospital} એ કટોકટી સ્વીકારી. એમ્બ્યુલન્સ સંકલન ચાલુ છે.',
+      'volunteer_dispatch_all_hospitals_notified':
+          'બધી હોસ્પિટલોને જાણ કરી. કટોકટી સેવાઓ તરફ લઈ જઈ રહ્યા છીએ.',
+      'sos_dispatch_alerting_nearest_trying':
+          'તમારા વિસ્તારની નજીકની હોસ્પિટલને સૂચિત કરી રહ્યા છીએ. {hospital} પ્રયાસ કરી રહ્યા છીએ.',
+      'sos_dispatch_escalating_tier_trying':
+          'પ્રતિસાદ નહીં. ટિયર {tier} સુધી વધારી રહ્યા છીએ. {hospital} પ્રયાસ કરી રહ્યા છીએ.',
+      'sos_dispatch_retry_previous_trying':
+          'પાછલી હોસ્પિટલ પાસેથી પ્રતિસાદ નહીં. {hospital} પ્રયાસ કરી રહ્યા છીએ.',
+      'sos_dispatch_all_hospitals_call_112':
+          'બધી હોસ્પિટલોને જાણ કરી. કટોકટી સેવાઓ માટે કૃપા કરીને 112 કૉલ કરો.',
     },
 
     // ── Punjabi (ਪੰਜਾਬੀ) ──────────────────────────────────────────────────
@@ -1794,7 +2373,23 @@ class AppLocalizations {
       'lifeline': 'ਲਾਈਫ਼ਲਾਈਨ',
       'nav_home': 'ਘਰ',
       'nav_map': 'ਨਕਸ਼ਾ',
+      'nav_grid': 'ਗ੍ਰਿਡ',
       'nav_profile': 'ਪ੍ਰੋਫ਼ਾਈਲ',
+      'map_caching_offline_pct': 'ਔਫਲਾਈਨ ਲਈ ਖੇਤਰ ਕੈਸ਼ ਹੋ ਰਿਹਾ ਹੈ — {pct}%',
+      'map_drill_practice_banner':
+          'ਅਭਿਆਸ ਗ੍ਰਿਡ: ਪਲਸਿੰਗ ਪਿੰਨ = ਡੈਮੋ ਸਰਗਰਮ ਅਲਰਟ। ਪਰਤਾਂ ਲਈ ਨਕਸ਼ਾ ਫਿਲਟਰ — ਅਸਲ ਡਾਟਾ ਨਹੀਂ।',
+      'map_recenter_tooltip': 'ਮੁੜ ਕੇਂਦਰਿਤ ਕਰੋ',
+      'map_legend_hospital': 'ਹਸਪਤਾਲ',
+      'map_legend_live_sos_history': 'ਲਾਈਵ SOS / ਇਤਿਹਾਸ',
+      'map_legend_past_this_hex': 'ਪਿਛਲਾ (ਇਹ ਹੈਕਸ)',
+      'map_legend_in_area': 'ਖੇਤਰ ਵਿੱਚ {n}',
+      'map_legend_in_cell': 'ਸੈਲ ਵਿੱਚ {n}',
+      'map_legend_volunteers_on_duty': 'ਡਿਊਟੀ \'ਤੇ ਸਵੈਇੱਛਕ',
+      'map_legend_volunteers_in_grid': 'ਗ੍ਰਿਡ ਵਿੱਚ {n}',
+      'map_legend_responder_scene': 'ਜਵਾਬਦੇਹ → ਦ੍ਰਿਸ਼',
+      'map_responder_routes_one': '{n} ਰਸਤਾ',
+      'map_responder_routes_many': '{n} ਰਸਤੇ',
+      'map_filters_title': 'ਨਕਸ਼ਾ ਫਿਲਟਰ',
       'step_prefix': 'ਕਦਮ',
       'highlights_steps': 'ਇੱਕ-ਇੱਕ ਕਰਕੇ ਕਦਮ ਦਿਖਾਉਂਦਾ ਹੈ',
       'offline_mode': 'ਆਫ਼ਲਾਈਨ — ਨੈੱਟਵਰਕ ਕੱਟਿਆ',
@@ -1836,14 +2431,45 @@ class AppLocalizations {
       'sos_tts_interview_saved':
           'ਸਾਰਾ ਇੰਟਰਵਿਊ ਡੇਟਾ ਸੁਰੱਖਿਤ। ਜਵਾਬਦੇਹਾਂ ਕੋਲ ਵਿਸਤਾਰ ਹੈ।',
       'sos_tts_map_routes':
-          'ਰੰਗੀਨ ਰਸਤਿਆਂ ਲਈ ਨਕਸ਼ਾ ਟੈਬ ਖੋਲ੍ਹੋ। ਐਮਰਜੈਂਸੀ ਵੌਇਸ ਚੈਨਲ ਤੇ ਰਹੋ।',
+          'ਨਕਸ਼ਾ ਟੈਬ ਖੋਲ੍ਹੋ: ਲਾਲ ਨਿਯੁਕਤ ਹਸਪਤਾਲ ਦਾ ਸੜਕ ਰਸਤਾ ਜਾਂ ਨੇੜੇ ਦਾ ਰਸਤਾ; ਹਰਾ ਸਵੈਸੇਵਕ ਰਸਤਾ। ਐਮਰਜੈਂਸੀ ਵੌਇਸ ਚੈਨਲ ਤੇ ਰਹੋ।',
+      'sos_tts_emergency_contacts_on_file':
+          'Your emergency contact from your profile is attached to this SOS. SMS updates may be sent when that option is enabled.',
       'sos_tts_conscious_no_answer_attempt':
           'ਕੋਈ ਜਵਾਬ ਨਹੀਂ। ਹੋਸ਼ ਜਾਂਚ {max} ਵਿੱਚੋਂ {n}। ਇੱਕ ਮਿੰਟ ਬਾਅਦ ਫਿਰ ਪੁੱਛਾਂਗੇ।',
       'volunteer_victim_medical_card': 'ਪੀੜਤ ਮੈਡੀਕਲ ਕਾਰਡ',
+      'volunteer_dispatch_milestone_title': 'ਡਿਸਪੈਚ ਅੱਪਡੇਟ',
+      'volunteer_dispatch_milestone_hospital': 'ਹਸਪਤਾਲ ਨੇ ਸਵੀਕਾਰ ਕੀਤਾ: {hospital}',
+      'volunteer_dispatch_milestone_unit': 'ਐਂਬੂਲੈਂਸ ਯੂਨਿਟ: {unit}',
+      'volunteer_dispatch_milestone_crew_pending': 'ਐਂਬੂਲੈਂਸ ਕਰੂ: ਤਾਲਮੇਲ…',
+      'volunteer_dispatch_milestone_en_route': 'ਐਂਬੂਲੈਂਸ ਰਸਤੇ ਵਿੱਚ',
+      'volunteer_triage_qr_report_title': 'QR ਜਾਂ ਟੈਪ ਰਿਪੋਰਟ',
+      'volunteer_triage_qr_report_subtitle':
+          'ਹੈਂਡਆਫ ਲਈ ਕੋਡ ਸਕੈਨ ਕਰੋ ਜਾਂ ਘਟਨਾ ਰਿਪੋਰਟ ਸੇਵ ਕਰਨ ਲਈ ਟੈਪ ਕਰੋ।',
+      'volunteer_triage_show_qr': 'QR ਦਿਖਾਓ',
+      'volunteer_triage_tap_report': 'ਰਿਪੋਰਟ',
+      'volunteer_triage_qr_title': 'ਘਟਨਾ ਹੈਂਡਆਫ QR',
+      'volunteer_triage_qr_body': 'ਸਟਰਕਚਰਡ ਡੇਟਾ ਲਈ ਸਟਾਫ ਜਾਂ EMS ਨਾਲ ਸਾਂਝਾ ਕਰੋ।',
+      'volunteer_triage_report_saved': 'ਰਿਪੋਰਟ ਇਸ ਘਟਨਾ ਹੇਠ ਸੇਵ ਹੋਈ।',
+      'volunteer_triage_report_failed': 'ਰਿਪੋਰਟ ਸੇਵ ਨਹੀਂ ਹੋ ਸਕੀ: ',
       'volunteer_victim_medical_offline_hint': 'SOS ਪੈਕੇਟ ਤੋਂ — ਔਫਲਾਈਨ ਕੈਸ਼ ਤੋਂ।',
       'volunteer_victim_consciousness_title': 'ਹੋਸ਼',
       'volunteer_victim_three_questions': 'ਸ਼ੁਰੂਆਤੀ ਜਵਾਬ',
       'volunteer_major_updates_log': 'ਸਿਰਫ਼ ਮੁੱਖ ਅੱਪਡੇਟ',
+      'volunteer_dispatch_escalating_tier_trying_hospital':
+          'ਟੀਅਰ {tier} ਤੱਕ ਵਧਾ ਰਹੇ ਹਾਂ। ਹਸਪਤਾਲ {hospital} ਕੋਸ਼ਿਸ਼ ਕਰ ਰਹੇ ਹਾਂ।',
+      'volunteer_dispatch_trying_hospital': 'ਹਸਪਤਾਲ {hospital} ਕੋਸ਼ਿਸ਼ ਕਰ ਰਹੇ ਹਾਂ।',
+      'volunteer_dispatch_hospital_accepted':
+          '{hospital} ਨੇ ਐਮਰਜੈਂਸੀ ਸਵੀਕਾਰ ਕੀਤੀ। ਐਂਬੂਲੈਂਸ ਤਾਲਮੇਲ ਜਾਰੀ ਹੈ।',
+      'volunteer_dispatch_all_hospitals_notified':
+          'ਸਾਰੇ ਹਸਪਤਾਲਾਂ ਨੂੰ ਸੂਚਿਤ ਕੀਤਾ। ਐਮਰਜੈਂਸੀ ਸੇਵਾਵਾਂ ਵੱਲ ਭੇਜ ਰਹੇ ਹਾਂ।',
+      'sos_dispatch_alerting_nearest_trying':
+          'ਤੁਹਾਡੇ ਖੇਤਰ ਦੇ ਨੇੜਲੇ ਹਸਪਤਾਲ ਨੂੰ ਅਲਰਟ ਕਰ ਰਹੇ ਹਾਂ। {hospital} ਕੋਸ਼ਿਸ਼ ਕਰ ਰਹੇ ਹਾਂ।',
+      'sos_dispatch_escalating_tier_trying':
+          'ਕੋਈ ਜਵਾਬ ਨਹੀਂ। ਟੀਅਰ {tier} ਤੱਕ ਵਧਾ ਰਹੇ ਹਾਂ। {hospital} ਕੋਸ਼ਿਸ਼ ਕਰ ਰਹੇ ਹਾਂ।',
+      'sos_dispatch_retry_previous_trying':
+          'ਪਿਛਲੇ ਹਸਪਤਾਲ ਤੋਂ ਕੋਈ ਜਵਾਬ ਨਹੀਂ। {hospital} ਕੋਸ਼ਿਸ਼ ਕਰ ਰਹੇ ਹਾਂ।',
+      'sos_dispatch_all_hospitals_call_112':
+          'ਸਾਰੇ ਹਸਪਤਾਲਾਂ ਨੂੰ ਸੂਚਿਤ ਕੀਤਾ। ਐਮਰਜੈਂਸੀ ਸੇਵਾਵਾਂ ਲਈ ਕਿਰਪਾ ਕਰਕੇ 112 ਤੇ ਕਾਲ ਕਰੋ।',
     },
 
     // ── Odia (ଓଡ଼ିଆ) ──────────────────────────────────────────────────────
@@ -1892,7 +2518,23 @@ class AppLocalizations {
       'lifeline': 'ଲାଇଫଲାଇନ',
       'nav_home': 'ହୋମ',
       'nav_map': 'ମ୍ୟାପ',
+      'nav_grid': 'ଗ୍ରିଡ୍',
       'nav_profile': 'ପ୍ରୋଫାଇଲ',
+      'map_caching_offline_pct': 'ଅଫଲାଇନ୍ ପାଇଁ କ୍ଷେତ୍ର କ୍ୟାସ୍ ହେଉଛି — {pct}%',
+      'map_drill_practice_banner':
+          'ଅଭ୍ୟାସ ଗ୍ରିଡ୍: ପଲ୍ସିଂ ପିନ୍ = ଡେମୋ ସକ୍ରିୟ ସତର୍କତା। ସ୍ତର ପାଇଁ ମାନଚିତ୍ର ଫିଲ୍ଟର — ପ୍ରକୃତ ଡାଟା ନୁହେଁ।',
+      'map_recenter_tooltip': 'ପୁନର୍କେନ୍ଦ୍ରିତ କରନ୍ତୁ',
+      'map_legend_hospital': 'ଡାକ୍ତରଖାନା',
+      'map_legend_live_sos_history': 'ଲାଇଭ୍ SOS / ଇତିହାସ',
+      'map_legend_past_this_hex': 'ଅତୀତ (ଏହି ହେକ୍ସ)',
+      'map_legend_in_area': 'କ୍ଷେତ୍ରରେ {n}',
+      'map_legend_in_cell': 'ସେଲରେ {n}',
+      'map_legend_volunteers_on_duty': 'ଡ୍ୟୁଟିରେ ସ୍ୱେଚ୍ଛାସେବୀ',
+      'map_legend_volunteers_in_grid': 'ଗ୍ରିଡରେ {n}',
+      'map_legend_responder_scene': 'ପ୍ରତିକ୍ରିୟାକାରୀ → ଦୃଶ୍ୟ',
+      'map_responder_routes_one': '{n} ମାର୍ଗ',
+      'map_responder_routes_many': '{n} ମାର୍ଗ',
+      'map_filters_title': 'ମାନଚିତ୍ର ଫିଲ୍ଟର',
       'step_prefix': 'ପଦକ୍ଷେପ',
       'highlights_steps': 'ଗୋଟିଏ ଗୋଟିଏ କରି ପଦକ୍ଷେପ ଦେଖାଏ',
       'offline_mode': 'ଅଫଲାଇନ — ନେଟୱାର୍କ ବିଚ୍ଛିନ୍ନ',
@@ -1934,14 +2576,45 @@ class AppLocalizations {
       'sos_tts_interview_saved':
           'ସମସ୍ତ ସାକ୍ଷାତକାର ଡାଟା ସେଭ୍ ହେଲା। ପ୍ରତିକ୍ରିୟାକାରୀଙ୍କ ପାଖରେ ବିବରଣୀ ଅଛି।',
       'sos_tts_map_routes':
-          'ରଙ୍ଗୀନ ରାସ୍ତା ପାଇଁ ମ୍ୟାପ୍ ଟ୍ୟାବ୍ ଖୋଲନ୍ତୁ। ଜରୁରୀ ଭଏସ୍ ଚ୍ୟାନେଲରେ ରୁହନ୍ତୁ।',
+          'ମ୍ୟାପ୍ ଟ୍ୟାବ୍ ଖୋଲନ୍ତୁ: ଲାଲ୍ ନିୟୁକ୍ତ ଡାକ୍ତରଖାନାକୁ ରାସ୍ତା କିମ୍ବା ନିକଟ ମାର୍ଗ; ସବୁଜ ସ୍ୱେଚ୍ଛାସେବୀ ମାର୍ଗ। ଜରୁରୀ ଭଏସ୍ ଚ୍ୟାନେଲରେ ରୁହନ୍ତୁ।',
+      'sos_tts_emergency_contacts_on_file':
+          'Your emergency contact from your profile is attached to this SOS. SMS updates may be sent when that option is enabled.',
       'sos_tts_conscious_no_answer_attempt':
           'ଉତ୍ତର ନାହିଁ। ସଚେତନତା ଯାଞ୍ଚ {max} ରେ {n}। ଏକ ମିନିଟ୍ ପରେ ପୁନଃ ପଚାରିବୁ।',
       'volunteer_victim_medical_card': 'ପୀଡିତ ମେଡିକାଲ୍ କାର୍ଡ',
+      'volunteer_dispatch_milestone_title': 'ଡିସପାଚ୍ ଅପଡେଟ୍',
+      'volunteer_dispatch_milestone_hospital': 'ଡାକ୍ତରଖାନା ଗ୍ରହଣ କଲା: {hospital}',
+      'volunteer_dispatch_milestone_unit': 'ଆମ୍ବୁଲାନ୍ସ ୟୁନିଟ୍: {unit}',
+      'volunteer_dispatch_milestone_crew_pending': 'ଆମ୍ବୁଲାନ୍ସ କ୍ରୁ: ସମନ୍ୱୟ…',
+      'volunteer_dispatch_milestone_en_route': 'ଆମ୍ବୁଲାନ୍ସ ମାର୍ଗରେ',
+      'volunteer_triage_qr_report_title': 'QR କିମ୍ବା ଟ୍ୟାପ୍ ରିପୋର୍ଟ',
+      'volunteer_triage_qr_report_subtitle':
+          'ହ୍ୟାଣ୍ଡଅଫ୍ ପାଇଁ କୋଡ୍ ସ୍କାନ୍ କରନ୍ତୁ କିମ୍ବା ଘଟଣା ରିପୋର୍ଟ ସେଭ୍ ପାଇଁ ଟ୍ୟାପ୍ କରନ୍ତୁ।',
+      'volunteer_triage_show_qr': 'QR ଦେଖାନ୍ତୁ',
+      'volunteer_triage_tap_report': 'ରିପୋର୍ଟ',
+      'volunteer_triage_qr_title': 'ଘଟଣା ହ୍ୟାଣ୍ଡଅଫ୍ QR',
+      'volunteer_triage_qr_body': 'ଗଠନାତ୍ମକ ଡାଟା ପାଇଁ ଷ୍ଟାଫ୍ କିମ୍ବା EMS ସହ ସେୟାର୍ କରନ୍ତୁ।',
+      'volunteer_triage_report_saved': 'ରିପୋର୍ଟ ଏହି ଘଟଣା ତଳେ ସେଭ୍ ହେଲା।',
+      'volunteer_triage_report_failed': 'ରିପୋର୍ଟ ସେଭ୍ ହେଲା ନାହିଁ: ',
       'volunteer_victim_medical_offline_hint': 'SOS ପ୍ୟାକେଟ୍ ଠାରୁ — ଅଫଲାଇନ୍ କ୍ୟାଶରୁ।',
       'volunteer_victim_consciousness_title': 'ସଚେତନତା',
       'volunteer_victim_three_questions': 'ଆରମ୍ଭିକ ଉତ୍ତର',
       'volunteer_major_updates_log': 'କେବଳ ମୁଖ୍ୟ ଅପଡେଟ୍',
+      'volunteer_dispatch_escalating_tier_trying_hospital':
+          'ଟିଅର {tier} ପର୍ଯ୍ୟନ୍ତ ବୃଦ୍ଧି କରୁଛୁ। ଡାକ୍ତରଖାନା {hospital} ଚେଷ୍ଟା କରୁଛୁ।',
+      'volunteer_dispatch_trying_hospital': 'ଡାକ୍ତରଖାନା {hospital} ଚେଷ୍ଟା କରୁଛୁ।',
+      'volunteer_dispatch_hospital_accepted':
+          '{hospital} ଜରୁରୀ ଗ୍ରହଣ କଲା। ଆମ୍ବୁଲାନ୍ସ ସମନ୍ୱୟ ଚାଲିଛି।',
+      'volunteer_dispatch_all_hospitals_notified':
+          'ସମସ୍ତ ଡାକ୍ତରଖାନାକୁ ସୂଚିତ କଲୁ। ଜରୁରୀ ସେବାକୁ ବଢ଼ାଉଛୁ।',
+      'sos_dispatch_alerting_nearest_trying':
+          'ଆପଣଙ୍କ ଅଞ୍ଚଳର ନିକଟତମ ଡାକ୍ତରଖାନାକୁ ସତର୍କ କରୁଛୁ। {hospital} ଚେଷ୍ଟା କରୁଛୁ।',
+      'sos_dispatch_escalating_tier_trying':
+          'କୌଣସି ଉତ୍ତର ନାହିଁ। ଟିଅର {tier} ପର୍ଯ୍ୟନ୍ତ ବୃଦ୍ଧି କରୁଛୁ। {hospital} ଚେଷ୍ଟା କରୁଛୁ।',
+      'sos_dispatch_retry_previous_trying':
+          'ପୂର୍ବ ଡାକ୍ତରଖାନାରୁ ଉତ୍ତର ନାହିଁ। {hospital} ଚେଷ୍ଟା କରୁଛୁ।',
+      'sos_dispatch_all_hospitals_call_112':
+          'ସମସ୍ତ ଡାକ୍ତରଖାନାକୁ ସୂଚିତ କଲୁ। ଜରୁରୀ ସେବା ପାଇଁ ଦୟାକରି 112 କୁ କଲ୍ କରନ୍ତୁ।',
     },
 
     // ── Urdu (اردو) ────────────────────────────────────────────────────────
@@ -1990,7 +2663,23 @@ class AppLocalizations {
       'lifeline': 'لائف لائن',
       'nav_home': 'ہوم',
       'nav_map': 'نقشہ',
+      'nav_grid': 'گرڈ',
       'nav_profile': 'پروفائل',
+      'map_caching_offline_pct': 'آف لائن کے لیے علاقہ کیش ہو رہا ہے — {pct}%',
+      'map_drill_practice_banner':
+          'مشق گرڈ: پلسنگ پن = ڈیمو فعال الرٹس۔ پرتوں کے لیے نقشہ فلٹر — حقیقی ڈیٹا نہیں۔',
+      'map_recenter_tooltip': 'دوبارہ مرکز میں لائیں',
+      'map_legend_hospital': 'ہسپتال',
+      'map_legend_live_sos_history': 'لائیو SOS / تاریخ',
+      'map_legend_past_this_hex': 'گزشتہ (یہ ہیکس)',
+      'map_legend_in_area': 'علاقے میں {n}',
+      'map_legend_in_cell': 'سیل میں {n}',
+      'map_legend_volunteers_on_duty': 'ڈیوٹی پر رضاکار',
+      'map_legend_volunteers_in_grid': 'گرڈ میں {n}',
+      'map_legend_responder_scene': 'جواب دہندہ → منظر',
+      'map_responder_routes_one': '{n} راستہ',
+      'map_responder_routes_many': '{n} راستے',
+      'map_filters_title': 'نقشہ فلٹر',
       'step_prefix': 'قدم',
       'highlights_steps': 'ایک ایک کر کے قدم دکھاتا ہے',
       'offline_mode': 'آف لائن — نیٹ ورک منقطع',
@@ -2063,14 +2752,45 @@ class AppLocalizations {
       'sos_tts_interview_saved':
           'متاثرہ انٹرویو ڈیٹا محفوظ۔ جواب دہندگان کے پاس تفصیل ہے۔',
       'sos_tts_map_routes':
-          'رنگین راستوں کے لیے نقشہ ٹیب کھولیں۔ ایمرجنسی وائس چینل پر رہیں۔',
+          'نقشہ ٹیب کھولیں: سرخ مقررہ ہسپتال کا سڑک کا راستہ یا قریبی راستہ؛ سبز رضاکار کا راستہ۔ ایمرجنسی وائس چینل پر رہیں۔',
+      'sos_tts_emergency_contacts_on_file':
+          'Your emergency contact from your profile is attached to this SOS. SMS updates may be sent when that option is enabled.',
       'sos_tts_conscious_no_answer_attempt':
           'کوئی جواب نہیں۔ ہوش کی جانچ {max} میں سے {n}۔ ایک منٹ بعد پھر پوچھیں گے۔',
       'volunteer_victim_medical_card': 'متاثرہ میڈیکل کارڈ',
+      'volunteer_dispatch_milestone_title': 'ڈسپیچ اپ ڈیٹس',
+      'volunteer_dispatch_milestone_hospital': 'ہسپتال نے قبول کیا: {hospital}',
+      'volunteer_dispatch_milestone_unit': 'ایمبولینس یونٹ: {unit}',
+      'volunteer_dispatch_milestone_crew_pending': 'ایمبولینس عملہ: ہم آہنگی…',
+      'volunteer_dispatch_milestone_en_route': 'ایمبولینس راستے میں',
+      'volunteer_triage_qr_report_title': 'QR یا ٹیپ رپورٹ',
+      'volunteer_triage_qr_report_subtitle':
+          'ہینڈ آف کے لیے کوڈ اسکین کریں یا واقعے کی رپورٹ محفوظ کرنے کے لیے ٹیپ کریں۔',
+      'volunteer_triage_show_qr': 'QR دکھائیں',
+      'volunteer_triage_tap_report': 'رپورٹ',
+      'volunteer_triage_qr_title': 'واقعہ ہینڈ آف QR',
+      'volunteer_triage_qr_body': 'ساختی ڈیٹا کے لیے عملے یا EMS کے ساتھ شیئر کریں۔',
+      'volunteer_triage_report_saved': 'رپورٹ اس واقعے کے تحت محفوظ ہو گئی۔',
+      'volunteer_triage_report_failed': 'رپورٹ محفوظ نہیں ہو سکی: ',
       'volunteer_victim_medical_offline_hint': 'SOS پیکٹ سے — آف لائن کیش سے۔',
       'volunteer_victim_consciousness_title': 'ہوش',
       'volunteer_victim_three_questions': 'ابتدائی جوابات',
       'volunteer_major_updates_log': 'صرف اہم اپ ڈیٹس',
+      'volunteer_dispatch_escalating_tier_trying_hospital':
+          'ٹیئر {tier} تک بڑھا رہے ہیں۔ ہسپتال {hospital} آزما رہے ہیں۔',
+      'volunteer_dispatch_trying_hospital': 'ہسپتال {hospital} آزما رہے ہیں۔',
+      'volunteer_dispatch_hospital_accepted':
+          '{hospital} نے ایمرجنسی قبول کی۔ ایمبولینس ہم آہنگی جاری ہے۔',
+      'volunteer_dispatch_all_hospitals_notified':
+          'تمام ہسپتالوں کو مطلع کیا۔ ایمرجنسی خدمات تک بڑھا رہے ہیں۔',
+      'sos_dispatch_alerting_nearest_trying':
+          'آپ کے علاقے کے قریب ترین ہسپتال کو الرٹ کر رہے ہیں۔ {hospital} آزما رہے ہیں۔',
+      'sos_dispatch_escalating_tier_trying':
+          'کوئی جواب نہیں۔ ٹیئر {tier} تک بڑھا رہے ہیں۔ {hospital} آزما رہے ہیں۔',
+      'sos_dispatch_retry_previous_trying':
+          'پچھلے ہسپتال سے کوئی جواب نہیں۔ {hospital} آزما رہے ہیں۔',
+      'sos_dispatch_all_hospitals_call_112':
+          'تمام ہسپتالوں کو مطلع کیا۔ ایمرجنسی خدمات کے لیے براہ کرم 112 پر کال کریں۔',
       'quick_sos_victim_breathing_q': 'کیا شخص سانس لے رہا ہے؟',
       'quick_sos_label_yes': 'ہاں',
       'quick_sos_label_no': 'نہیں',

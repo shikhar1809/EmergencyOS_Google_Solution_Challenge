@@ -22,6 +22,8 @@ class OpsHospitalRow {
   final int bloodUnitsAvailable;
   /// True when `ops_hospitals/{id}` contains `staffCredentials` from onboarding.
   final bool hasStaffCredentials;
+  /// Hospital dashboard: when false, main map shows this facility as offline for routing visibility.
+  final bool mapListingOnline;
   /// Legacy field; per-hospital hex dispatch filtering is no longer used in-app.
   final bool coverageHexUseCustom;
   final List<String> coverageHexKeys;
@@ -42,6 +44,7 @@ class OpsHospitalRow {
     this.specialistsOnCall = 0,
     this.bloodUnitsAvailable = 0,
     this.hasStaffCredentials = false,
+    this.mapListingOnline = true,
     this.coverageHexUseCustom = false,
     this.coverageHexKeys = const [],
   });
@@ -73,6 +76,7 @@ class OpsHospitalRow {
       specialistsOnCall: (d['specialistsOnCall'] as num?)?.toInt() ?? 0,
       bloodUnitsAvailable: (d['bloodUnitsAvailable'] as num?)?.toInt() ?? 0,
       hasStaffCredentials: hasStaffCredentials,
+      mapListingOnline: d['mapListingOnline'] is bool ? d['mapListingOnline'] as bool : true,
       coverageHexUseCustom: d['coverageHexUseCustom'] == true,
       coverageHexKeys: coverageHexKeys,
     );
@@ -188,6 +192,21 @@ class OpsHospitalService {
     }, SetOptions(merge: true));
   }
 
+  /// Merge-only update for allocator-facing specialties (Live Operations tab).
+  /// Does not touch beds, blood bank flag, or map listing.
+  static Future<void> updateOfferedServicesOnly({
+    required String id,
+    required List<String> offeredServices,
+  }) async {
+    await _db.collection(_col).doc(id.trim()).set(
+      {
+        'offeredServices': offeredServices,
+        'updatedAt': FieldValue.serverTimestamp(),
+      },
+      SetOptions(merge: true),
+    );
+  }
+
   /// One merge write for beds + services (admin hospital editor). Avoids a snapshot
   /// between separate writes that can confuse in-memory form state.
   static Future<void> updateBedsAndServices({
@@ -228,6 +247,19 @@ class OpsHospitalService {
   ///
   /// Using one [updatedAt] bump prevents Firestore snapshots from arriving between
   /// partial writes; those used to reset local service chips from stale data.
+  static Future<void> updateMapListingOnline({
+    required String id,
+    required bool mapListingOnline,
+  }) async {
+    await _db.collection(_col).doc(id.trim()).set(
+      {
+        'mapListingOnline': mapListingOnline,
+        'updatedAt': FieldValue.serverTimestamp(),
+      },
+      SetOptions(merge: true),
+    );
+  }
+
   static Future<void> updateLiveOpsFull({
     required String id,
     required int bedsAvailable,

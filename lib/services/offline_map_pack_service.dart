@@ -9,6 +9,7 @@ class OfflineMapPackService {
   static const _routesKey = 'offline_map_pack_routes_v3';
   static const _readyKey = 'offline_map_pack_ready_v3';
   static const _lastLocationKey = 'offline_map_last_location_v1';
+  static const _lastPackRadiusMKey = 'offline_map_pack_radius_m_v1';
 
   static List<LatLng> _decodePoints(Map<String, dynamic>? m) {
     if (m == null) return [];
@@ -73,6 +74,16 @@ class OfflineMapPackService {
   }
 
   /// Loads the user's last known location, returns null if not saved.
+  static Future<void> saveLastPackRadiusMeters(int radiusMeters) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setInt(_lastPackRadiusMKey, radiusMeters.clamp(500, 100000));
+  }
+
+  static Future<int?> loadLastPackRadiusMeters() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getInt(_lastPackRadiusMKey);
+  }
+
   static Future<LatLng?> loadLastLocation() async {
     final prefs = await SharedPreferences.getInstance();
     final raw = prefs.getString(_lastLocationKey);

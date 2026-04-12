@@ -68,7 +68,7 @@ class _MasterDashboardHealthBarState extends State<MasterDashboardHealthBar> {
     final r = _report;
     if (r == null) return _MasterHealthTier.loading;
     if (!r.gcp.ok) return _MasterHealthTier.critical;
-    if (!r.livekit.ok || !r.sms.ok) return _MasterHealthTier.degraded;
+    if (!r.livekit.ok) return _MasterHealthTier.degraded;
     return _MasterHealthTier.healthy;
   }
 
@@ -83,12 +83,16 @@ class _MasterDashboardHealthBarState extends State<MasterDashboardHealthBar> {
           subtitle: 'GCP · LiveKit · SMS',
         );
       case _MasterHealthTier.healthy:
+        final r = _report;
+        final smsNote = r != null && !r.sms.ok;
         return (
           bg: const Color(0xFF1B5E20),
           fg: const Color(0xFFE8F5E9),
           icon: Icons.health_and_safety_rounded,
           title: 'All systems operational',
-          subtitle: 'Firestore, LiveKit, and SMS checks passed',
+          subtitle: smsNote
+              ? 'Firestore and LiveKit OK · SMS relay optional (not configured)'
+              : 'Firestore, LiveKit, and SMS checks passed',
         );
       case _MasterHealthTier.degraded:
         return (
@@ -115,7 +119,6 @@ class _MasterDashboardHealthBarState extends State<MasterDashboardHealthBar> {
   static String _degradedSubtitle(OpsSystemHealthReport r) {
     final parts = <String>[];
     if (!r.livekit.ok) parts.add('LiveKit');
-    if (!r.sms.ok) parts.add('SMS (Twilio)');
     if (parts.isEmpty) return 'Review Systems tab for details';
     return 'Issue: ${parts.join(' · ')} — tap for details';
   }

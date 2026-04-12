@@ -30,6 +30,20 @@ class VoiceCommsService {
   static bool _speaking = false;
   static Timer? _stuckTimer;
 
+  /// Latin-style sentence boundaries; text without these stays one segment (e.g. Hindi).
+  static final RegExp _sentenceBoundary = RegExp(r'(?<=[.!?])\s+');
+
+  static List<String> _splitSpeakSegments(String text) {
+    final t = text.trim();
+    if (t.isEmpty) return const [];
+    final parts = t
+        .split(_sentenceBoundary)
+        .map((s) => s.trim())
+        .where((s) => s.isNotEmpty)
+        .toList();
+    return parts.isEmpty ? <String>[t] : parts;
+  }
+
   static const Map<String, Map<String, String>> _translations = {
     'hi': {
       'Your SOS is active now. Help will be arriving soon.':
@@ -143,6 +157,54 @@ class VoiceCommsService {
     }
   }
 
+  static bool _runeInArabicScript(int r) {
+    return (r >= 0x0600 && r <= 0x06FF) ||
+        (r >= 0x0750 && r <= 0x077F) ||
+        (r >= 0x08A0 && r <= 0x08FF) ||
+        (r >= 0xFB50 && r <= 0xFDFF) ||
+        (r >= 0xFE70 && r <= 0xFEFF);
+  }
+
+  /// Devanagari, Bengali, Gurmukhi, Gujarati, Oriya, Tamil, Telugu, Kannada, Malayalam.
+  static bool _runeInIndicBrahmic(int r) {
+    return (r >= 0x0900 && r <= 0x0D7F);
+  }
+
+  /// True if [text] contains Arabic script (e.g. Urdu).
+  static bool _hasArabicScript(String text) {
+    for (final r in text.runes) {
+      if (_runeInArabicScript(r)) return true;
+    }
+    return false;
+  }
+
+  /// True if [text] contains Brahmic script used by app locales.
+  static bool _hasIndicScript(String text) {
+    for (final r in text.runes) {
+      if (_runeInIndicBrahmic(r)) return true;
+    }
+    return false;
+  }
+
+  /// TTS BCP-47 tag for this utterance (policy: **script-based**, not UI-only).
+  ///
+  /// - **Indic / Arabic script** in [spoken] → use [appLocale]’s engine ([bcp47ForLocale]) so
+  ///   native-script strings get a matching voice when the OS/browser has that pack.
+  /// - **Latin-only** and app locale is **English** → `en-IN` for clear English delivery.
+  /// - **Latin-only** and app locale is **not** English (e.g. Spanish UI) → that locale’s voice.
+  ///
+  /// Tradeoff: mixed Latin + Indic in one string is tagged by the **dominant script** only;
+  /// hospital dispatch lines are localized separately so Indic TTS applies to full sentences.
+  /// Native [speech_io] falls back to `en-IN` if `isLanguageAvailable` fails; web [index.html]
+  /// aligns `utter.lang` with the chosen `voice` to avoid silent synthesis.
+  static String _bcp47ForSpokenText(String spoken, String appLocale) {
+    final lc = appLocale.toLowerCase();
+    if (_hasArabicScript(spoken)) return bcp47ForLocale('ur');
+    if (_hasIndicScript(spoken)) return bcp47ForLocale(lc);
+    if (lc != 'en') return bcp47ForLocale(lc);
+    return 'en-IN';
+  }
+
   /// Full string or longest-prefix (e.g. ETA suffix after a known prefix).
   static String _translate(String text, String locale) {
     final map = _translations[locale];
@@ -169,7 +231,19 @@ class VoiceCommsService {
     return _cachedLocale;
   }
 
+  /// Clears the "loaded" flag so the next [getLocale] re-reads [SharedPreferences].
+  /// Does **not** clear [_cachedLocale] — that value remains the best hint for sync paths
+  /// like [readAloudImmediate] (web user-gesture) until prefs are refreshed.
   static void invalidateLocaleCache() => _localeLoaded = false;
+
+  /// Call when the user changes app language (or after loading prefs) so TTS sees the
+  /// new code without waiting for an async [getLocale].
+  static void syncLocaleFromPreference(String languageCode) {
+    final c = languageCode.trim().toLowerCase();
+    if (c.isEmpty) return;
+    _cachedLocale = c;
+    _localeLoaded = true;
+  }
 
   /// Call synchronously from a tap / pointer-up **before** any `await` so web TTS is allowed.
   static void primeForVoiceGuidance() => primeSpeechAudioContext();
@@ -178,9 +252,11 @@ class VoiceCommsService {
   static void readAloudImmediate(String text) {
     final t = text.trim();
     if (t.isEmpty || silenceMode) return;
-    final locale = _localeLoaded ? _cachedLocale : 'en';
-    final bcp47 = bcp47ForLocale(locale);
+    // Never assume English when prefs have not been read yet — [_cachedLocale] may still
+    // hold the last known code (e.g. hi). Forcing 'en' here broke Hindi/Indic TTS on web.
+    final locale = _cachedLocale;
     final localized = _translate(t, locale);
+    final bcp47 = _bcp47ForSpokenText(localized, locale);
     _enqueueSpeak(localized, bcp47, null);
   }
 
@@ -226,8 +302,8 @@ class VoiceCommsService {
       return;
     }
     final locale = await getLocale();
-    final bcp47 = bcp47ForLocale(locale);
     final localized = _translate(t, locale);
+    final bcp47 = _bcp47ForSpokenText(localized, locale);
     _enqueueSpeak(localized, bcp47, null);
   }
 
@@ -245,14 +321,14 @@ class VoiceCommsService {
     if (t.isEmpty) return;
     final completer = Completer<void>();
     if (kIsWeb) {
-      final locale = _localeLoaded ? _cachedLocale : 'en';
-      final bcp47 = bcp47ForLocale(locale);
+      final locale = _cachedLocale;
       final localized = _translate(t, locale);
+      final bcp47 = _bcp47ForSpokenText(localized, locale);
       _enqueueSpeak(localized, bcp47, completer);
     } else {
       final locale = await getLocale();
-      final bcp47 = bcp47ForLocale(locale);
       final localized = _translate(t, locale);
+      final bcp47 = _bcp47ForSpokenText(localized, locale);
       _enqueueSpeak(localized, bcp47, completer);
     }
     await Future.any<void>([
@@ -284,7 +360,11 @@ class VoiceCommsService {
   // ── Queue ──────────────────────────────────────────────────────────────
 
   static void _enqueueSpeak(String text, String lang, Completer<void>? completer) {
-    _queue.add(_VoiceQueueItem(text, lang, completer));
+    final segments = _splitSpeakSegments(text);
+    for (var i = 0; i < segments.length; i++) {
+      final c = i == segments.length - 1 ? completer : null;
+      _queue.add(_VoiceQueueItem(segments[i], lang, c));
+    }
     if (!_speaking) _processQueue();
   }
 
@@ -297,10 +377,9 @@ class VoiceCommsService {
     _speaking = true;
     final item = _queue.removeAt(0);
 
-    // Proportional watchdog: ~90 ms per character + 4 s buffer (min 5 s).
-    // This prevents permanent queue stalls on Firefox/WebKit where onend
-    // never fires, without waiting a flat 20 s for short utterances.
-    final stuckMs = (item.text.length * 90 + 4000).clamp(5000, 60000);
+    // Last-resort watchdog only (onend/completion should win first). Conservative
+    // bounds avoid advancing the queue mid-utterance on slow TTS engines.
+    final stuckMs = (item.text.length * 220 + 12000).clamp(20000, 180000);
     _stuckTimer?.cancel();
     _stuckTimer = Timer(Duration(milliseconds: stuckMs), () {
       debugPrint('[VoiceComms] TTS stuck after ${stuckMs}ms — advancing queue');

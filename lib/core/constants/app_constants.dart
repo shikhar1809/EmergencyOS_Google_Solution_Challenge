@@ -25,8 +25,10 @@ class AppConstants {
   static const String googleMapsApiKey =
       String.fromEnvironment('GOOGLE_MAPS_API_KEY', defaultValue: '');
 
-  /// Google Maps Cloud Map ID (create a Dark map style in Google Cloud Console).
-  /// Needed for Flutter Web to reliably show dark themed maps.
+  /// Google Maps Cloud Map ID (optional; style is edited in Google Cloud Map Styles / Maps SDK).
+  /// When non-empty, embedded dark ops JSON in `google_maps_illustrative_light_style.dart` is not
+  /// applied: the Cloud-published style is used instead. Align that Cloud style with the
+  /// emergency-response palette, or omit this define to rely on embedded JSON only.
   static const String googleMapsDarkMapId =
       String.fromEnvironment('GOOGLE_MAPS_DARK_MAP_ID', defaultValue: '');
 

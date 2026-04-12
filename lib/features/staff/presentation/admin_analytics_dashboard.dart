@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -8,6 +9,7 @@ import 'package:intl/intl.dart';
 import 'package:fl_chart/fl_chart.dart';
 
 import '../../../core/constants/app_constants.dart';
+import '../../../core/constants/google_maps_illustrative_light_style.dart';
 import '../../../core/maps/eos_hybrid_map.dart';
 import '../../../core/maps/ops_map_controller.dart';
 import '../../../core/constants/india_ops_zones.dart';
@@ -16,10 +18,12 @@ import '../../../core/utils/ops_analytics_hex_grid.dart';
 import '../../../core/utils/ops_map_markers.dart';
 import '../../../core/utils/osrm_route_util.dart';
 import '../../../core/utils/fleet_map_icons.dart';
+import '../../../features/map/domain/emergency_zone_classification.dart';
 import '../../../services/incident_service.dart';
+import '../../../services/ops_zone_resource_catalog.dart';
+import '../../../services/volunteer_presence_service.dart';
 import '../../../services/ops_analytics_derived.dart';
 import '../../../services/ops_incident_analytics_digest.dart';
-import '../../../services/ops_lifeline_analytics_chat.dart';
 import '../domain/admin_panel_access.dart';
 import '../domain/command_center_accent.dart';
 import 'liveops_feedback_dashboard.dart';
@@ -28,7 +32,7 @@ import 'widgets/ops_analytics_trend_chart.dart';
 
 enum _AnalyticsCategory { sos, fleet, hospitals, volunteers, feedback }
 
-/// Live incident analytics: real-time metrics from Firestore + Gemini-backed Q&A on the same data.
+/// Live incident analytics: real-time metrics and maps from Firestore (SOS, fleet, hospitals, volunteers).
 class AdminAnalyticsDashboard extends StatefulWidget {
   const AdminAnalyticsDashboard({super.key, required this.access});
 
@@ -45,10 +49,6 @@ bool _excludeTrainingIncident(SosIncident e) {
 }
 
 class _AdminAnalyticsDashboardState extends State<AdminAnalyticsDashboard> {
-  final _aiCtrl = TextEditingController();
-  final _scrollAi = ScrollController();
-  final List<_AiMsg> _aiMsgs = [];
-  bool _aiLoading = false;
   IndiaOpsZone? _zone;
   Timer? _analyticsSimTimer;
   double _analyticsMapZoom = 11.0;
@@ -59,18 +59,48 @@ class _AdminAnalyticsDashboardState extends State<AdminAnalyticsDashboard> {
   String? _pendingHexKey;
   String? _confirmedHexKey;
 
+  StreamSubscription<QuerySnapshot<Map<String, dynamic>>>? _volunteerDutySub;
+  final List<QueryDocumentSnapshot<Map<String, dynamic>>> _volunteerDutyDocs =
+      [];
+  bool _analyticsShowOpsHexGrid = true;
+  EmergencyHexZoneModel? _cachedOpsCoverageHexModel;
+
   Color get _accent => CommandCenterAccent.forRole(widget.access.role).primary;
+
+  double _analyticsOpsHexCoverM(IndiaOpsZone z) => math.min(
+        kMaxCoverageRadiusM,
+        kCommandCenterHexCoverRadiusM,
+      );
+
+  void _rebuildAnalyticsOpsHex() {
+    final z = _zone;
+    if (z == null) return;
+    final coverM = _analyticsOpsHexCoverM(z);
+    _cachedOpsCoverageHexModel = buildEmergencyHexZones(
+      center: z.center,
+      coverRadiusM: coverM,
+      hospitals: OpsZoneResourceCatalog.hospitalsInZone(z),
+      volunteerPositions: OpsZoneResourceCatalog.volunteersInZone(
+        _volunteerDutyDocs,
+        z,
+      ).map((v) => LatLng(v.lat, v.lng)).toList(),
+    );
+  }
 
   @override
   void initState() {
     super.initState();
-    _aiMsgs.add(
-      const _AiMsg(
-        false,
-        'This assistant reads the **same live incident feed** as the metrics on the left. '
-        'Ask about volumes, EMS phases, volunteers, triage severity, SMS-linked cases, or trends.',
-      ),
-    );
+    _volunteerDutySub = VolunteerPresenceService.watchOnDutyUsers().listen((
+      snap,
+    ) {
+      if (!mounted) return;
+      setState(() {
+        _volunteerDutyDocs
+          ..clear()
+          ..addAll(snap.docs);
+        _rebuildAnalyticsOpsHex();
+      });
+    });
     _bootstrapZone();
     _analyticsSimTimer = Timer.periodic(const Duration(seconds: 1), (_) {
       if (context.mounted && _zone != null) setState(() {});
@@ -81,15 +111,17 @@ class _AdminAnalyticsDashboardState extends State<AdminAnalyticsDashboard> {
     await OpsMapMarkers.preload();
     await FleetMapIcons.preload();
     if (!context.mounted) return;
-    setState(() => _zone = IndiaOpsZones.lucknow);
+    setState(() {
+      _zone = IndiaOpsZones.lucknow;
+      _rebuildAnalyticsOpsHex();
+    });
   }
 
   @override
   void dispose() {
+    _volunteerDutySub?.cancel();
     _analyticsSimTimer?.cancel();
     _analyticsMapCtl?.dispose();
-    _aiCtrl.dispose();
-    _scrollAi.dispose();
     super.dispose();
   }
 
@@ -154,68 +186,6 @@ class _AdminAnalyticsDashboardState extends State<AdminAnalyticsDashboard> {
     }
     final h = OpsAnalyticsHexGrid.hexKeyForLatLng(pos, zone.center, hexSize);
     setState(() => _pendingHexKey = '${h.q},${h.r}');
-  }
-
-  void _scrollAiToEnd() {
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (_scrollAi.hasClients) {
-        _scrollAi.animateTo(
-          _scrollAi.position.maxScrollExtent,
-          duration: const Duration(milliseconds: 280),
-          curve: Curves.easeOut,
-        );
-      }
-    });
-  }
-
-  Future<void> _sendAi() async {
-    final text = _aiCtrl.text.trim();
-    if (text.isEmpty || _aiLoading) return;
-    setState(() {
-      _aiLoading = true;
-      _aiMsgs.add(_AiMsg(true, text));
-      _aiCtrl.clear();
-    });
-    _scrollAiToEnd();
-
-    try {
-      final hist = <Map<String, String>>[];
-      for (var i = 0; i < _aiMsgs.length - 1; i++) {
-        final m = _aiMsgs[i];
-        hist.add({'role': m.isUser ? 'user' : 'model', 'text': m.text});
-      }
-      final reply = await OpsLifelineAnalyticsChat.send(
-        message: text,
-        zone: _zone!,
-        history: hist,
-        scenario: 'Emergency operations center — live incident analytics',
-      );
-      if (context.mounted) setState(() => _aiMsgs.add(_AiMsg(false, reply)));
-    } catch (e) {
-      if (context.mounted)
-        setState(() => _aiMsgs.add(_AiMsg(false, 'AI error: $e')));
-    } finally {
-      if (context.mounted) setState(() => _aiLoading = false);
-      _scrollAiToEnd();
-    }
-  }
-
-  Future<void> _runAutoSummary() async {
-    _aiCtrl.text =
-        'Give a concise executive summary (5–7 bullets) of current operations from the live data: workload, EMS, volunteers, and any risks.';
-    await _sendAi();
-  }
-
-  Future<void> _runGeminiHotspot() async {
-    _aiCtrl.text =
-        'Using the hex hotspot and 7-day trend in the digest, where should we pre-stage ambulances and volunteers, and what is the main risk story?';
-    await _sendAi();
-  }
-
-  Future<void> _runGeminiTrend() async {
-    _aiCtrl.text =
-        'Explain the 7-day incident trend: is load accelerating, stable, or declining? What actions do you recommend?';
-    await _sendAi();
   }
 
   Widget _analyticsChip(_AnalyticsCategory c, String label, IconData icon) {
@@ -347,112 +317,6 @@ class _AdminAnalyticsDashboardState extends State<AdminAnalyticsDashboard> {
             color: Colors.white.withValues(alpha: 0.38),
             fontSize: 11,
             height: 1.35,
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildAiAssistantPanel() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Padding(
-          padding: const EdgeInsets.fromLTRB(10, 6, 10, 0),
-          child: Wrap(
-            spacing: 6,
-            runSpacing: 4,
-            children: [
-              TextButton(
-                onPressed: _aiLoading ? null : _runGeminiHotspot,
-                child: const Text(
-                  'Hotspot insight',
-                  style: TextStyle(fontSize: 11),
-                ),
-              ),
-              TextButton(
-                onPressed: _aiLoading ? null : _runGeminiTrend,
-                child: const Text(
-                  'Trend insight',
-                  style: TextStyle(fontSize: 11),
-                ),
-              ),
-            ],
-          ),
-        ),
-        Expanded(
-          child: ListView.builder(
-            controller: _scrollAi,
-            padding: const EdgeInsets.all(12),
-            itemCount: _aiMsgs.length,
-            itemBuilder: (_, i) {
-              final m = _aiMsgs[i];
-              return Align(
-                alignment: m.isUser
-                    ? Alignment.centerRight
-                    : Alignment.centerLeft,
-                child: Container(
-                  margin: const EdgeInsets.only(bottom: 8),
-                  padding: const EdgeInsets.all(10),
-                  constraints: const BoxConstraints(maxWidth: 320),
-                  decoration: BoxDecoration(
-                    color: m.isUser
-                        ? AppColors.accentBlue.withValues(alpha: 0.22)
-                        : Colors.white.withValues(alpha: 0.06),
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(
-                      color: Colors.white.withValues(alpha: 0.08),
-                    ),
-                  ),
-                  child: Text(
-                    m.text,
-                    style: TextStyle(
-                      color: Colors.white.withValues(alpha: 0.92),
-                      fontSize: 12,
-                      height: 1.4,
-                    ),
-                  ),
-                ),
-              );
-            },
-          ),
-        ),
-        if (_aiLoading) const LinearProgressIndicator(minHeight: 2),
-        Padding(
-          padding: const EdgeInsets.all(10),
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.end,
-            children: [
-              Expanded(
-                child: TextField(
-                  controller: _aiCtrl,
-                  minLines: 1,
-                  maxLines: 4,
-                  style: const TextStyle(color: Colors.white, fontSize: 13),
-                  decoration: InputDecoration(
-                    hintText: 'Ask about the live feed…',
-                    hintStyle: const TextStyle(
-                      color: Colors.white30,
-                      fontSize: 12,
-                    ),
-                    filled: true,
-                    fillColor: Colors.black26,
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                  ),
-                  onSubmitted: (_) => _sendAi(),
-                ),
-              ),
-              const SizedBox(width: 8),
-              FilledButton(
-                onPressed: _aiLoading ? null : _sendAi,
-                style: FilledButton.styleFrom(
-                  backgroundColor: AppColors.accentBlue,
-                ),
-                child: const Icon(Icons.send_rounded, size: 20),
-              ),
-            ],
           ),
         ),
       ],
@@ -741,6 +605,7 @@ class _AdminAnalyticsDashboardState extends State<AdminAnalyticsDashboard> {
                         const Color(0xFFFF5722).withValues(alpha: 0.5),
                         t,
                       )!,
+                      zIndex: 4,
                     ),
                   );
                 }
@@ -760,9 +625,33 @@ class _AdminAnalyticsDashboardState extends State<AdminAnalyticsDashboard> {
                       strokeColor: Colors.cyanAccent,
                       strokeWidth: 2,
                       fillColor: Colors.cyanAccent.withValues(alpha: 0.12),
+                      zIndex: 4,
                     ),
                   );
                 }
+
+                final opsCoveragePolygons = <Polygon>{};
+                if (_analyticsShowOpsHexGrid &&
+                    !_hexSelectMode &&
+                    _cachedOpsCoverageHexModel != null) {
+                  for (final p in _cachedOpsCoverageHexModel!.polygons) {
+                    opsCoveragePolygons.add(
+                      Polygon(
+                        polygonId:
+                            PolygonId('an_ops_${p.polygonId.value}'),
+                        points: p.points,
+                        fillColor: p.fillColor,
+                        strokeColor: p.strokeColor,
+                        strokeWidth: p.strokeWidth,
+                        zIndex: 1,
+                      ),
+                    );
+                  }
+                }
+                final allMapHexPolygons = {
+                  ...opsCoveragePolygons,
+                  ...hexPolygons,
+                };
 
                 final cat = _analyticsCategory;
                 final showFeedbackPane =
@@ -882,7 +771,8 @@ class _AdminAnalyticsDashboardState extends State<AdminAnalyticsDashboard> {
                       OpsAnalyticsTrendChart(counts: trend7, now: now),
                       const SizedBox(height: 12),
                       const Text(
-                        'Hex overlay on the map: 48h density (blue → orange). Not a dispatch boundary.',
+                        'Hex overlay: 48h incident density (blue → orange, tappable) on top; '
+                        'operational coverage tier grid (toggle) matches Live Ops overview.',
                         style: TextStyle(
                           color: Colors.white38,
                           fontSize: 10,
@@ -943,14 +833,6 @@ class _AdminAnalyticsDashboardState extends State<AdminAnalyticsDashboard> {
                             ),
                           ),
                         ),
-                        OutlinedButton.icon(
-                          onPressed: _aiLoading ? null : _runAutoSummary,
-                          style: OutlinedButton.styleFrom(
-                            foregroundColor: AppColors.accentBlue,
-                          ),
-                          icon: const Icon(Icons.auto_awesome, size: 18),
-                          label: const Text('AI summary'),
-                        ),
                       ],
                     ),
                     const SizedBox(height: 12),
@@ -962,7 +844,11 @@ class _AdminAnalyticsDashboardState extends State<AdminAnalyticsDashboard> {
                         FilledButton.tonal(
                           onPressed: () => setState(() {
                             _hexSelectMode = !_hexSelectMode;
-                            if (!_hexSelectMode) _pendingHexKey = null;
+                            if (!_hexSelectMode) {
+                              _pendingHexKey = null;
+                            } else {
+                              _analyticsShowOpsHexGrid = false;
+                            }
                           }),
                           style: FilledButton.styleFrom(
                             foregroundColor: _hexSelectMode
@@ -990,86 +876,23 @@ class _AdminAnalyticsDashboardState extends State<AdminAnalyticsDashboard> {
                             ),
                             child: const Text('Clear selection'),
                           ),
+                        FilterChip(
+                          label: const Text('Ops coverage grid'),
+                          selected: _analyticsShowOpsHexGrid,
+                          onSelected: (v) => setState(() {
+                            _analyticsShowOpsHexGrid = v;
+                          }),
+                          selectedColor:
+                              Colors.tealAccent.withValues(alpha: 0.2),
+                          checkmarkColor: Colors.tealAccent,
+                          labelStyle: TextStyle(
+                            color: _analyticsShowOpsHexGrid
+                                ? Colors.tealAccent
+                                : Colors.white70,
+                            fontSize: 12,
+                          ),
+                        ),
                       ],
-                    ),
-                    const SizedBox(height: 12),
-                    LayoutBuilder(
-                      builder: (ctx, c) {
-                        final narrow = c.maxWidth < 880;
-                        if (narrow) {
-                          return Column(
-                            crossAxisAlignment: CrossAxisAlignment.stretch,
-                            children: [
-                              metricsBelowMap,
-                              const SizedBox(height: 12),
-                              OutlinedButton.icon(
-                                onPressed:
-                                    _aiLoading ? null : _runGeminiHotspot,
-                                style: OutlinedButton.styleFrom(
-                                  foregroundColor: Colors.orangeAccent,
-                                ),
-                                icon: const Icon(
-                                  Icons.map_outlined,
-                                  size: 18,
-                                ),
-                                label: const Text('Ask AI: hotspots'),
-                              ),
-                              const SizedBox(height: 8),
-                              OutlinedButton.icon(
-                                onPressed: _aiLoading ? null : _runGeminiTrend,
-                                style: OutlinedButton.styleFrom(
-                                  foregroundColor: Colors.lightGreenAccent,
-                                ),
-                                icon: const Icon(
-                                  Icons.show_chart,
-                                  size: 18,
-                                ),
-                                label: const Text('Ask AI: 7d trend'),
-                              ),
-                            ],
-                          );
-                        }
-                        return Row(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Expanded(flex: 5, child: metricsBelowMap),
-                            const SizedBox(width: 16),
-                            Expanded(
-                              flex: 4,
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.stretch,
-                                children: [
-                                  OutlinedButton.icon(
-                                    onPressed:
-                                        _aiLoading ? null : _runGeminiHotspot,
-                                    style: OutlinedButton.styleFrom(
-                                      foregroundColor: Colors.orangeAccent,
-                                    ),
-                                    icon: const Icon(
-                                      Icons.map_outlined,
-                                      size: 18,
-                                    ),
-                                    label: const Text('Ask AI: hotspots'),
-                                  ),
-                                  const SizedBox(height: 8),
-                                  OutlinedButton.icon(
-                                    onPressed:
-                                        _aiLoading ? null : _runGeminiTrend,
-                                    style: OutlinedButton.styleFrom(
-                                      foregroundColor: Colors.lightGreenAccent,
-                                    ),
-                                    icon: const Icon(
-                                      Icons.show_chart,
-                                      size: 18,
-                                    ),
-                                    label: const Text('Ask AI: 7d trend'),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ],
-                        );
-                      },
                     ),
                   ],
                 );
@@ -1105,9 +928,25 @@ class _AdminAnalyticsDashboardState extends State<AdminAnalyticsDashboard> {
                         mapId: AppConstants.googleMapsDarkMapId.isNotEmpty
                             ? AppConstants.googleMapsDarkMapId
                             : null,
+                        style: effectiveGoogleMapsEmbeddedStyleJson(),
                         markers: markers,
                         polylines: analyticsVolunteerPolylines,
-                        polygons: hexPolygons,
+                        polygons: allMapHexPolygons,
+                        circles: _analyticsShowOpsHexGrid && !_hexSelectMode
+                            ? <Circle>{
+                                Circle(
+                                  circleId:
+                                      const CircleId('analytics_ops_hex_disk'),
+                                  center: zone.center,
+                                  radius: _analyticsOpsHexCoverM(zone),
+                                  fillColor: Colors.transparent,
+                                  strokeColor: const Color(0xFF37474F)
+                                      .withValues(alpha: 0.42),
+                                  strokeWidth: 1,
+                                  zIndex: 0,
+                                ),
+                              }
+                            : {},
                         zoomControlsEnabled: false,
                         myLocationButtonEnabled: false,
                         padding: EdgeInsets.zero,
@@ -1131,7 +970,7 @@ class _AdminAnalyticsDashboardState extends State<AdminAnalyticsDashboard> {
                                       color: _accent, size: 20),
                                   const SizedBox(width: 10),
                                   const Text(
-                                    'Tap a hex on the map',
+                                    'Tap a 48h density cell (colored overlay)',
                                     style: TextStyle(
                                       color: Colors.white,
                                       fontWeight: FontWeight.w700,
@@ -1216,7 +1055,7 @@ class _AdminAnalyticsDashboardState extends State<AdminAnalyticsDashboard> {
                   ),
                 );
 
-                final detailAndAi = Column(
+                final detailPanel = Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
                     hexFocusSummary(),
@@ -1226,7 +1065,7 @@ class _AdminAnalyticsDashboardState extends State<AdminAnalyticsDashboard> {
                             const EdgeInsets.fromLTRB(10, 0, 10, 6),
                         child: Text(
                           _confirmedHexKey != null
-                              ? 'Map zoomed to the selected hex. Clear selection on the left to reset the view.'
+                              ? 'Map zoomed to the selected hex. Tap Clear selection in the left rail to reset the view.'
                               : 'Pick a hex, then Confirm to zoom in and inspect.',
                           style: const TextStyle(
                             color: Colors.white38,
@@ -1235,39 +1074,13 @@ class _AdminAnalyticsDashboardState extends State<AdminAnalyticsDashboard> {
                           ),
                         ),
                       ),
-                    Padding(
-                      padding: const EdgeInsets.fromLTRB(10, 4, 10, 6),
-                      child: Row(
-                        children: [
-                          Icon(Icons.psychology_outlined,
-                              color: AppColors.accentBlue, size: 18),
-                          const SizedBox(width: 8),
-                          const Text(
-                            'Analytics AI',
-                            style: TextStyle(
-                              color: Colors.white,
-                              fontWeight: FontWeight.w800,
-                              fontSize: 13,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    const Padding(
-                      padding: EdgeInsets.fromLTRB(10, 0, 10, 6),
-                      child: Text(
-                        'Gemini reads the same live digest as this dashboard.',
-                        style: TextStyle(
-                          color: Colors.white38,
-                          fontSize: 9,
-                          height: 1.3,
-                        ),
-                      ),
-                    ),
                     Expanded(
-                      child: ColoredBox(
-                        color: const Color(0xFF161B22),
-                        child: _buildAiAssistantPanel(),
+                      child: Scrollbar(
+                        thumbVisibility: true,
+                        child: SingleChildScrollView(
+                          padding: const EdgeInsets.fromLTRB(10, 0, 10, 12),
+                          child: metricsBelowMap,
+                        ),
                       ),
                     ),
                   ],
@@ -1291,7 +1104,7 @@ class _AdminAnalyticsDashboardState extends State<AdminAnalyticsDashboard> {
                               const SizedBox(height: 14),
                               SizedBox(
                                 height: 400,
-                                child: detailAndAi,
+                                child: detailPanel,
                               ),
                             ],
                           ),
@@ -1323,9 +1136,9 @@ class _AdminAnalyticsDashboardState extends State<AdminAnalyticsDashboard> {
                               _analyticsDetailPanelOpen =
                                   !_analyticsDetailPanelOpen),
                           accent: _accent,
-                          title: 'Details & AI',
-                          openWidth: 360,
-                          body: detailAndAi,
+                          title: 'Details',
+                          openWidth: 420,
+                          body: detailPanel,
                         ),
                       ],
                     );
@@ -1339,7 +1152,7 @@ class _AdminAnalyticsDashboardState extends State<AdminAnalyticsDashboard> {
     );
   }
 
-  /// Hotspot, stat cards, pies, triage — under selection chips in the left analytics column.
+  /// Hotspot, stat cards, pies, triage — shown in the Details panel (trends & breakdown).
   List<Widget> _metricsRailTail({
     required _AnalyticsCategory cat,
     required Map<String, int> bins48,
@@ -1903,10 +1716,4 @@ class _AdminAnalyticsDashboardState extends State<AdminAnalyticsDashboard> {
       ],
     );
   }
-}
-
-class _AiMsg {
-  final bool isUser;
-  final String text;
-  const _AiMsg(this.isUser, this.text);
 }

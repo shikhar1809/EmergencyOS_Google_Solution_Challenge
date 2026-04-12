@@ -59,4 +59,44 @@ abstract final class LivekitCommsBridgeService {
     await local.setMicrophoneEnabled(canPublishAudio);
     return room;
   }
+
+  /// Hospital comms bridge for **fleet operators** (allotted unit). Uses `getCommsBridgeLivekitToken`
+  /// after backend allows `emsAcceptedBy` / crane on operation channel.
+  static Future<Room> connectFleetChannel({
+    required String channel,
+    required String incidentId,
+    String? boundHospitalDocId,
+    bool canPublishAudio = true,
+  }) async {
+    final hid = boundHospitalDocId?.trim();
+    final callable = FirebaseFunctions.instance.httpsCallable(
+      'getCommsBridgeLivekitToken',
+    );
+    final res = await callable.call({
+      'channel': channel,
+      'canPublishAudio': canPublishAudio,
+      if (incidentId.trim().isNotEmpty) 'incidentId': incidentId.trim(),
+      if (hid != null && hid.isNotEmpty) 'boundHospitalId': hid,
+    });
+
+    final data = (res.data as Map?) ?? const {};
+    final token = (data['token'] ?? '').toString();
+    final url = LivekitUrl.normalizeForClient((data['url'] ?? '').toString());
+    final roomName = (data['roomName'] ?? '').toString();
+
+    if (token.isEmpty || url.isEmpty || roomName.isEmpty) {
+      throw StateError('Comms bridge token response missing fields.');
+    }
+
+    final room = Room(
+      roomOptions: const RoomOptions(adaptiveStream: true, dynacast: true),
+    );
+    await room.connect(url, token);
+    final local = room.localParticipant;
+    if (local == null) {
+      throw StateError('LiveKit local participant is null after connect.');
+    }
+    await local.setMicrophoneEnabled(canPublishAudio);
+    return room;
+  }
 }

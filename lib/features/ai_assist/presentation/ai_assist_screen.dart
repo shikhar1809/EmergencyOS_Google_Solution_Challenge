@@ -6,18 +6,13 @@ import 'package:flutter/physics.dart';
 import 'package:flutter/semantics.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:google_maps_flutter/google_maps_flutter.dart';
 
-import '../../../core/constants/app_constants.dart';
-import '../../../core/maps/eos_hybrid_map.dart';
-import '../../../core/constants/google_maps_home_dark_style.dart';
-import '../../../core/constants/india_ops_zones.dart';
-import '../../../core/l10n/app_localizations.dart';
-import '../../../core/theme/app_colors.dart';
-import '../../../services/voice_comms_service.dart';
-import '../domain/lifeline_training_levels.dart';
+import 'package:emergency_os/core/l10n/app_localizations.dart';
+import 'package:emergency_os/core/theme/app_colors.dart';
+import 'package:emergency_os/services/voice_comms_service.dart';
+import 'package:emergency_os/features/ai_assist/domain/lifeline_training_levels.dart';
 import 'widgets/guide_detail_page.dart';
-import 'widgets/lifeline_agent_heartbeat.dart';
+import 'widgets/lifeline_voice_agent_overlay.dart';
 
 class AIAssistScreen extends StatefulWidget {
   final String? openAid;
@@ -89,33 +84,11 @@ class _AIAssistScreenState extends State<AIAssistScreen> {
     final l = AppLocalizations.of(context);
 
     return Scaffold(
-      backgroundColor: Colors.transparent,
+      backgroundColor: AppColors.background,
       extendBody: true,
       body: Stack(
         fit: StackFit.expand,
         children: [
-          Positioned.fill(
-            child: EosHybridMap(
-              mapType: MapType.normal,
-              mapId: AppConstants.googleMapsDarkMapId.isNotEmpty
-                  ? AppConstants.googleMapsDarkMapId
-                  : null,
-              style: AppConstants.googleMapsDarkMapId.isEmpty
-                  ? kGoogleMapsHomeDarkStyleJson
-                  : null,
-              cameraTargetBounds: IndiaOpsZones.lucknowCameraTargetBounds,
-              initialCameraPosition: IndiaOpsZones.lucknowCameraPosition(zoom: 14.5),
-              onMapCreated: (_) {},
-              myLocationEnabled: false,
-              myLocationButtonEnabled: false,
-              zoomControlsEnabled: false,
-              compassEnabled: false,
-              scrollGesturesEnabled: false,
-              zoomGesturesEnabled: false,
-              tiltGesturesEnabled: false,
-              rotateGesturesEnabled: false,
-            ),
-          ),
           if (widget.isDrillShell)
             Positioned(
               top: 0,
@@ -181,7 +154,7 @@ class _AIAssistScreenState extends State<AIAssistScreen> {
               ),
             ],
           ),
-          LifelineAgentHeartbeatOverlay(
+          LifelineVoiceAgentOverlay(
             activeLevelIndex: _activePage,
             activeLevelTitle: _levels[_activePage].title,
             safePadding: safePad,

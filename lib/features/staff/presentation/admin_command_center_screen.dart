@@ -9,11 +9,14 @@ import 'package:geolocator/geolocator.dart';
 import 'package:intl/intl.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import '../../../core/maps/ops_map_controller.dart';
+import '../../../core/config/build_config.dart';
 import '../../../core/constants/india_ops_zones.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../features/map/domain/emergency_zone_classification.dart';
 import '../../../core/utils/dispatch_incident_priority.dart';
+import '../../../core/utils/fleet_unit_availability.dart';
 import '../../../core/utils/fleet_map_icons.dart';
+import '../../../core/utils/ops_fleet_docs_dedupe.dart';
 import '../../../core/utils/osrm_route_util.dart';
 import '../../../core/utils/ops_map_markers.dart';
 import '../../../services/demo_fleet_route_cache.dart';
@@ -37,6 +40,7 @@ import 'widgets/command_center_map.dart';
 import 'widgets/fleet_credentials_dialog.dart';
 import 'widgets/hospital_onboarding_dialog.dart';
 import 'widgets/master_command_sidebar.dart';
+import 'hospital_live_ops_screen.dart' show HospitalOverviewCapacitySection;
 
 enum _LiveOpsDetailKind {
   none,
@@ -132,6 +136,8 @@ class _AdminCommandCenterScreenState extends State<AdminCommandCenterScreen>
   HexAxial? _editHexAxial;
   List<LatLng> _editCornerTaps = [];
   StreamSubscription<OpsHospitalRow?>? _hospitalRowSub;
+  StreamSubscription<List<OpsHospitalRow>>? _allOpsHospitalsSub;
+  List<OpsHospitalRow> _allOpsHospitals = [];
   double _commandMapZoom = 11.0;
 
   /// Driving route from representative hospital → selected incident (OSRM).
@@ -168,6 +174,9 @@ class _AdminCommandCenterScreenState extends State<AdminCommandCenterScreen>
     }
     final f = widget.focusIncidentId?.trim();
     if (f != null && f.isNotEmpty) _selectedId = f;
+    if (widget.access.role == AdminConsoleRole.master) {
+      _timeWin = TimeWin.h1;
+    }
     _volunteerDutySub = VolunteerPresenceService.watchOnDutyUsers().listen((
       snap,
     ) {
@@ -211,6 +220,10 @@ class _AdminCommandCenterScreenState extends State<AdminCommandCenterScreen>
       const Duration(milliseconds: 33),
       (_) => _tickFleetSmooth(),
     );
+    _allOpsHospitalsSub = OpsHospitalService.watchHospitals().listen((rows) {
+      if (!mounted) return;
+      setState(() => _allOpsHospitals = rows);
+    });
     _bootstrapOps();
   }
 
@@ -331,6 +344,7 @@ class _AdminCommandCenterScreenState extends State<AdminCommandCenterScreen>
     _volunteerDutySub?.cancel();
     _fleetSub?.cancel();
     _hospitalRowSub?.cancel();
+    _allOpsHospitalsSub?.cancel();
     _allIncidentSub?.cancel();
     _fleetSmoothTimer?.cancel();
     _coverageZonesSub?.cancel();
@@ -361,22 +375,25 @@ class _AdminCommandCenterScreenState extends State<AdminCommandCenterScreen>
     _incidentTypeCtrl.text = e.type;
   }
 
-  /// Hex mesh, overlay circle, and tier labels on this screen (capped at 15 km).
-  double _commandCenterHexCoverM(IndiaOpsZone z) => math.min(
-    _hospitalScopedZone ? z.radiusM : kMaxCoverageRadiusM,
-    kCommandCenterHexCoverRadiusM,
-  );
+  /// Same ops anchor as the public map / master overview ([BuildConfig.opsZoneId]).
+  IndiaOpsZone get _canonicalOpsZoneForHex =>
+      IndiaOpsZones.byId(BuildConfig.opsZoneId);
+
+  /// Hex disk radius (15 km cap) — matches master overview, independent of hospital-local zone radius.
+  double get _hexMeshCoverM =>
+      math.min(kMaxCoverageRadiusM, kCommandCenterHexCoverRadiusM);
 
   void _rebuildHexGrid() {
     if (_zone == null) return;
-    final coverM = _commandCenterHexCoverM(_zone!);
+    final anchor = _canonicalOpsZoneForHex;
+    final coverM = _hexMeshCoverM;
     _cachedHexModel = buildEmergencyHexZones(
-      center: _zone!.center,
+      center: anchor.center,
       coverRadiusM: coverM,
-      hospitals: OpsZoneResourceCatalog.hospitalsInZone(_zone!),
+      hospitals: OpsZoneResourceCatalog.hospitalsInZoneMerged(anchor, _allOpsHospitals),
       volunteerPositions: OpsZoneResourceCatalog.volunteersInZone(
         _volunteerDutyDocs,
-        _zone!,
+        anchor,
       ).map((v) => LatLng(v.lat, v.lng)).toList(),
     );
   }
@@ -405,6 +422,10 @@ class _AdminCommandCenterScreenState extends State<AdminCommandCenterScreen>
     list = list.where((e) => !_isDemoIncidentId(e.id)).toList();
     final now = DateTime.now();
     switch (_timeWin) {
+      case TimeWin.h1:
+        list = list
+            .where((e) => now.difference(e.timestamp) < const Duration(hours: 1))
+            .toList();
       case TimeWin.h24:
         list = list
             .where((e) => now.difference(e.timestamp).inHours < 24)
@@ -468,22 +489,23 @@ class _AdminCommandCenterScreenState extends State<AdminCommandCenterScreen>
       list = list.where((e) => z.containsLatLng(e.liveVictimPin)).toList();
     }
     if (z != null) {
-      final hospitals = OpsZoneResourceCatalog.hospitalsInZone(z);
+      final hexZ = _canonicalOpsZoneForHex;
+      final hospitals = OpsZoneResourceCatalog.hospitalsInZoneMerged(hexZ, _allOpsHospitals);
       final volPos = OpsZoneResourceCatalog.volunteersInZone(
         _volunteerDutyDocs,
-        z,
+        hexZ,
       ).map((v) => LatLng(v.lat, v.lng)).toList();
-      final coverM = _commandCenterHexCoverM(z);
+      final coverM = _hexMeshCoverM;
       list.sort((a, b) {
         final ta = tierHealthAtVictimPin(
-          gridCenter: z.center,
+          gridCenter: hexZ.center,
           victimPin: a.liveVictimPin,
           coverRadiusM: coverM,
           hospitals: hospitals,
           volunteerPositions: volPos,
         );
         final tb = tierHealthAtVictimPin(
-          gridCenter: z.center,
+          gridCenter: hexZ.center,
           victimPin: b.liveVictimPin,
           coverRadiusM: coverM,
           hospitals: hospitals,
@@ -501,15 +523,16 @@ class _AdminCommandCenterScreenState extends State<AdminCommandCenterScreen>
     final z = _zone;
     if (z == null)
       return DispatchIncidentPriority.forIncident(e, TierHealth.green).label;
-    final coverM = _commandCenterHexCoverM(z);
+    final hexZ = _canonicalOpsZoneForHex;
+    final coverM = _hexMeshCoverM;
     final tier = tierHealthAtVictimPin(
-      gridCenter: z.center,
+      gridCenter: hexZ.center,
       victimPin: e.liveVictimPin,
       coverRadiusM: coverM,
-      hospitals: OpsZoneResourceCatalog.hospitalsInZone(z),
+      hospitals: OpsZoneResourceCatalog.hospitalsInZoneMerged(hexZ, _allOpsHospitals),
       volunteerPositions: OpsZoneResourceCatalog.volunteersInZone(
         _volunteerDutyDocs,
-        z,
+        hexZ,
       ).map((v) => LatLng(v.lat, v.lng)).toList(),
     );
     return DispatchIncidentPriority.forIncident(e, tier).label;
@@ -574,7 +597,7 @@ class _AdminCommandCenterScreenState extends State<AdminCommandCenterScreen>
         _boundHospitalMarkerPos != null) {
       return _boundHospitalMarkerPos!;
     }
-    final hospitals = OpsZoneResourceCatalog.hospitalsInZone(z);
+    final hospitals = OpsZoneResourceCatalog.hospitalsInZoneMerged(z, _allOpsHospitals);
     if (hospitals.isEmpty) return z.center;
     LatLng? best;
     double? bestM;
@@ -915,10 +938,10 @@ class _AdminCommandCenterScreenState extends State<AdminCommandCenterScreen>
     final now = DateTime.now();
     final prevSim = _simulatedFleetKeys;
 
-    for (final d in _fleetDocs) {
+    for (final d in dedupeFleetDocsByCallSign(_fleetDocs)) {
       final data = d.data();
       if (!access.isFleetDocVisible(data, d.id)) continue;
-      if (data['available'] != true) continue;
+      if (!fleetUnitIsStaffedAvailable(data, d.id)) continue;
       final lat = (data['lat'] as num?)?.toDouble();
       final lng = (data['lng'] as num?)?.toDouble();
       if (lat == null || lng == null) continue;
@@ -1174,12 +1197,16 @@ class _AdminCommandCenterScreenState extends State<AdminCommandCenterScreen>
     return null;
   }
 
-  /// Medical ops: full-height active consignment control surface in the right column.
-  Widget _medicalDockedConsignmentPanel({
+  /// Shared full-height incident command surface (medical consignment or master active alert).
+  Widget _dockedIncidentCommandPanel({
     required SosIncident sel,
     required IndiaOpsZone zone,
     required TierHealth sceneIncidentTier,
     required EmergencyHexZoneModel hexModel,
+    required String headerTitle,
+    required String clearSelectionTooltip,
+    required String? boundHospitalDocId,
+    required bool showMasterHospitalControls,
   }) {
     return Material(
       color: AppColors.slate800,
@@ -1199,7 +1226,7 @@ class _AdminCommandCenterScreenState extends State<AdminCommandCenterScreen>
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
-                            'Incident command',
+                            headerTitle,
                             style: TextStyle(
                               color: _accent.withValues(alpha: 0.95),
                               fontWeight: FontWeight.w800,
@@ -1240,7 +1267,7 @@ class _AdminCommandCenterScreenState extends State<AdminCommandCenterScreen>
                       ),
                     ),
                     IconButton(
-                      tooltip: 'Clear consignment selection',
+                      tooltip: clearSelectionTooltip,
                       onPressed: () =>
                           _applyIncidentSelection(null, _cachedFiltered),
                       icon: const Icon(
@@ -1302,10 +1329,9 @@ class _AdminCommandCenterScreenState extends State<AdminCommandCenterScreen>
                   opsZone: zone,
                   sceneIncidentTier: sceneIncidentTier,
                   fleetDocs:
-                      List<QueryDocumentSnapshot<Map<String, dynamic>>>.from(
-                        _fleetDocs,
-                      ),
-                  boundHospitalDocId: widget.access.boundHospitalDocId,
+                      dedupeFleetDocsByCallSign(_fleetDocs),
+                  boundHospitalDocId: boundHospitalDocId,
+                  showMasterHospitalControls: showMasterHospitalControls,
                   noteController: _noteCtrl,
                   etaAmbController: _etaAmbCtrl,
                   medLineController: _medLineCtrl,
@@ -1319,6 +1345,25 @@ class _AdminCommandCenterScreenState extends State<AdminCommandCenterScreen>
           ),
         ],
       ),
+    );
+  }
+
+  /// Medical ops: full-height active consignment control surface in the right column.
+  Widget _medicalDockedConsignmentPanel({
+    required SosIncident sel,
+    required IndiaOpsZone zone,
+    required TierHealth sceneIncidentTier,
+    required EmergencyHexZoneModel hexModel,
+  }) {
+    return _dockedIncidentCommandPanel(
+      sel: sel,
+      zone: zone,
+      sceneIncidentTier: sceneIncidentTier,
+      hexModel: hexModel,
+      headerTitle: 'Incident command',
+      clearSelectionTooltip: 'Clear consignment selection',
+      boundHospitalDocId: widget.access.boundHospitalDocId,
+      showMasterHospitalControls: false,
     );
   }
 
@@ -1611,6 +1656,7 @@ class _AdminCommandCenterScreenState extends State<AdminCommandCenterScreen>
                   dropdownColor: AppColors.slate800,
                   style: const TextStyle(color: Colors.white, fontSize: 11),
                   items: const [
+                    DropdownMenuItem(value: TimeWin.h1, child: Text('1h (active)')),
                     DropdownMenuItem(value: TimeWin.h24, child: Text('24h')),
                     DropdownMenuItem(value: TimeWin.d7, child: Text('7d')),
                     DropdownMenuItem(
@@ -1692,12 +1738,14 @@ class _AdminCommandCenterScreenState extends State<AdminCommandCenterScreen>
         final driver = data['driverName'] as String? ?? 'Pending / Unknown';
         final copassenger = data['coPassenger'] as String? ?? '-';
         final aid = data['assignedIncidentId'] as String?;
-        final incidentStr = aid != null && aid.isNotEmpty
-            ? 'Responding: $aid'
-            : 'Available / Standby';
+        final staffed = fleetUnitIsStaffedAvailable(data, id);
         final status = (data['status'] as String?)?.trim().isNotEmpty == true
             ? (data['status'] as String).trim()
-            : (aid != null && aid.isNotEmpty ? 'responding' : 'standby');
+            : (aid != null && aid.isNotEmpty
+                ? 'responding'
+                : (staffed
+                    ? 'standby'
+                    : (isFleetUnitPlaceholderDoc(id) ? 'no_operator' : 'off_duty')));
         final patientOnboard = data['patientOnboard'] == true;
         return InfoWindow(
           title: data['fleetCallSign'] as String? ?? id,
@@ -1854,7 +1902,7 @@ class _AdminCommandCenterScreenState extends State<AdminCommandCenterScreen>
         _zoneEditMode &&
         _zone != null) {
       final z = _zone!;
-      final hexCoverM = _commandCenterHexCoverM(z);
+      final hexCoverM = _hexMeshCoverM;
       final axial = volunteerToHex(
         kZoneHexCircumRadiusM,
         z.center.latitude,
@@ -1973,7 +2021,7 @@ class _AdminCommandCenterScreenState extends State<AdminCommandCenterScreen>
         final data = doc.data();
         final callSign = (data['fleetCallSign'] as String?)?.trim() ?? doc.id;
         final type = (data['vehicleType'] as String?)?.trim() ?? '—';
-        final avail = data['available'] == true;
+        final avail = fleetUnitIsStaffedAvailable(data, doc.id);
         final inc = (data['assignedIncidentId'] as String?)?.trim() ?? '';
         final station = (data['stationedHospitalId'] as String?)?.trim() ?? '';
         final lat = (data['lat'] as num?)?.toDouble();
@@ -1997,7 +2045,14 @@ class _AdminCommandCenterScreenState extends State<AdminCommandCenterScreen>
             ),
             const SizedBox(height: 8),
             _liveOpsKv('Type', type),
-            _liveOpsKv('Status', avail ? 'Available' : 'Busy / dispatched'),
+            _liveOpsKv(
+              'Status',
+              avail
+                  ? 'Available'
+                  : (isFleetUnitPlaceholderDoc(doc.id)
+                      ? 'No operator signed in'
+                      : 'Busy / dispatched'),
+            ),
             if (inc.isNotEmpty) _liveOpsKv('Incident', inc),
             if (station.isNotEmpty) _liveOpsKv('Stationed at', station),
             if (lat != null && lng != null)
@@ -2218,11 +2273,17 @@ class _AdminCommandCenterScreenState extends State<AdminCommandCenterScreen>
         (_archiveSidebarSelection?.id == _selectedId
             ? _archiveSidebarSelection
             : null);
-    final hospDir = OpsZoneResourceCatalog.hospitalsInZone(zone);
+    final hospDir = OpsZoneResourceCatalog.hospitalsInZoneMerged(zone, _allOpsHospitals);
+    final hospDirHex =
+        OpsZoneResourceCatalog.hospitalsInZoneMerged(_canonicalOpsZoneForHex, _allOpsHospitals);
     final dutyVols = OpsZoneResourceCatalog.volunteersInZone(
       _volunteerDutyDocs,
       zone,
     );
+    final volDutyLatLngHex = OpsZoneResourceCatalog.volunteersInZone(
+      _volunteerDutyDocs,
+      _canonicalOpsZoneForHex,
+    ).map((v) => LatLng(v.lat, v.lng)).toList();
 
     if (activeSel != null && _controllerIncidentId != activeSel.id) {
       final copy = activeSel;
@@ -2245,20 +2306,20 @@ class _AdminCommandCenterScreenState extends State<AdminCommandCenterScreen>
       BitmapDescriptor.hueBlue,
     );
     final fleetByUid = <String, QueryDocumentSnapshot<Map<String, dynamic>>>{
-      for (final d in _fleetDocs) d.id: d,
+      for (final d in dedupeFleetDocsByCallSign(_fleetDocs)) d.id: d,
     };
 
     final acc = widget.access;
-    final hexCoverM = _commandCenterHexCoverM(zone);
+    final hexCoverM = _hexMeshCoverM;
     final volDutyLatLng = dutyVols.map((v) => LatLng(v.lat, v.lng)).toList();
     final sceneTierForSelected = sel == null
         ? TierHealth.green
         : tierHealthAtVictimPin(
-            gridCenter: zone.center,
+            gridCenter: _canonicalOpsZoneForHex.center,
             victimPin: sel.liveVictimPin,
             coverRadiusM: hexCoverM,
-            hospitals: hospDir,
-            volunteerPositions: volDutyLatLng,
+            hospitals: hospDirHex,
+            volunteerPositions: volDutyLatLngHex,
           );
     const hospitalInfluenceCircles = <Circle>{};
     var hospitalDemoResponding = 0;
@@ -2339,7 +2400,7 @@ class _AdminCommandCenterScreenState extends State<AdminCommandCenterScreen>
       var i = 0;
       for (final p in places.take(_maxFacilityMarkers)) {
         final uid = layer == 'hospital'
-            ? OpsZoneResourceCatalog.hospitalDisplayId(p)
+            ? OpsZoneResourceCatalog.hospitalDisplayIdForMap(p, _allOpsHospitals)
             : null;
         markers.add(
           Marker(
@@ -2603,32 +2664,16 @@ class _AdminCommandCenterScreenState extends State<AdminCommandCenterScreen>
     final hexModel =
         _cachedHexModel ??
         buildEmergencyHexZones(
-          center: zone.center,
+          center: _canonicalOpsZoneForHex.center,
           coverRadiusM: hexCoverM,
-          hospitals: hospDir,
-          volunteerPositions: dutyVols
-              .map((v) => LatLng(v.lat, v.lng))
-              .toList(),
+          hospitals: hospDirHex,
+          volunteerPositions: volDutyLatLngHex,
         );
 
     return SizedBox.expand(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-        if (acc.role == AdminConsoleRole.medical &&
-            (acc.boundHospitalDocId ?? '').trim().isNotEmpty)
-          HospitalDispatchPendingBanner(
-            hospitalDocId: acc.boundHospitalDocId!.trim(),
-            accent: _accent,
-            onOpenIncident: (incidentId) {
-              final e =
-                  _pick(_cachedFiltered, incidentId) ??
-                  _incidentById(incidentId);
-              if (e != null) {
-                _applyIncidentSelection(e, _cachedFiltered);
-              }
-            },
-          ),
         if (_hospitalScopedZone && acc.role == AdminConsoleRole.medical)
           Padding(
             padding: const EdgeInsets.fromLTRB(12, 6, 12, 4),
@@ -2746,6 +2791,11 @@ class _AdminCommandCenterScreenState extends State<AdminCommandCenterScreen>
               ),
             ),
           ),
+        if (acc.role == AdminConsoleRole.medical &&
+            (acc.boundHospitalDocId ?? '').trim().isNotEmpty)
+          HospitalOverviewCapacitySection(
+            hospitalDocId: acc.boundHospitalDocId!.trim(),
+          ),
         OpsTopBar(
           accent: _accent,
           userEmail: user?.email ?? 'Signed out',
@@ -2784,10 +2834,7 @@ class _AdminCommandCenterScreenState extends State<AdminCommandCenterScreen>
                     accent: _accent,
                     zone: _zone,
                     dutyVols: dutyVols,
-                    fleetDocs:
-                        List<QueryDocumentSnapshot<Map<String, dynamic>>>.from(
-                          _fleetDocs,
-                        ),
+                    fleetDocs: dedupeFleetDocsByCallSign(_fleetDocs),
                     onPlaceTap: _focusOnMap,
                     filteredIncidents: filtered,
                     selectedId: _selectedId,
@@ -2857,6 +2904,9 @@ class _AdminCommandCenterScreenState extends State<AdminCommandCenterScreen>
                               },
                               showHexGrid: _ccShowHexGrid,
                               hexCoverRadiusM: hexCoverM,
+                              hexCoverageCenter: _hospitalScopedZone
+                                  ? _canonicalOpsZoneForHex.center
+                                  : null,
                               overlayCircles: {...hospitalInfluenceCircles},
                               initialPosition:
                                   sel?.liveVictimPin ?? zone.center,
@@ -3203,6 +3253,23 @@ class _AdminCommandCenterScreenState extends State<AdminCommandCenterScreen>
                     hexModel: hexModel,
                   ),
                 ),
+              ] else if (acc.role == AdminConsoleRole.master &&
+                  widget.masterSidebarMode == MasterCommandSidebarMode.none &&
+                  activeSel != null) ...[
+                const VerticalDivider(width: 1, color: Colors.white12),
+                SizedBox(
+                  width: 420,
+                  child: _dockedIncidentCommandPanel(
+                    sel: activeSel,
+                    zone: zone,
+                    sceneIncidentTier: sceneTierForSelected,
+                    hexModel: hexModel,
+                    headerTitle: 'Active alert command',
+                    clearSelectionTooltip: 'Clear alert selection',
+                    boundHospitalDocId: null,
+                    showMasterHospitalControls: true,
+                  ),
+                ),
               ] else if (acc.role == AdminConsoleRole.medical &&
                   sel != null &&
                   activeSel == null) ...[
@@ -3225,4 +3292,4 @@ class _AdminCommandCenterScreenState extends State<AdminCommandCenterScreen>
   }
 }
 
-enum TimeWin { h24, d7, all }
+enum TimeWin { h1, h24, d7, all }

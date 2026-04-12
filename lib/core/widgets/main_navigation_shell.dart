@@ -344,9 +344,14 @@ class _MainNavigationShellState extends ConsumerState<MainNavigationShell> with 
       await prefs.remove('pendingIncidentId');
       return;
     }
-    final incidents = ref.read(activeIncidentsProvider).value ?? [];
+    final asyncIncidents = ref.read(activeIncidentsProvider);
+    if (!asyncIncidents.hasValue) return;
+    final incidents = asyncIncidents.value ?? [];
     final match = incidents.where((i) => i.id == pending).toList();
-    if (match.isEmpty) return;
+    if (match.isEmpty) {
+      await prefs.remove('pendingIncidentId');
+      return;
+    }
     final uid = FirebaseAuth.instance.currentUser?.uid ?? '';
     final inc = match.first;
     if (inc.id.startsWith('demo_ops_')) {
@@ -820,7 +825,7 @@ class _MainNavigationShellState extends ConsumerState<MainNavigationShell> with 
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 _buildNavItem(ctx, Icons.cottage_rounded, l.navHome, 0, currentIndex, 'dashboard', layoutKey: _drillNavHomeKey),
-                _buildNavItem(ctx, Icons.near_me_rounded, 'Grid', 1, currentIndex, 'map', layoutKey: _drillNavGridKey),
+                _buildNavItem(ctx, Icons.near_me_rounded, l.navGrid, 1, currentIndex, 'map', layoutKey: _drillNavGridKey),
                 const SizedBox(width: 48),
                 _buildNavItem(ctx, Icons.medical_services_rounded, l.lifeline, 3, currentIndex, 'lifeline', layoutKey: _drillNavLifelineKey),
                 _buildNavItem(ctx, Icons.person_rounded, l.navProfile, 4, currentIndex, 'profile', layoutKey: _drillNavProfileKey),
@@ -889,87 +894,6 @@ class _MainNavigationShellState extends ConsumerState<MainNavigationShell> with 
     if (tail.startsWith('/lifeline')) return 3;
     if (tail.startsWith('/profile')) return 4;
     return 0;
-  }
-}
-
-class _RealIncomingAlertDialog extends StatelessWidget {
-  final SosIncident incident;
-  const _RealIncomingAlertDialog({required this.incident});
-
-  @override
-  Widget build(BuildContext context) {
-    return AlertDialog(
-      backgroundColor: AppColors.background,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20), side: const BorderSide(color: AppColors.primaryDanger)),
-      title: Row(
-        children: [
-          const Icon(Icons.warning_amber_rounded, color: AppColors.primaryDanger, size: 32),
-          const SizedBox(width: 12),
-          const Expanded(child: Text('Incident Nearby!', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold))),
-        ],
-      ),
-      content: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text('\${incident.type} reported by \${incident.userDisplayName}.', style: const TextStyle(color: Colors.white70)),
-          const SizedBox(height: 16),
-          const Text('Severity: High', style: TextStyle(color: AppColors.primaryDanger, fontWeight: FontWeight.bold)),
-          const Text('Location: Within your response radius', style: TextStyle(color: Colors.white)),
-          const SizedBox(height: 20),
-          Container(
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              color: AppColors.surfaceHighlight.withValues(alpha: 0.3),
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: AppColors.surfaceHighlight),
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Row(
-                  children: [
-                    Icon(Icons.local_hospital_rounded, color: AppColors.primaryWarning, size: 16),
-                    SizedBox(width: 8),
-                    Text('Emergency Data', style: TextStyle(color: AppColors.primaryWarning, fontWeight: FontWeight.bold, fontSize: 12)),
-                  ],
-                ),
-                const SizedBox(height: 8),
-                Row(
-                  children: [
-                    const Icon(Icons.bloodtype, color: Colors.white70, size: 14),
-                    const SizedBox(width: 6),
-                    Expanded(child: Text("Blood Type: \${incident.bloodType ?? 'Unknown'}", style: const TextStyle(color: Colors.white, fontSize: 12))),
-                  ],
-                ),
-                const SizedBox(height: 4),
-                Row(
-                  children: [
-                    const Icon(Icons.medical_information, color: Colors.white70, size: 14),
-                    const SizedBox(width: 6),
-                    Expanded(child: Text("Allergies: \${incident.allergies ?? 'None noted'}", style: const TextStyle(color: Colors.white, fontSize: 12))),
-                  ],
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.pop(context),
-          child: const Text('Deny', style: TextStyle(color: AppColors.textSecondary)),
-        ),
-        ElevatedButton(
-          onPressed: () {
-            Navigator.pop(context);
-            context.push('/active-consignment/${incident.id}?type=${Uri.encodeComponent(incident.type)}');
-          },
-          style: ElevatedButton.styleFrom(backgroundColor: AppColors.primaryDanger),
-          child: const Text('ACCEPT', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-        ),
-      ],
-    );
   }
 }
 

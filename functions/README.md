@@ -38,7 +38,12 @@ firebase deploy --only functions
 
 # Deploy specific function
 firebase deploy --only functions:dispatchSOS
+
+# SOS 1-hour TTL (archives to `sos_incidents_archive` — required for consistent expiry when the app is closed)
+firebase deploy --only functions:expireStaleSosIncidents
 ```
+
+**SOS lifecycle:** `index.js` exports `expireStaleSosIncidents` (1 hour, moves docs to archive). `src/hospital_chain.js` also defines `autoArchiveStaleSosIncidents` (24 hours, in-place `archived_stale` only); that export is not wired through `index.js` unless you add a `require` — do not confuse the two.
 
 ## Secrets
 

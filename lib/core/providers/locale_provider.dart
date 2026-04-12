@@ -18,6 +18,7 @@ class LocaleNotifier extends Notifier<Locale> {
     final code = prefs.getString(_kLocaleKey);
     if (code != null && code.isNotEmpty) {
       state = Locale(code);
+      VoiceCommsService.syncLocaleFromPreference(code);
     }
   }
 
@@ -25,7 +26,7 @@ class LocaleNotifier extends Notifier<Locale> {
     state = locale;
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(_kLocaleKey, locale.languageCode);
-    VoiceCommsService.invalidateLocaleCache();
+    VoiceCommsService.syncLocaleFromPreference(locale.languageCode);
   }
 }
 

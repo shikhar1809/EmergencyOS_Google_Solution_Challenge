@@ -13,6 +13,8 @@ abstract final class OpsMapMarkers {
   static BitmapDescriptor? _volunteerMale;
   static BitmapDescriptor? _volunteerFemale;
   static BitmapDescriptor? _incidentDefault;
+  /// Distinct from default Google red teardrop — amber “beacon” for pending live SOS.
+  static BitmapDescriptor? _liveSosPending;
 
   static bool _ready = false;
   static bool get ready => _ready;
@@ -50,6 +52,10 @@ abstract final class OpsMapMarkers {
       Icons.emergency_rounded,
       AppColors.primaryDanger,
     );
+    _liveSosPending ??= await MapMarkerGenerator.getMinimalPin(
+      Icons.crisis_alert_rounded,
+      const Color(0xFFFF9100),
+    );
     _ready = true;
   }
 
@@ -71,4 +77,8 @@ abstract final class OpsMapMarkers {
 
   static BitmapDescriptor incidentOr(BitmapDescriptor fallback) =>
       _incidentDefault ?? fallback;
+
+  /// Pending live SOS — minimal pin, not the default red marker.
+  static BitmapDescriptor liveSosPendingOr(BitmapDescriptor fallback) =>
+      _liveSosPending ?? fallback;
 }

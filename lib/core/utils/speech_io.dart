@@ -15,6 +15,9 @@ bool _ttsInited = false;
 bool _listenSession = false;
 VoidCallback? _pendingListenEnd;
 
+/// Invalidates in-flight TTS completion when [cancelSpeechText] or a new utterance starts.
+Object? _ttsSpeakToken;
+
 bool speechSupported() => true;
 
 Future<bool> _ensureStt() async {
@@ -192,6 +195,42 @@ void speakText(String text, {String lang = 'en-IN', void Function()? onDone}) {
   unawaited(_speakAsync(text, lang, onDone));
 }
 
+bool _truthyLangAvailable(dynamic v) {
+  if (v == null) return false;
+  if (v is bool) return v;
+  if (v is num) return v != 0;
+  final s = v.toString().toLowerCase();
+  return s == '1' || s == 'true' || s == 'yes';
+}
+
+/// Prefer [preferredBcp47]; if the engine reports it unavailable, fall back to English so TTS is not silent.
+Future<String> _effectiveTtsLanguage(String preferredBcp47) async {
+  final primary = preferredBcp47.trim().replaceAll('_', '-');
+  if (primary.isEmpty) return 'en-IN';
+  try {
+    final a = await _tts.isLanguageAvailable(primary);
+    if (_truthyLangAvailable(a)) return primary;
+  } catch (e) {
+    debugPrint('[speech_io] isLanguageAvailable("$primary"): $e');
+  }
+  final legacy = primary.contains('-')
+      ? '${primary.split('-').first}_${primary.split('-')[1].toUpperCase()}'
+      : primary;
+  if (legacy != primary) {
+    try {
+      final a = await _tts.isLanguageAvailable(legacy);
+      if (_truthyLangAvailable(a)) return legacy;
+    } catch (_) {}
+  }
+  for (final fb in <String>['en-IN', 'en_US', 'en-US']) {
+    try {
+      final a = await _tts.isLanguageAvailable(fb);
+      if (_truthyLangAvailable(a)) return fb.replaceAll('_', '-');
+    } catch (_) {}
+  }
+  return 'en-IN';
+}
+
 Future<void> _speakAsync(String text, String lang, void Function()? onDone) async {
   final cleaned = text.trim();
   if (cleaned.isEmpty) {
@@ -199,23 +238,38 @@ Future<void> _speakAsync(String text, String lang, void Function()? onDone) asyn
     return;
   }
   await _ensureTts();
+  final token = Object();
+  _ttsSpeakToken = token;
+  var completed = false;
+  void tryDone() {
+    if (completed || _ttsSpeakToken != token) return;
+    completed = true;
+    _ttsSpeakToken = null;
+    onDone?.call();
+  }
+
   try {
+    await _tts.setCompletionHandler(() => tryDone());
     await _tts.stop();
-    final langTag = lang.replaceAll('_', '-');
+    final langTag = await _effectiveTtsLanguage(lang.replaceAll('_', '-'));
+    if (langTag.replaceAll('_', '-') != lang.replaceAll('_', '-')) {
+      debugPrint('[speech_io] TTS language fallback: $lang -> $langTag');
+    }
     await _tts.setLanguage(langTag);
-    // Robust standard: forcefully reset volume & pitch before every utterance.
     await _tts.setVolume(1.0);
     await _tts.setPitch(1.0);
     await _tts.setSpeechRate(0.45);
     await _tts.speak(cleaned);
+    // Completion handler is authoritative; fallback if platform returns early.
+    tryDone();
   } catch (e) {
     debugPrint('[speech_io] speak: $e');
-  } finally {
-    onDone?.call();
+    tryDone();
   }
 }
 
 void cancelSpeechText() {
+  _ttsSpeakToken = Object();
   unawaited(() async {
     try {
       await _tts.stop();

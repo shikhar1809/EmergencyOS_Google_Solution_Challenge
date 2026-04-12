@@ -1,14 +1,15 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
-import '../../../core/constants/app_constants.dart';
-import '../../../core/constants/demo_gate_password.dart';
-import '../../../core/theme/app_colors.dart';
-import '../../../services/admin_panel_session_service.dart';
-import '../../../services/ops_hospital_service.dart';
-import '../../../services/staff_session_service.dart';
+import 'package:emergency_os/core/constants/app_constants.dart';
+import 'package:emergency_os/core/constants/demo_gate_password.dart';
+import 'package:emergency_os/core/theme/app_colors.dart';
+import 'package:emergency_os/services/admin_panel_session_service.dart';
+import 'package:emergency_os/services/ops_hospital_service.dart';
+import 'package:emergency_os/services/staff_session_service.dart';
 import '../domain/admin_panel_access.dart';
 import '../navigation/ops_admin_routes.dart';
 
@@ -17,25 +18,25 @@ import 'admin_analytics_dashboard.dart';
 import 'admin_command_center_screen.dart';
 import 'admin_fleet_management_screen.dart';
 import 'comms_bridge_screen.dart';
-import 'hospital_live_ops_screen.dart';
-import 'impact_dashboard_screen.dart';
+import 'hospital_live_ops_screen.dart' show HospitalLiveOperationsScreen;
+import 'admin_reports_hub_screen.dart';
 import 'master_management_hub_screen.dart';
 import 'master_insights_screen.dart';
 import 'master_systems_hub_screen.dart';
 import 'widgets/master_dashboard_health_bar.dart';
 import 'widgets/ops_dashboard_status_bar.dart';
 
-class OpsDashboardScreen extends StatefulWidget {
+class OpsDashboardScreen extends ConsumerStatefulWidget {
   const OpsDashboardScreen({super.key, this.focusIncidentId});
 
   /// Optional deep-link from router query `?focus=`.
   final String? focusIncidentId;
 
   @override
-  State<OpsDashboardScreen> createState() => _OpsDashboardScreenState();
+  ConsumerState<OpsDashboardScreen> createState() => _OpsDashboardScreenState();
 }
 
-class _OpsDashboardScreenState extends State<OpsDashboardScreen> {
+class _OpsDashboardScreenState extends ConsumerState<OpsDashboardScreen> {
   int _selectedIndex = 0;
   AdminPanelAccess? _access;
   bool _loading = true;
@@ -106,9 +107,9 @@ class _OpsDashboardScreenState extends State<OpsDashboardScreen> {
   int? _commsTabIndexForAccess(AdminPanelAccess a) {
     if (!a.canUseCommsBridge) return null;
     // Master: Live Ops, Management, Systems, Analytics, Comms, Insights
-    // Medical: Live Ops, Fleet, Comms
+    // Medical: Overview, Live Operations, Fleet, Comms
     if (a.role == AdminConsoleRole.master) return 4;
-    if (a.role == AdminConsoleRole.medical) return 2;
+    if (a.role == AdminConsoleRole.medical) return 3;
     return null;
   }
 
@@ -432,9 +433,11 @@ class _OpsDashboardScreenState extends State<OpsDashboardScreen> {
 
   List<NavigationRailDestination> _destinationsFor(AdminPanelAccess a) {
     final list = <NavigationRailDestination>[
-      const NavigationRailDestination(
-        icon: Icon(Icons.dashboard_customize),
-        label: Text('Live Ops'),
+      NavigationRailDestination(
+        icon: const Icon(Icons.dashboard_customize),
+        label: Text(
+          a.role == AdminConsoleRole.medical ? 'Overview' : 'Live Ops',
+        ),
       ),
     ];
     if (a.role == AdminConsoleRole.master) {
@@ -478,6 +481,12 @@ class _OpsDashboardScreenState extends State<OpsDashboardScreen> {
     if (a.role == AdminConsoleRole.medical) {
       list.add(
         const NavigationRailDestination(
+          icon: Icon(Icons.crisis_alert),
+          label: Text('Live Operations'),
+        ),
+      );
+      list.add(
+        const NavigationRailDestination(
           icon: Icon(Icons.directions_car_filled),
           label: Text('Fleet'),
         ),
@@ -501,8 +510,8 @@ class _OpsDashboardScreenState extends State<OpsDashboardScreen> {
       );
       list.add(
         const NavigationRailDestination(
-          icon: Icon(Icons.volunteer_activism),
-          label: Text('Impact'),
+          icon: Icon(Icons.description_outlined),
+          label: Text('Reports'),
         ),
       );
     }
@@ -652,17 +661,22 @@ class _OpsDashboardScreenState extends State<OpsDashboardScreen> {
       );
     }
 
-    if (i == 0) {
+    var idx = 0;
+    if (i == idx++) {
       return AdminCommandCenterScreen(
         access: a,
         focusIncidentId: widget.focusIncidentId,
       );
     }
     if (a.role == AdminConsoleRole.medical) {
-      if (i == 1) return AdminFleetManagementScreen(access: a);
-      var midx = 2;
+      if (i == idx++) {
+        return HospitalLiveOperationsScreen(access: a);
+      }
+      if (i == idx++) {
+        return AdminFleetManagementScreen(access: a);
+      }
       if (a.canUseCommsBridge) {
-        if (i == midx++) {
+        if (i == idx++) {
           return CommsBridgeScreen(
             access: a,
             pendingJoin: _commsPendingJoin,
@@ -673,8 +687,8 @@ class _OpsDashboardScreenState extends State<OpsDashboardScreen> {
         }
       }
       if (a.canUseAnalytics) {
-        if (i == midx++) return AdminAnalyticsDashboard(access: a);
-        if (i == midx++) return ImpactDashboardScreen(access: a);
+        if (i == idx++) return AdminAnalyticsDashboard(access: a);
+        if (i == idx++) return AdminReportsHubScreen(access: a);
       }
     }
     return AdminCommandCenterScreen(

@@ -42,6 +42,7 @@ class _SosQuickIntakePageState extends ConsumerState<SosQuickIntakePage>
 
   static const _emergencyTypes = <Map<String, dynamic>>[
     {'type': 'Cardiac arrest / Heart attack', 'icon': Icons.favorite_rounded, 'color': Color(0xFFFF1744)},
+    {'type': 'CPR / AED (cardiac emergency)', 'icon': Icons.electrical_services_rounded, 'color': Color(0xFF00BFA5)},
     {'type': 'Stroke / Sudden weakness', 'icon': Icons.psychology_rounded, 'color': Color(0xFF9575CD)},
     {'type': 'Severe bleeding / Hemorrhage', 'icon': Icons.water_drop_rounded, 'color': Color(0xFFD50000)},
     {'type': 'Breathing difficulty / Choking', 'icon': Icons.air_rounded, 'color': Color(0xFFFF5252)},

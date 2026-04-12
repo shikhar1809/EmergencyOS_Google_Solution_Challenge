@@ -18,6 +18,42 @@ abstract final class FleetAssignmentService {
   static const statusAwaiting = 'awaiting_response';
   static const statusAccepted = 'accepted';
   static const statusRejected = 'rejected';
+  static const statusDriverNoResponse = 'driver_no_response';
+
+  /// Cloud Function bulk dispatch when a hospital accepts a consignment — hidden from operator UI until panel assign.
+  static const sourceHospitalAcceptDispatch = 'hospital_accept_dispatch';
+
+  /// Created from Fleet Management "Assign to accepted incident".
+  static const sourceFleetManagementPanel = 'fleet_management_panel';
+
+  /// True if this pending doc should surface accept/reject on the fleet operator app.
+  static bool isOperatorUiSource(Map<String, dynamic> data) {
+    final s = (data['source'] as String?)?.trim() ?? '';
+    if (s.isEmpty) return false;
+    if (s == sourceHospitalAcceptDispatch) return false;
+    return true;
+  }
+
+  /// Accept/reject window (aligned with Cloud Functions + fleet UI).
+  static const Duration responseWindow = Duration(minutes: 3);
+  static const int responseWindowSeconds = 180;
+
+  /// Latest time the operator may respond; from [responseDeadlineAt] or [dispatchedAt] + [responseWindow].
+  static DateTime? responseDeadlineForData(Map<String, dynamic> data) {
+    final rd = data['responseDeadlineAt'];
+    if (rd is Timestamp) return rd.toDate();
+    final d = data['dispatchedAt'];
+    if (d is Timestamp) return d.toDate().add(responseWindow);
+    return null;
+  }
+
+  /// Whether the assignment is still inside the response window (exclusive end at [deadline]).
+  static bool isAwaitingWithinWindow(Map<String, dynamic> data, DateTime now) {
+    if ((data['status'] as String?) != statusAwaiting) return false;
+    final deadline = responseDeadlineForData(data);
+    if (deadline == null) return false;
+    return now.isBefore(deadline);
+  }
 
   // ── Write (admin side) ────────────────────────────────────────────────────
 
@@ -28,21 +64,42 @@ abstract final class FleetAssignmentService {
     required String incidentId,
     required String vehicleType,
     String? callSign,
+    String source = sourceFleetManagementPanel,
   }) async {
     final id = fleetId.trim();
     final iid = incidentId.trim();
     if (id.isEmpty || iid.isEmpty) throw ArgumentError('fleetId and incidentId required');
 
     final ref = _db.collection(_assignmentsCol).doc(id).collection('pending').doc();
+    final deadline = DateTime.now().add(responseWindow);
     await ref.set({
       'fleetId': id,
       'incidentId': iid,
       'vehicleType': vehicleType,
       'callSign': callSign ?? id,
       'status': statusAwaiting,
+      'source': source,
       'dispatchedAt': FieldValue.serverTimestamp(),
+      'responseDeadlineAt': Timestamp.fromDate(deadline),
     });
     return ref.id;
+  }
+
+  /// Driver did not accept/reject within [responseWindow] (backend may also set this).
+  static Future<void> markDriverNoResponse({
+    required String fleetId,
+    required String assignmentDocId,
+  }) async {
+    await _db
+        .collection(_assignmentsCol)
+        .doc(fleetId.trim())
+        .collection('pending')
+        .doc(assignmentDocId)
+        .update({
+      'status': statusDriverNoResponse,
+      'expiredAt': FieldValue.serverTimestamp(),
+      'reason': 'response_timeout',
+    });
   }
 
   /// Watches assignments waiting for [fleetId]'s response.
@@ -134,7 +191,7 @@ abstract final class FleetAssignmentService {
           .collection(_assignmentsCol)
           .doc(fleetId.trim())
           .collection('pending')
-          .where('status', whereIn: [statusAccepted, statusRejected])
+          .where('status', whereIn: [statusAccepted, statusRejected, statusDriverNoResponse])
           .where('dispatchedAt', isLessThan: Timestamp.fromDate(cutoff))
           .get();
       for (final doc in snap.docs) {

@@ -21,6 +21,8 @@ class DispatchChainState {
         return 'awaiting_hospital';
       case 'accepted':
         return 'hospital_accepted';
+      case 'failed_to_assist':
+        return 'failed_to_assist';
       case 'exhausted':
         return 'exhausted';
       default:
@@ -60,7 +62,7 @@ class DispatchChainState {
   int? get countdownSecondsRemaining {
     final notAt = assignment?.notifiedAt;
     if (notAt == null) return null;
-    if (status == 'accepted' || status == 'exhausted') return null;
+    if (status == 'accepted' || status == 'exhausted' || status == 'failed_to_assist') return null;
     final windowMs = assignment?.escalateAfterMs ?? 120000;
     final elapsed = DateTime.now().difference(notAt).inMilliseconds;
     final remaining = ((windowMs - elapsed) / 1000).ceil();
@@ -68,6 +70,7 @@ class DispatchChainState {
   }
 
   bool get isAccepted => status == 'accepted';
+  bool get isFailedToAssist => status == 'failed_to_assist';
   bool get isExhausted => status == 'exhausted';
   bool get isPendingAcceptance => status == 'pending_acceptance';
 }

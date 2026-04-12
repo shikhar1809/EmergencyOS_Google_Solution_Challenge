@@ -9,8 +9,10 @@ import '../../../../core/maps/ops_map_controller.dart';
 import 'package:intl/intl.dart';
 
 import '../../../../core/constants/app_constants.dart';
+import '../../../../core/constants/google_maps_illustrative_light_style.dart';
 import '../../../../core/constants/india_ops_zones.dart';
 import '../../../../core/theme/app_colors.dart';
+import '../../../../core/utils/fleet_unit_availability.dart';
 import '../../../../core/utils/ops_fleet_docs_dedupe.dart';
 import '../../../../core/utils/ops_map_markers.dart';
 import '../../../../services/demo_fleet_simulation.dart';
@@ -169,9 +171,11 @@ class _MasterManagementMapWorkspaceState
           icon: OpsMapMarkers.ambulanceOr(fbBlue),
           infoWindow: InfoWindow(
             title: callSign,
-            snippet: data['available'] == true
+            snippet: fleetUnitIsStaffedAvailable(data, d.id)
                 ? 'Available'
-                : 'Dispatched / busy',
+                : (isFleetUnitPlaceholderDoc(d.id)
+                    ? 'No operator signed in'
+                    : 'Dispatched / busy'),
           ),
           onTap: () {
             setState(() {
@@ -200,7 +204,7 @@ class _MasterManagementMapWorkspaceState
           position: pos,
           zIndexInt: sel ? 12 : 6,
           icon: OpsMapMarkers.hospitalOr(fbBlue),
-          infoWindow: InfoWindow(title: r.name, snippet: r.region),
+          infoWindow: InfoWindow(title: '${r.id} · ${r.name}', snippet: r.region),
           onTap: () {
             setState(() {
               _selectedHospitalId = r.id;
@@ -377,7 +381,7 @@ class _MasterManagementMapWorkspaceState
       final callSign =
           (data['fleetCallSign'] as String?)?.trim() ?? fleetDoc.id;
       final type = (data['vehicleType'] as String?)?.trim() ?? '—';
-      final avail = data['available'] == true;
+      final avail = fleetUnitIsStaffedAvailable(data, fleetDoc.id);
       final inc = (data['assignedIncidentId'] as String?)?.trim() ?? '';
       final lat = (data['lat'] as num?)?.toDouble();
       final lng = (data['lng'] as num?)?.toDouble();
@@ -402,7 +406,14 @@ class _MasterManagementMapWorkspaceState
           ),
           const SizedBox(height: 8),
           _kv('Type', type),
-          _kv('Status', avail ? 'Available' : 'Busy / dispatched'),
+          _kv(
+            'Status',
+            avail
+                ? 'Available'
+                : (isFleetUnitPlaceholderDoc(fleetDoc.id)
+                    ? 'No operator signed in'
+                    : 'Busy / dispatched'),
+          ),
           if (inc.isNotEmpty) _kv('Incident', inc),
           if (station.isNotEmpty) _kv('Stationed at', station),
           if (lat != null && lng != null)
@@ -603,7 +614,7 @@ class _MasterManagementMapWorkspaceState
                         final data = d.data();
                         final cs =
                             (data['fleetCallSign'] as String?)?.trim() ?? d.id;
-                        final avail = data['available'] == true;
+                        final avail = fleetUnitIsStaffedAvailable(data, d.id);
                         final aid =
                             (data['assignedIncidentId'] as String?)?.trim() ??
                             '';
@@ -644,7 +655,9 @@ class _MasterManagementMapWorkspaceState
                                         ? (aid.isNotEmpty
                                               ? 'Responding · $aid'
                                               : 'Standby / available')
-                                        : 'Off duty / unavailable',
+                                        : (isFleetUnitPlaceholderDoc(d.id)
+                                              ? 'Registered · no operator signed in'
+                                              : 'Off duty / unavailable'),
                                     style: TextStyle(
                                       color: avail
                                           ? Colors.lightGreenAccent
@@ -953,6 +966,7 @@ class _MasterManagementMapWorkspaceState
                             mapId: AppConstants.googleMapsDarkMapId.isNotEmpty
                                 ? AppConstants.googleMapsDarkMapId
                                 : null,
+                            style: effectiveGoogleMapsEmbeddedStyleJson(),
                             zoomControlsEnabled: false,
                             myLocationButtonEnabled: false,
                             // Panel is a [Row] sibling, not overlaid — extra right padding would double-count width and leave a gap.

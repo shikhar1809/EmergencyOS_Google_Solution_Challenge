@@ -18,6 +18,15 @@ DateTime _archiveDocSortTime(dynamic v) {
   return DateTime.fromMillisecondsSinceEpoch(0);
 }
 
+String _archiveClosureLabelText(Map<String, dynamic> data) {
+  final label = (data['closureLabel'] as String?)?.trim();
+  if (label != null && label.isNotEmpty) {
+    if (label.toLowerCase() == 'unattended') return 'Unattended';
+    return label;
+  }
+  return (data['status'] as String?)?.trim() ?? 'archived';
+}
+
 Color commandPriorityChipColor(String label) {
   return switch (label) {
     'P1' => Colors.redAccent,
@@ -37,6 +46,7 @@ class CommandCenterActiveIncidentList extends StatelessWidget {
     required this.accent,
     this.priorityLabelFor,
     this.hospitalLocation,
+    this.boundHospitalDocId,
     this.zone,
   });
 
@@ -46,7 +56,12 @@ class CommandCenterActiveIncidentList extends StatelessWidget {
   final Color accent;
   final String Function(SosIncident)? priorityLabelFor;
   final LatLng? hospitalLocation;
+  /// When set, list uses hospital-facing status labels and listens for assignment ambulance status.
+  final String? boundHospitalDocId;
   final IndiaOpsZone? zone;
+
+  /// Beyond this straight-line distance, the victim pin is likely wrong — don’t show fake precision.
+  static const double _maxTrustDistanceM = 2_000_000;
 
   static String? distanceFromHospitalLine(SosIncident e, LatLng? hospital) {
     if (hospital == null) return null;
@@ -57,12 +72,58 @@ class CommandCenterActiveIncidentList extends StatelessWidget {
       pin.latitude,
       pin.longitude,
     );
+    if (m > _maxTrustDistanceM) {
+      return 'Location unreliable (check victim GPS)';
+    }
     if (m >= 1000) return '${(m / 1000).toStringAsFixed(1)} km from hospital';
     return '${m.round()} m from hospital';
   }
 
   @override
   Widget build(BuildContext context) {
+    final hid = boundHospitalDocId?.trim();
+    if (hid != null && hid.isNotEmpty) {
+      return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+        stream: FirebaseFirestore.instance
+            .collection('ops_incident_hospital_assignments')
+            .where('acceptedHospitalId', isEqualTo: hid)
+            .where('dispatchStatus', whereIn: ['accepted', 'failed_to_assist'])
+            .snapshots(),
+        builder: (context, snap) {
+          final assignmentAmb = <String, String>{};
+          final chainSt = <String, String>{};
+          if (snap.hasData) {
+            for (final doc in snap.data!.docs) {
+              final d = doc.data();
+              final st = (d['dispatchStatus'] as String?)?.trim();
+              if (st != null && st.isNotEmpty) {
+                chainSt[doc.id] = st;
+              }
+              final s = d['ambulanceDispatchStatus'] as String?;
+              if (s != null && s.isNotEmpty) {
+                assignmentAmb[doc.id] = s;
+              }
+            }
+          }
+          return _buildColumn(
+            assignmentAmbulanceByIncident: assignmentAmb,
+            assignmentChainDispatchStatusByIncident: chainSt,
+            useHospitalStatus: true,
+          );
+        },
+      );
+    }
+    return _buildColumn(
+      assignmentAmbulanceByIncident: const {},
+      useHospitalStatus: false,
+    );
+  }
+
+  Widget _buildColumn({
+    required Map<String, String> assignmentAmbulanceByIncident,
+    Map<String, String> assignmentChainDispatchStatusByIncident = const {},
+    required bool useHospitalStatus,
+  }) {
     final fmt = DateFormat.MMMd().add_Hm();
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -93,6 +154,8 @@ class CommandCenterActiveIncidentList extends StatelessWidget {
                     final on = e.id == selectedId;
                     final hospDist = distanceFromHospitalLine(e, hospitalLocation);
                     final pl = priorityLabelFor;
+                    final ambAssign = assignmentAmbulanceByIncident[e.id];
+                    final chainAssign = assignmentChainDispatchStatusByIncident[e.id];
                     return Material(
                       color: on ? accent.withValues(alpha: 0.12) : Colors.transparent,
                       child: InkWell(
@@ -137,7 +200,14 @@ class CommandCenterActiveIncidentList extends StatelessWidget {
                                       ),
                                     ),
                                   ),
-                                  StatusPill(status: e.status, dispatchedAccent: accent),
+                                  if (useHospitalStatus)
+                                    HospitalConsignmentStatusPill(
+                                      incident: e,
+                                      ambulanceDispatchStatus: ambAssign,
+                                      hospitalAssignmentDispatchStatus: chainAssign,
+                                    )
+                                  else
+                                    StatusPill(status: e.status, dispatchedAccent: accent),
                                 ],
                               ),
                               const SizedBox(height: 4),
@@ -246,7 +316,7 @@ class CommandCenterArchiveIncidentList extends StatelessWidget {
         });
         var rows = docs.map((d) {
           final inc = SosIncident.fromFirestore(d);
-          final closure = (d.data()['status'] as String?)?.trim() ?? 'archived';
+          final closure = _archiveClosureLabelText(d.data());
           return (inc, closure);
         }).toList();
         if (zone != null) {

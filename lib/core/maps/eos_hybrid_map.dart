@@ -65,8 +65,12 @@ class EosHybridMap extends ConsumerStatefulWidget {
     String? mapId,
     @Deprecated('Use mapId instead.') String? cloudMapId,
     this.googleMapLoadTimeout = const Duration(seconds: 14),
+    this.forceGoogleTiles = false,
   })  : assert(mapId == null || cloudMapId == null),
         mapId = mapId ?? cloudMapId;
+
+  /// When true, always renders Google Maps tiles (ignores Leaflet fallback and remote routing).
+  final bool forceGoogleTiles;
 
   final CameraPosition initialCameraPosition;
   final String? style;
@@ -126,8 +130,10 @@ class _EosHybridMapState extends ConsumerState<EosHybridMap> {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted || ref.read(effectiveMapsUseLeafletProvider)) return;
-      _scheduleGoogleTimer();
+      if (!mounted) return;
+      if (widget.forceGoogleTiles || !ref.read(effectiveMapsUseLeafletProvider)) {
+        _scheduleGoogleTimer();
+      }
     });
   }
 
@@ -204,11 +210,13 @@ class _EosHybridMapState extends ConsumerState<EosHybridMap> {
   @override
   Widget build(BuildContext context) {
     ref.listen<bool>(effectiveMapsUseLeafletProvider, (prev, next) {
+      if (widget.forceGoogleTiles) return;
       if (next) _cancelGoogleTimer();
       if (next && mounted) setState(() {});
     });
 
-    final useLeaflet = ref.watch(effectiveMapsUseLeafletProvider);
+    final useLeaflet =
+        !widget.forceGoogleTiles && ref.watch(effectiveMapsUseLeafletProvider);
     if (useLeaflet) {
       _cancelGoogleTimer();
       _leafletController ??= fm.MapController();

@@ -5,6 +5,20 @@ import 'package:geolocator/geolocator.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 
 import '../core/constants/demo_gate_password.dart';
+import '../core/utils/fleet_unit_availability.dart';
+
+/// Row data from the Fleet Management placeholder doc (`custom_*`) for a call sign.
+class FleetPlaceholderRow {
+  const FleetPlaceholderRow({
+    this.assignedHospitalId,
+    required this.lat,
+    required this.lng,
+  });
+
+  final String? assignedHospitalId;
+  final double lat;
+  final double lng;
+}
 
 /// Live **vehicle** positions for admin fleet map (not hospitals / station buildings).
 /// One document per signed-in operator: `ops_fleet_units/{uid}`.
@@ -18,6 +32,29 @@ abstract final class FleetUnitService {
     });
   }
 
+  /// Placeholder row for [fleetCallSign] (Fleet Management `custom_*` doc), for default coords / hospital id.
+  static Future<FleetPlaceholderRow?> fleetPlaceholderRowForCallSign(String fleetCallSign) async {
+    final cs = fleetCallSign.trim();
+    if (cs.isEmpty) return null;
+    final variants = <String>{cs, cs.toUpperCase(), cs.toLowerCase()}.toList();
+    try {
+      final snap = await _db.collection(_col).where('fleetCallSign', whereIn: variants).limit(10).get();
+      for (final d in snap.docs) {
+        if (!isFleetUnitPlaceholderDoc(d.id)) continue;
+        final m = d.data();
+        final lat = (m['lat'] as num?)?.toDouble();
+        final lng = (m['lng'] as num?)?.toDouble();
+        if (lat == null || lng == null) continue;
+        final raw = (m['assignedHospitalId'] as String?)?.trim();
+        final ah = (raw != null && raw.isNotEmpty) ? raw : null;
+        return FleetPlaceholderRow(assignedHospitalId: ah, lat: lat, lng: lng);
+      }
+    } catch (e, st) {
+      debugPrint('[FleetUnitService] fleetPlaceholderRowForCallSign: $e\n$st');
+    }
+    return null;
+  }
+
   /// Upsert this user's unit while location sharing is on (driver consoles).
   static Future<void> syncMyUnit({
     required String vehicleType,
@@ -28,6 +65,7 @@ abstract final class FleetUnitService {
     double? headingDeg,
     String? fleetCallSign,
     String? stationedHospitalId,
+    String? assignedHospitalId,
   }) async {
     final uid = (FirebaseAuth.instance.currentUser?.uid ?? '').trim();
     if (uid.isEmpty) return;
@@ -58,8 +96,10 @@ abstract final class FleetUnitService {
     final sh = stationedHospitalId?.trim();
     if (sh != null && sh.isNotEmpty) {
       data['stationedHospitalId'] = sh;
-    } else {
-      data['stationedHospitalId'] = FieldValue.delete();
+    }
+    final ah = assignedHospitalId?.trim();
+    if (ah != null && ah.isNotEmpty) {
+      data['assignedHospitalId'] = ah;
     }
     await _db.collection(_col).doc(uid).set(data, SetOptions(merge: true));
   }
@@ -168,7 +208,8 @@ abstract final class FleetUnitService {
       'vehicleType': vt == 'ambulance' ? 'medical' : vt,
       'lat': defaultLat,
       'lng': defaultLng,
-      'available': true,
+      // Placeholder row only — set true when an operator runs syncMyUnit on duty.
+      'available': false,
       'fleetCallSign': cs,
       'driverName': driverName.trim(),
       'coPassenger': coPassenger.trim(),
