@@ -6,7 +6,7 @@
 
 ### AI-Powered Emergency Response Platform
 
-**Google Solution Challenge 2026 · Open Track · Rapid Emergency Response**
+**AI-Powered Emergency Response · Open Source · Rapid Emergency Response**
 
 [![Flutter](https://img.shields.io/badge/Flutter-3.x-02569B?logo=flutter)](https://flutter.dev)
 [![Firebase](https://img.shields.io/badge/Firebase-Platform-FFCA28?logo=firebase)](https://firebase.google.com)
@@ -571,7 +571,7 @@ MIT — See [LICENSE](LICENSE)
 
 ## Acknowledgements
 
-Built with ❤️ for the **Google Solution Challenge 2026** under the **Rapid Emergency Response** theme (Open Track).
+Built with ❤️ for a better, faster emergency response — powered by Google Cloud, Firebase, Gemini AI, and open-source infrastructure.
 
 Powered by Google Cloud, Firebase, Gemini AI, Google Maps Platform, LiveKit, and OpenAI.
 
