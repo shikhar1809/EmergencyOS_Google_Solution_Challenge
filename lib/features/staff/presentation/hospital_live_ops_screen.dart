@@ -4,9 +4,16 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:cloud_functions/cloud_functions.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
+import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:intl/intl.dart';
 
+import '../../../core/constants/app_constants.dart';
+import '../../../core/constants/google_maps_illustrative_light_style.dart';
+import '../../../core/maps/eos_hybrid_map.dart';
 import '../../../core/theme/app_colors.dart';
+import '../../../core/utils/ops_map_markers.dart';
+import '../../../core/utils/osrm_route_util.dart';
 import '../domain/admin_panel_access.dart';
 import '../../../services/incident_service.dart';
 import '../../../services/ops_hospital_service.dart';
@@ -798,58 +805,7 @@ class _HospitalFleetOnCallStrip extends StatelessWidget {
                   ),
                   const SizedBox(height: 8),
                   ...active.take(6).map(
-                    (i) {
-                      final idShort = i.id.length > 18 ? '${i.id.substring(0, 16)}…' : i.id;
-                      final ph = _phaseLabel(context, i.emsWorkflowPhase ?? '');
-                      return Card(
-                        color: const Color(0xFF1C2A3A),
-                        margin: const EdgeInsets.only(bottom: 8),
-                        child: Padding(
-                          padding: const EdgeInsets.all(12),
-                          child: Row(
-                            children: [
-                              Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                                decoration: BoxDecoration(
-                                  color: const Color(0xFF238636).withValues(alpha: 0.35),
-                                  borderRadius: BorderRadius.circular(8),
-                                  border: Border.all(color: const Color(0xFF79C0FF).withValues(alpha: 0.45)),
-                                ),
-                                child: Text(context.opsTr('ON CALL'), style: TextStyle(
-                                    color: Color(0xFF79C0FF),
-                                    fontSize: 10,
-                                    fontWeight: FontWeight.w900,
-                                    letterSpacing: 0.6,
-                                  ),
-                                ),
-                              ),
-                              const SizedBox(width: 10),
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text(
-                                      idShort,
-                                      style: const TextStyle(
-                                        color: Colors.white,
-                                        fontSize: 12,
-                                        fontWeight: FontWeight.w700,
-                                      ),
-                                      overflow: TextOverflow.ellipsis,
-                                    ),
-                                    const SizedBox(height: 2),
-                                    Text(
-                                      '$ph · ${i.type}',
-                                      style: const TextStyle(color: Colors.white54, fontSize: 11),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      );
-                    },
+                    (i) => _HospitalActiveConsignmentCard(incident: i),
                   ),
                 ],
               ),
@@ -1228,6 +1184,506 @@ class _ActiveConsignmentHospitalCard extends StatelessWidget {
           ),
         );
       },
+    );
+  }
+}
+
+/// Active Consignment card for the "Fleet on call" strip.
+///
+/// Streams the incident doc live so the phase chip, emergency banner and
+/// planned hospital→scene polyline reflect reality. Ops actions (open the
+/// operator channel / allot a new fleet) are surfaced inside the emergency
+/// banner when the driver has raised an in-run SOS.
+class _HospitalActiveConsignmentCard extends StatefulWidget {
+  const _HospitalActiveConsignmentCard({required this.incident});
+
+  final SosIncident incident;
+
+  @override
+  State<_HospitalActiveConsignmentCard> createState() =>
+      _HospitalActiveConsignmentCardState();
+}
+
+class _HospitalActiveConsignmentCardState
+    extends State<_HospitalActiveConsignmentCard> {
+  List<LatLng> _planned = const [];
+  LatLng? _routedFrom;
+  LatLng? _routedTo;
+  bool _routing = false;
+  bool _acting = false;
+
+  @override
+  void initState() {
+    super.initState();
+    unawaited(OpsMapMarkers.preload());
+    _maybeFetchRoute(widget.incident);
+  }
+
+  void _maybeFetchRoute(SosIncident inc) {
+    final origin = inc.plannedOriginLatLng;
+    final scene = inc.liveVictimPin;
+    if (origin == null) return;
+    if (_routing) return;
+    if (_routedFrom != null &&
+        _routedTo != null &&
+        _sameLatLng(_routedFrom!, origin) &&
+        _sameLatLng(_routedTo!, scene)) {
+      return;
+    }
+    _routing = true;
+    OsrmRouteUtil.drivingRoute(origin, scene).then((pts) {
+      if (!mounted) return;
+      setState(() {
+        _planned = pts;
+        _routedFrom = origin;
+        _routedTo = scene;
+        _routing = false;
+      });
+    }).catchError((_) {
+      if (!mounted) return;
+      setState(() => _routing = false);
+    });
+  }
+
+  static bool _sameLatLng(LatLng a, LatLng b) =>
+      (a.latitude - b.latitude).abs() < 1e-6 &&
+      (a.longitude - b.longitude).abs() < 1e-6;
+
+  Future<void> _openOperatorChannel(SosIncident inc) async {
+    if (_acting) return;
+    _acting = true;
+    try {
+      await IncidentService.acknowledgeFleetEmergency(incidentId: inc.id);
+    } catch (_) {}
+    if (!mounted) return;
+    _acting = false;
+    final hId = (inc.returnHospitalId ?? '').trim();
+    final q = hId.isEmpty ? '' : '?h=$hId';
+    context.push('/fleet-live/operation/${inc.id}$q');
+  }
+
+  Future<void> _allotNewFleet(SosIncident inc) async {
+    if (_acting) return;
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFF11181F),
+        title: Text(context.opsTr('Allot new fleet?'),
+            style: const TextStyle(color: Colors.white)),
+        content: Text(
+          context.opsTr(
+            'The current unit will be released and a fresh ambulance will be dispatched to this incident.',
+          ),
+          style: const TextStyle(color: Colors.white70),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: Text(context.opsTr('Cancel')),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: Colors.redAccent),
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: Text(context.opsTr('Allot new fleet')),
+          ),
+        ],
+      ),
+    );
+    if (ok != true || !mounted) return;
+    _acting = true;
+    String? newFleet;
+    try {
+      newFleet = await IncidentService.reassignFleetForEmergency(
+        incidentId: inc.id,
+      );
+    } catch (_) {}
+    _acting = false;
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          newFleet == null
+              ? context.opsTr('No available ambulance found — manual dispatch required.')
+              : context.opsTr('Dispatched new ambulance to the incident.'),
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
+      stream: FirebaseFirestore.instance
+          .collection('sos_incidents')
+          .doc(widget.incident.id)
+          .snapshots(),
+      builder: (context, snap) {
+        final inc = snap.hasData && snap.data!.exists
+            ? SosIncident.fromFirestore(snap.data!)
+            : widget.incident;
+        _maybeFetchRoute(inc);
+        return _buildCard(context, inc);
+      },
+    );
+  }
+
+  Widget _buildCard(BuildContext context, SosIncident inc) {
+    final phaseRaw = (inc.emsWorkflowPhase ?? '').trim();
+    final idShort = inc.id.length > 18 ? '${inc.id.substring(0, 16)}…' : inc.id;
+    final emergencyState = (inc.fleetEmergencyState ?? '').trim();
+    final emergencyActive =
+        emergencyState == 'raised' || emergencyState == 'acknowledged';
+
+    return Card(
+      color: emergencyActive
+          ? const Color(0xFF2A0F14)
+          : const Color(0xFF1C2A3A),
+      margin: const EdgeInsets.only(bottom: 10),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(12),
+        side: BorderSide(
+          color: emergencyActive
+              ? Colors.redAccent.withValues(alpha: 0.7)
+              : Colors.white.withValues(alpha: 0.06),
+        ),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(
+              children: [
+                _PhaseChip(phase: phaseRaw),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        idShort,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w700,
+                        ),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        _subtitleFor(context, inc),
+                        style: const TextStyle(
+                            color: Colors.white54, fontSize: 11),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            if (emergencyActive) ...[
+              const SizedBox(height: 10),
+              _EmergencyBanner(
+                incident: inc,
+                onOpenChannel: () => _openOperatorChannel(inc),
+                onAllotNewFleet: () => _allotNewFleet(inc),
+              ),
+            ],
+            const SizedBox(height: 10),
+            _MiniConsignmentMap(
+              incident: inc,
+              plannedRoute: _planned,
+              emergencyActive: emergencyActive,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  String _subtitleFor(BuildContext context, SosIncident inc) {
+    final ph = _HospitalFleetOnCallStrip._phaseLabel(
+        context, inc.emsWorkflowPhase ?? '');
+    final type = inc.type.trim();
+    return type.isEmpty ? ph : '$ph · $type';
+  }
+}
+
+class _PhaseChip extends StatelessWidget {
+  const _PhaseChip({required this.phase});
+  final String phase;
+
+  @override
+  Widget build(BuildContext context) {
+    late final Color bg;
+    late final Color fg;
+    late final IconData icon;
+    late final String label;
+    switch (phase) {
+      case 'inbound':
+        bg = const Color(0xFF1F3A58);
+        fg = const Color(0xFF79C0FF);
+        icon = Icons.navigation_rounded;
+        label = context.opsTr('EN ROUTE');
+        break;
+      case 'on_scene':
+        bg = const Color(0xFF3A2A10);
+        fg = const Color(0xFFFFB74D);
+        icon = Icons.location_on_rounded;
+        label = context.opsTr('ON SCENE');
+        break;
+      case 'returning':
+        bg = const Color(0xFF0F3A2A);
+        fg = const Color(0xFF4DD0E1);
+        icon = Icons.local_hospital_rounded;
+        label = context.opsTr('RETURNING');
+        break;
+      default:
+        bg = const Color(0xFF1F2A3A);
+        fg = Colors.white70;
+        icon = Icons.medical_services_rounded;
+        label = phase.isEmpty ? context.opsTr('ON CALL') : phase.toUpperCase();
+    }
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: bg,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: fg.withValues(alpha: 0.45)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, color: fg, size: 12),
+          const SizedBox(width: 4),
+          Text(
+            label,
+            style: TextStyle(
+              color: fg,
+              fontSize: 10,
+              fontWeight: FontWeight.w900,
+              letterSpacing: 0.6,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _EmergencyBanner extends StatelessWidget {
+  const _EmergencyBanner({
+    required this.incident,
+    required this.onOpenChannel,
+    required this.onAllotNewFleet,
+  });
+
+  final SosIncident incident;
+  final VoidCallback onOpenChannel;
+  final VoidCallback onAllotNewFleet;
+
+  @override
+  Widget build(BuildContext context) {
+    final state = (incident.fleetEmergencyState ?? '').trim();
+    final acked = state == 'acknowledged';
+    final cs = (incident.fleetEmergencyRaisedByCallSign ?? '').trim();
+    final note = (incident.fleetEmergencyNote ?? '').trim();
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.redAccent.withValues(alpha: 0.12),
+        border: Border.all(color: Colors.redAccent.withValues(alpha: 0.8)),
+        borderRadius: BorderRadius.circular(10),
+      ),
+      padding: const EdgeInsets.all(10),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.priority_high_rounded,
+                  color: Colors.redAccent, size: 18),
+              const SizedBox(width: 6),
+              Expanded(
+                child: Text(
+                  acked
+                      ? context.opsTr('Driver SOS · ops on the channel')
+                      : context.opsTr('Driver SOS · needs support'),
+                  style: const TextStyle(
+                    color: Colors.redAccent,
+                    fontWeight: FontWeight.w900,
+                    fontSize: 12,
+                    letterSpacing: 0.4,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          if (cs.isNotEmpty || note.isNotEmpty) ...[
+            const SizedBox(height: 4),
+            Text(
+              [
+                if (cs.isNotEmpty) '${context.opsTr('Unit')}: $cs',
+                if (note.isNotEmpty) note,
+              ].join(' · '),
+              style: const TextStyle(color: Colors.white70, fontSize: 11),
+            ),
+          ],
+          const SizedBox(height: 8),
+          Wrap(
+            spacing: 8,
+            runSpacing: 6,
+            children: [
+              FilledButton.icon(
+                onPressed: onOpenChannel,
+                icon: const Icon(Icons.headset_mic_rounded, size: 16),
+                label: Text(context.opsTr('Open operator channel')),
+                style: FilledButton.styleFrom(
+                  backgroundColor: Colors.redAccent,
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 12, vertical: 8),
+                  textStyle: const TextStyle(
+                      fontSize: 11, fontWeight: FontWeight.w800),
+                ),
+              ),
+              OutlinedButton.icon(
+                onPressed: onAllotNewFleet,
+                icon: const Icon(Icons.swap_horiz_rounded, size: 16),
+                label: Text(context.opsTr('Allot new fleet')),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: Colors.white,
+                  side: BorderSide(
+                      color: Colors.white.withValues(alpha: 0.5)),
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 12, vertical: 8),
+                  textStyle: const TextStyle(
+                      fontSize: 11, fontWeight: FontWeight.w700),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _MiniConsignmentMap extends StatelessWidget {
+  const _MiniConsignmentMap({
+    required this.incident,
+    required this.plannedRoute,
+    required this.emergencyActive,
+  });
+
+  final SosIncident incident;
+  final List<LatLng> plannedRoute;
+  final bool emergencyActive;
+
+  @override
+  Widget build(BuildContext context) {
+    final origin = incident.plannedOriginLatLng;
+    final scene = incident.liveVictimPin;
+    final driver = incident.craneLiveLocation;
+    final sos = incident.fleetEmergencyLatLng;
+
+    final markers = <Marker>{
+      Marker(
+        markerId: const MarkerId('scene'),
+        position: scene,
+        icon: OpsMapMarkers.sceneOr(
+            BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueRed)),
+        anchor: const Offset(0.5, 0.5),
+      ),
+      if (origin != null)
+        Marker(
+          markerId: const MarkerId('origin'),
+          position: origin,
+          icon: OpsMapMarkers.hospitalOr(
+              BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueCyan)),
+          anchor: const Offset(0.5, 0.5),
+        ),
+      if (driver != null)
+        Marker(
+          markerId: const MarkerId('driver'),
+          position: driver,
+          icon: OpsMapMarkers.ambulanceOr(
+              BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueRed)),
+          anchor: const Offset(0.5, 0.5),
+        ),
+      if (sos != null)
+        Marker(
+          markerId: const MarkerId('sos'),
+          position: sos,
+          icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueRose),
+          anchor: const Offset(0.5, 0.5),
+        ),
+    };
+
+    final polylines = <Polyline>{};
+    if (plannedRoute.length >= 2) {
+      polylines.add(Polyline(
+        polylineId: const PolylineId('planned'),
+        points: plannedRoute,
+        color: const Color(0xFF79C0FF),
+        width: 4,
+      ));
+    } else if (origin != null) {
+      polylines.add(Polyline(
+        polylineId: const PolylineId('planned_fallback'),
+        points: OsrmRouteUtil.fallbackPolyline(origin, scene),
+        color: const Color(0xFF79C0FF).withValues(alpha: 0.7),
+        width: 3,
+        patterns: [PatternItem.dash(20), PatternItem.gap(10)],
+      ));
+    }
+
+    final circles = <Circle>{
+      Circle(
+        circleId: const CircleId('scene_200m'),
+        center: scene,
+        radius: 200,
+        fillColor: Colors.orange.withValues(alpha: 0.08),
+        strokeColor: Colors.orange.withValues(alpha: 0.4),
+        strokeWidth: 1,
+      ),
+      if (emergencyActive && (sos ?? driver) != null)
+        Circle(
+          circleId: const CircleId('sos_pulse'),
+          center: (sos ?? driver)!,
+          radius: 120,
+          fillColor: Colors.redAccent.withValues(alpha: 0.15),
+          strokeColor: Colors.redAccent,
+          strokeWidth: 2,
+        ),
+    };
+
+    final cameraTarget = origin != null
+        ? LatLng(
+            (origin.latitude + scene.latitude) / 2,
+            (origin.longitude + scene.longitude) / 2,
+          )
+        : scene;
+
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(10),
+      child: SizedBox(
+        height: 160,
+        child: EosHybridMap(
+          initialCameraPosition: CameraPosition(
+            target: cameraTarget,
+            zoom: 12.5,
+          ),
+          markers: markers,
+          polylines: polylines,
+          circles: circles,
+          liteModeEnabled: true,
+          zoomControlsEnabled: false,
+          myLocationButtonEnabled: false,
+          compassEnabled: false,
+          mapToolbarEnabled: false,
+          style: effectiveGoogleMapsEmbeddedStyleJson(),
+        ),
+      ),
     );
   }
 }

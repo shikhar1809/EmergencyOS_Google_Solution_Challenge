@@ -170,8 +170,8 @@ EmergencyOS ships as **three separately compiled and hosted apps** that all shar
             │ • AED finder           │ │   inspector│ │   (operation +       │
             │ • Family tracker link  │ │ • Fleet &  │ │    emergency rooms)  │
             │ • Offline SOS (SMS)    │ │   hospital │ │ • Fleet heartbeat    │
-            │ • 19-level CPR        │ │   mgmt     │ │ • Unit handoff       │
-            │   training arena       │ │ • System   │ │                      │
+            │ • Lifeline arena       │ │   mgmt     │ │ • Unit handoff       │
+            │   (29 scenario cards)  │ │ • System   │ │                      │
             │                        │ │   observ.  │ │                      │
             │                        │ │ • Impact   │ │                      │
             │                        │ │   dashboard│ │                      │
@@ -201,6 +201,25 @@ Every logged-in user also has a **personal voice agent** on `copilot_{uid}` — 
 - Look up any medical protocol on demand
 - Request an SOS trigger (the user must confirm) — so an elderly user can literally say *"call an ambulance, I think I'm having a heart attack"* and the chain fires.
 
+### Why Gemini decides, and a third-party voice stack speaks
+
+EmergencyOS is deliberately a **Gemini-led system with a hybrid voice layer.** Every decision that affects a human life — *what type of emergency is this, how severe is it, which hospital specialty is needed, what does the situation brief say, what should the bystander do next* — is made by **Gemini 2.5 Flash**, running server-side through authenticated Cloud Functions with shared safety contracts, retrieval-grounded first-aid protocols, and structured-JSON responses:
+
+- **Triage Vision** (photo → severity, category, `aiRecommendedSpecialty`) → Gemini.
+- **LIFELINE first-aid guidance** (CPR, bleeding, burns, choking, stroke) → Gemini, grounded on vetted WHO / AHA-derived protocols.
+- **Situation briefs** for dispatchers (multimodal: text + scene photos + voice-note transcript) → Gemini.
+- **Ops analytics chat** on live Firestore data → Gemini.
+- **Hospital routing rationale** shown on the ops dashboard and the victim's card → Gemini.
+- **Hospital dispatch scoring** is boosted by Gemini's `aiRecommendedSpecialty` — the AI's vision call literally re-ranks which hospital the ambulance goes to.
+
+The pieces that are **not** Gemini are intentionally narrow: the "last-mile" voice transport that carries those Gemini-generated words into a live phone-call-grade stream — speech-to-text, text-to-speech, and WebRTC bridging — currently uses **LiveKit** (WebRTC rooms), **OpenAI Realtime** / **Cartesia** (TTS), and **Deepgram** (STT). This is a conscious engineering choice, not a limitation:
+
+- **Best-in-class latency.** Sub-300 ms round-trip speech matters when a bystander is doing chest compressions. These providers lead that specific benchmark today. Google's real-time voice offering is maturing rapidly and the adapter layer is already abstracted — swapping any one of them in takes hours, not weeks.
+- **Clear separation of concerns.** The voice stack is a *pipe*. The brain of every response — clinical reasoning, prompt safety, JSON schema, protocol grounding, hospital routing — stays on Gemini. Replacing the pipe does not change a single decision the system makes.
+- **Reliability.** If the voice stack is unavailable, the same Gemini backend still serves text chat, triage, briefs, and dispatch — nothing about a victim's rescue depends on a third-party TTS being up.
+
+**In short:** Gemini makes every medical and dispatch decision in EmergencyOS. LiveKit / OpenAI / Deepgram / Cartesia are the microphone, speaker, and cable connecting that decision to a panicked human. We chose the pipe on engineering merit and can swap it at any time without changing the system's behavior.
+
 ---
 
 ## Reliability — Engineered for the Worst Day
@@ -212,7 +231,7 @@ Emergency systems fail people exactly when they are needed most. EmergencyOS is 
 | **Volunteer's FCM token is stale** | 3 independent FCM layers (geo, topic, all-users). One failure never silences the others. |
 | **Hospital ignores the dispatch** | 2-minute acceptance window → auto-escalates to the next best hospital. `hospitalDispatchEscalation` runs every minute. |
 | **Ambulance operator doesn't respond** | 3-minute window → auto-escalates to the next-nearest fleet unit. `ambulanceDispatchEscalation` runs every minute. |
-| **Gemini API key is down** | Local offline first-aid knowledge base (19 levels, curriculum-grade) keeps serving guidance. |
+| **Gemini API key is down** | Local offline first-aid knowledge base (keyword-matched guidance for core emergencies) keeps serving text until the API returns. |
 | **Google Maps WebGL fails** | `flutter_map` CPU-renderer fallback kicks in. |
 | **User has no mobile data — only 2G SMS** | Twilio GeoSMS webhook (`parseSmsGateway`) creates a real Firestore incident from a text message. Victim gets SMS status back. |
 | **Rate-limit spam** | Rate-limit **flags** an incident but **never blocks dispatch**. Real emergencies cannot be missed to prevent abuse. This is the single most important design rule in the system. |
@@ -232,7 +251,7 @@ When a flood, fire, or blackout hits, cellular coverage is the first thing to co
 |---|---|
 | **Firestore** | Offline persistence enabled, 50 MB cache. SOS writes queue and sync when signal returns. |
 | **`OfflineCacheService`** | Pre-caches the user's active incident, medical history, emergency contacts, and last-known ambulance position. |
-| **`OfflineKnowledgeService`** | Full 19-level first-aid curriculum (CPR, choking, bleeding, burns, seizure, stroke, allergic reactions) available in 12 languages, zero network. |
+| **`OfflineKnowledgeService`** | Keyword routes (CPR, bleeding, choking, stroke, burns, seizure, anaphylaxis, drowning, and more) return pre-written guidance in 12 languages with zero network. |
 | **`OfflineMapPackService`** | User can pre-download map tiles for their home zone. Incident map keeps rendering. |
 | **`OfflineSosStatusService`** | If SOS fails to upload, it is queued and retried on reconnect — and an SMS is sent in parallel. |
 | **TTS voice guidance** | Reads first-aid steps aloud when the screen is unreadable (dust, smoke, blood, motion). |
@@ -278,7 +297,7 @@ Hospitals get their own slice — a **Hospital Bridge** view showing the incomin
 
 - Chat + voice + photo triage
 - Gemini 2.5 Flash cloud-side, offline knowledge base fallback
-- 19-level gamified training arena (XP, levels, lives-saved leaderboard)
+- 29-card gamified training arena (XP, levels, lives-saved leaderboard)
 - Emergency mode toggle — switch from learning to live guidance
 - 12 Indian languages with native-locale TTS
 </details>
@@ -620,6 +639,62 @@ LiveKit is open, self-hostable, and exposes an `AgentDispatchClient` that lets C
 
 ---
 
+## Hospital dispatch escalation (v2), Lifeline voice agent, and Lifeline response cards
+
+### Hospital dispatch escalation — how it works in detail
+
+Hospital matching and retries are implemented in [`functions/src/hospital_dispatch_v2.js`](functions/src/hospital_dispatch_v2.js) (see also [`docs/HOSPITAL_DISPATCH_V2.md`](docs/HOSPITAL_DISPATCH_V2.md)). When an SOS is created, `dispatchHospitalInHex` delegates to this engine, which writes `ops_incident_hospital_assignments/{incidentId}` and starts **wave 1**.
+
+**Severity tiers** drive parallelism, patience, SMS backup, and how far the chain can run. `classifySeverity()` maps incident text, `dispatchHints`, triage colour, and optional vitals (`spo2`, `heartRate`, `systolicBp`) into `critical`, `high`, or `standard`. Each tier uses a frozen `SEVERITY_PROFILE`:
+
+| Tier | Hospitals notified **in parallel** per wave | Wave timeout (no accept) | Maximum waves | Twilio SMS fallback after |
+|------|---------------------------------------------|----------------------------|-----------------|---------------------------|
+| **critical** | 3 | 45 s | 6 | 30 s |
+| **high** | 2 | 75 s | 5 | 60 s |
+| **standard** | 1 | 120 s | 4 | 180 s |
+
+**Matching** ranks candidates inside a 60 km search with multi-factor scoring (proximity with optional Google Routes drive-time, specialty vs `requiredServices`, bed capacity, staffing, blood bank, cross-incident load, ambulance readiness at the hospital, data freshness, and rolling 30-day accept reliability). Results are stored in `rankedCandidates` and flattened into `orderedHospitalIds` for deterministic escalation order.
+
+**Waves and escalation.** Each wave stores `hospitalIds`, `startedAt`, `timeoutAt`, and `outcome`. All hospitals in a wave receive dashboard inbox rows, FCM to on-duty staff, and optional SMS after `smsFallbackAfterMs`. **First hospital to accept wins** (transactional accept in the same module). If the wave **times out** (scheduler `hospitalDispatchEscalation` in [`functions/index.js`](functions/index.js), every minute) or the wave is **declined** and the callable escalates when no member accepts, `escalateAssignment()` runs:
+
+1. The current wave is closed with `outcome: "timeout"` or `"declined"`.
+2. The next wave takes the next slice of `orderedHospitalIds` that were **never** in `notifiedHospitalIds`, up to `parallelPerWave` facilities.
+3. Legacy fields (`notifiedHospitalId`, lat/lng, `notifyIndex`) are repointed at the wave primary for older UIs.
+4. `fanOutHospitalNotifications` runs again for the new wave; ops gets an informational `ops_dashboard_alerts` row on escalation.
+5. If there are **no remaining hospitals** or **nextWaveIndex ≥ maxWaves**, the assignment moves to `dispatchStatus: "exhausted"`, stamps `dispatchExhaustedAt`, appends a terminal wave with `outcome: "exhausted"`, and raises a **critical** ops alert (`hospital_dispatch_exhausted`).
+
+This replaces the legacy single-hospital notify-and-wait loop with **severity-aware parallel fan-out**, explicit **wave audit history**, and **SMS fallback before the full wave deadline** on critical incidents.
+
+### Lifeline voice agent — two complementary implementations
+
+**1) LiveKit “lifeline” server agent (emergency room audio)**  
+[`livekit-agent/lifeline-agent/`](livekit-agent/lifeline-agent/) registers agent name `lifeline` (override with `LIFELINE_LIVEKIT_AGENT_NAME`). Cloud Functions use `AgentDispatchClient.createDispatch` to join the incident’s WebRTC room:
+
+- [`ensureEmergencyBridge`](functions/index.js) dispatches the agent when the victim starts the emergency bridge so EMS and contacts hear a managed room, not a random peer mesh.
+- [`dispatchLifelineComms`](functions/index.js) sends a **second job** with JSON metadata `{ importantComms: "<text>" }` (aliases `important_comms` / `text` also supported). Only the **incident owner** or users flagged `emergencyBridgeDesk` may call it.
+
+The agent uses **OpenAI Realtime** (`voice: coral`) with background noise cancellation, **does not run a conversation loop**: it connects, `generateReply()` speaks the comms **verbatim**, `waitForPlayout()`, then `session.shutdown()`. That makes it ideal for “inbound ETA 4 minutes, bay 3” style announcements without hallucinated dialogue.
+
+**2) Flutter `LifelineVoiceAgentService` (push-to-talk LIFELINE in the app)**  
+[`lib/services/lifeline_voice_agent_service.dart`](lib/services/lifeline_voice_agent_service.dart) powers the in-app overlay ([`lifeline_voice_agent_overlay.dart`](lib/features/ai_assist/presentation/widgets/lifeline_voice_agent_overlay.dart)):
+
+- **Long-press** the mic → speech recognition with fixed locale **`en-IN`** (reliable for Indian English and Hinglish in the browser recognizer).
+- **Release** → transcript is sent to the existing **`lifelineChat`** callable; Gemini returns spoken guidance (and an optional `openLibraryLevelId` to jump to a curriculum card).
+- **Short tap** while listening discards capture; while speaking it cancels TTS.
+- **TTS path**: prefers on-device synthesis when allowed; on **mobile web** (or when no local voice pack exists) it uses **cloud TTS MP3** playback so audio still works after the async round-trip, which raw `speechSynthesis` often blocks without a fresh user gesture.
+
+Together, the **LiveKit agent** covers **broadcast read-aloud in the shared emergency room**, while the **Flutter service** covers **hands-free Q&A against the same LIFELINE backend** during training or on-scene assist.
+
+### Lifeline — emergency-case response cards (training arena)
+
+EmergencyOS treats **first-aid archetypes as response cards** on the Lifeline arena map (the same scenarios the AI is grounded on). **Thirty** such emergency case types are in the product scope; **`kLifelineTrainingLevels` currently authors 29** concrete cards in [`lib/features/ai_assist/domain/lifeline_training_levels.dart`](lib/features/ai_assist/domain/lifeline_training_levels.dart) (numeric level IDs span **1–31** with **26 and 27** left open for fast curriculum inserts). Each card bundles: **title/subtitle**, **YouTube primer id**, **three infographic steps** (icon + headline + detail), **red flags**, **cautions**, **four-option MCQ**, **XP reward**, and **accent/icon** for the Clash-style map UI. [`LifelineCurriculumDigest`](lib/features/ai_assist/data/lifeline_curriculum_digest.dart) serialises the same content for Gemini / tool context so chat and voice answers stay aligned with the cards.
+
+**Scenario cards in the curriculum (by title):** Basic first aid · CPR basics · BASIC trauma response · AED essentials · Breathing problem / blockage · Choking (adult) · Severe bleeding · Stroke (FAST) · Burns · Shock & positioning · Scene command · Anaphylaxis · Drowning rescue · Seizure first aid · Snake / animal bite · Diabetic emergency · Hypothermia & heat stroke · Accident / collision · Asthma attack · Seizure (prolonged / EMS escalation) · Foreign object penetration · Fracture & splinting · Poisoning / overdose · Head injury / concussion · Mental health crisis · Spinal injury · Heavy smoke / toxic gas · Fall from height · Electrocute rescue.
+
+**Hero artwork:** [`technique_visuals.dart`](lib/features/ai_assist/presentation/widgets/technique_visuals.dart) maps level IDs to bundled PNGs under `assets/images/lifeline/` (with intentional overrides, e.g. drowning → `27.png`, electrocution → `47.png`, BASIC trauma → `233.png`) so every card has a consistent visual on the map.
+
+---
+
 ## 12 Languages, One Voice
 
 App UI, LIFELINE responses, and TTS voice guidance available in:
@@ -641,7 +716,7 @@ Sample screenshots are in [`docs/screenshots/`](docs/screenshots/) and map-marke
 
 - SOS slide-to-confirm + active locked screen with live ETA
 - Hex-grid command center with zoomed incident inspector
-- LIFELINE training arena — 19 gamified levels
+- LIFELINE training arena — 29 gamified emergency-response scenario cards (see section above)
 - Fleet incoming dispatch + turn-by-turn
 - Hospital bridge with patient record preload
 - Family tracker web link

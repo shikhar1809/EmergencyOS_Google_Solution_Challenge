@@ -12,7 +12,6 @@ import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:emergency_os/core/maps/eos_hybrid_map.dart';
 import 'package:emergency_os/core/maps/ops_map_controller.dart';
 import 'package:http/http.dart' as http;
-import 'package:geocoding/geocoding.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -49,6 +48,47 @@ import 'package:emergency_os/services/emergency_services_data.dart';
 import 'package:emergency_os/services/environmental_data_service.dart';
 import 'package:emergency_os/services/regional_health_alerts_service.dart';
 
+/// Bottom-right map surface: classic grid legend vs hex zone (radius) overlay.
+enum _MapSurfaceMode { grid, zoneRadius }
+
+typedef _HealthEnvBundle = ({AQIInfo? aqi, List<DiseaseOutbreak> outbreaks});
+
+/// Parallel AQI + outbreak fetch for map intel and the Info sheet (timeouts per call).
+Future<_HealthEnvBundle> _fetchHealthEnvironmentBundleForLatLng(double lat, double lng) async {
+  Future<List<DiseaseOutbreak>> outbreaksJob() async {
+    try {
+      final list = await RegionalHealthAlertsService.fetchForLocation(
+        lat: lat,
+        lng: lng,
+        countryCodeIso2: 'IN',
+      ).timeout(const Duration(seconds: 12), onTimeout: () => <DiseaseOutbreak>[]);
+      if (list.isNotEmpty) return list;
+    } catch (e) {
+      debugPrint('[MapScreen] regional health alerts: $e');
+    }
+    return EmergencyServicesService.getActiveOutbreaks();
+  }
+
+  Future<AQIInfo?> aqiJob() async {
+    try {
+      final hex = await EnvironmentalDataService.fetchForLocation(LatLng(lat, lng))
+          .timeout(const Duration(seconds: 12));
+      if (hex != null) return EnvironmentalDataService.toAqiInfo(hex);
+    } catch (e) {
+      debugPrint('[MapScreen] Google AQI: $e');
+    }
+    try {
+      return await EmergencyServicesService.getAQI(lat, lng)
+          .timeout(const Duration(seconds: 12));
+    } catch (_) {
+      return null;
+    }
+  }
+
+  final pair = await Future.wait([outbreaksJob(), aqiJob()]);
+  return (outbreaks: pair[0] as List<DiseaseOutbreak>, aqi: pair[1] as AQIInfo?);
+}
+
 class MapScreen extends ConsumerStatefulWidget {
   const MapScreen({super.key, this.isDrillShell = false});
 
@@ -79,34 +119,26 @@ class _MapScreenState extends ConsumerState<MapScreen> with TickerProviderStateM
   BitmapDescriptor? _userIcon;
   List<EmergencyPlace> _hospitals = [];
 
-  /// Layer toggles for the map. Emergency services = hospital directory.
-  bool _mapShowEmergencyServices = true;
   /// Only the nearest facility per type (within grid radius).
   final bool _mapNearestOnly = false;
   /// Live SOS pins + past incidents in the area (chip: "Live SOS").
   bool _mapShowPastIncidents = true;
-  /// Hex response zones (annulus tiers to 30 km) from grid radius + service counts.
-  bool _mapShowZoneClassification = false;
-  /// Other on-duty volunteers with fresh locations inside the grid radius.
+  /// Grid vs zone (radius) classification overlay.
+  _MapSurfaceMode _mapSurfaceMode = _MapSurfaceMode.grid;
+  /// Other on-duty volunteers with fresh locations inside the grid radius (practice grid: always on).
   bool _mapShowVolunteers = true;
+
+  bool get _mapShowZoneClassification => _mapSurfaceMode == _MapSurfaceMode.zoneRadius;
   bool _zonePanelExpanded = true;
   /// Main map: past incident pins for the current hex only (toggled via Zone Info).
   bool _showPastIncidentsForZone = false;
 
-  /// New emergency service layers
-  bool _mapShowPharmacies = false;
-  bool _mapShowCoolingCenters = false;
-  bool _mapShowBloodBanks = false;
   final bool _mapShowOutbreaks = false;
   final bool _mapShowAQI = false;
 
-  /// New service data
-  List<PharmacyPlace> _pharmacies = [];
-  List<CoolingCenter> _coolingCenters = [];
-  List<BloodBankInfo> _bloodBanks = [];
+  /// Health / environment (AQI + outbreaks) for map intel + Info sheet.
   List<DiseaseOutbreak> _outbreaks = [];
   AQIInfo? _aqiInfo;
-  String _pharmacyMedicineFilter = '';
 
   StreamSubscription<QuerySnapshot<Map<String, dynamic>>>? _volunteerDutySub;
   StreamSubscription<List<OpsHospitalRow>>? _opsHospitalsSub;
@@ -146,9 +178,6 @@ class _MapScreenState extends ConsumerState<MapScreen> with TickerProviderStateM
   BitmapDescriptor? _volunteerDutyIcon;
   BitmapDescriptor? _volunteerMaleIcon;
   BitmapDescriptor? _volunteerFemaleIcon;
-  BitmapDescriptor? _pharmacyIcon;
-  BitmapDescriptor? _coolingCenterIcon;
-  BitmapDescriptor? _bloodBankIcon;
   BitmapDescriptor? _outbreakIcon;
 
   late AnimationController _rotationController;
@@ -196,9 +225,8 @@ class _MapScreenState extends ConsumerState<MapScreen> with TickerProviderStateM
     final pastLegend = widget.isDrillShell
         ? (_mapShowPastIncidents && _pastIncidents.isNotEmpty)
         : (_showPastIncidentsForZone && _pastIncidentsInUserHex().isNotEmpty);
-    return (_mapShowEmergencyServices &&
-            (_hospitals.isNotEmpty ||
-                _opsHospitalRows.any((r) => r.lat != null && r.lng != null))) ||
+    return (_hospitals.isNotEmpty ||
+            _opsHospitalRows.any((r) => r.lat != null && r.lng != null)) ||
         pastLegend ||
         (widget.isDrillShell && _mapShowVolunteers && _nearbyOnDutyVolunteers().isNotEmpty);
   }
@@ -326,6 +354,8 @@ class _MapScreenState extends ConsumerState<MapScreen> with TickerProviderStateM
         if (!context.mounted || r == null) return;
         setState(() => _cachedPackRadiusM = r);
       }));
+    } else {
+      _mapShowVolunteers = true;
     }
     // Demo fleet / seeded `demo_ops_*` playback: practice map only — main map is real incidents only.
     if (widget.isDrillShell) {
@@ -415,9 +445,6 @@ class _MapScreenState extends ConsumerState<MapScreen> with TickerProviderStateM
     _incidentChokingMarker = await MapMarkerGenerator.getMinimalPin(Icons.air_rounded, const Color(0xFF26C6DA));
     _incidentDefaultMarker = await MapMarkerGenerator.getMinimalPin(Icons.emergency_rounded, AppColors.primaryDanger);
 
-    _pharmacyIcon = await MapMarkerGenerator.getMinimalPin(Icons.local_pharmacy_rounded, const Color(0xFF26A69A));
-    _coolingCenterIcon = await MapMarkerGenerator.getMinimalPin(Icons.ac_unit_rounded, const Color(0xFF42A5F5));
-    _bloodBankIcon = await MapMarkerGenerator.getMinimalPin(Icons.bloodtype_rounded, const Color(0xFFE53935));
     _outbreakIcon = await MapMarkerGenerator.getMinimalPin(Icons.warning_rounded, const Color(0xFFFF9800));
 
     if (context.mounted) setState(() {});
@@ -697,298 +724,6 @@ class _MapScreenState extends ConsumerState<MapScreen> with TickerProviderStateM
     );
   }
 
-  void _showPharmacyDetailSheet(PharmacyPlace p) {
-    final dist = _currentPosition == null
-        ? null
-        : Geolocator.distanceBetween(_currentPosition!.latitude, _currentPosition!.longitude, p.lat, p.lng);
-    showModalBottomSheet<void>(
-      context: context,
-      backgroundColor: Colors.transparent,
-      builder: (ctx) {
-        return Container(
-          margin: const EdgeInsets.fromLTRB(14, 0, 14, 18),
-          padding: const EdgeInsets.fromLTRB(18, 16, 18, 18),
-          decoration: BoxDecoration(
-            color: AppColors.surface.withValues(alpha: 0.94),
-            borderRadius: BorderRadius.circular(18),
-            border: Border.all(color: Colors.white24),
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  Icon(Icons.local_pharmacy_rounded, color: const Color(0xFF26A69A)),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: Text(p.name, style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w800)),
-                  ),
-                  if (p.is24Hours)
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                      decoration: BoxDecoration(color: const Color(0xFF26A69A), borderRadius: BorderRadius.circular(8)),
-                      child: const Text('24hr', style: TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold)),
-                    ),
-                ],
-              ),
-              const SizedBox(height: 4),
-              Text('Pharmacy', style: TextStyle(color: const Color(0xFF26A69A).withValues(alpha: 0.85), fontSize: 11, fontWeight: FontWeight.w800)),
-              const SizedBox(height: 8),
-              Text(p.vicinity, style: const TextStyle(color: Colors.white60, fontSize: 13)),
-              if (dist != null) ...[
-                const SizedBox(height: 6),
-                Text('${(dist / 1000).toStringAsFixed(1)} km away', style: const TextStyle(color: AppColors.primaryInfo, fontWeight: FontWeight.w700, fontSize: 12)),
-              ],
-              if (p.availableMedicines.isNotEmpty) ...[
-                const SizedBox(height: 12),
-                const Text('Available Medicines', style: TextStyle(color: Colors.white54, fontSize: 11, fontWeight: FontWeight.w800)),
-                const SizedBox(height: 6),
-                Wrap(
-                  spacing: 6,
-                  runSpacing: 4,
-                  children: p.availableMedicines.map((med) => Chip(
-                    label: Text(med, style: const TextStyle(fontSize: 10, color: Colors.white)),
-                    backgroundColor: const Color(0xFF26A69A).withValues(alpha: 0.3),
-                    padding: EdgeInsets.zero,
-                    materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                  )).toList(),
-                ),
-              ],
-              const SizedBox(height: 16),
-              Row(
-                children: [
-                  Expanded(
-                    child: FilledButton.icon(
-                      onPressed: () async {
-                        Navigator.pop(ctx);
-                        final uri = Uri.parse('https://www.google.com/maps/dir/?api=1&destination=${p.lat},${p.lng}');
-                        if (await canLaunchUrl(uri)) await launchUrl(uri, mode: LaunchMode.externalApplication);
-                      },
-                      icon: const Icon(Icons.navigation_rounded, size: 20),
-                      label: const Text('Navigate'),
-                      style: FilledButton.styleFrom(backgroundColor: AppColors.primaryInfo, foregroundColor: Colors.white),
-                    ),
-                  ),
-                  const SizedBox(width: 10),
-                  IconButton.filledTonal(
-                    onPressed: () async {
-                      final uri = Uri.parse('tel:${p.phoneNumber}');
-                      if (await canLaunchUrl(uri)) await launchUrl(uri);
-                    },
-                    icon: const Icon(Icons.phone_in_talk_rounded),
-                    tooltip: 'Call',
-                  ),
-                ],
-              ),
-            ],
-          ),
-        );
-      },
-    );
-  }
-
-  void _showCoolingCenterDetailSheet(CoolingCenter c) {
-    final dist = _currentPosition == null
-        ? null
-        : Geolocator.distanceBetween(_currentPosition!.latitude, _currentPosition!.longitude, c.lat, c.lng);
-    showModalBottomSheet<void>(
-      context: context,
-      backgroundColor: Colors.transparent,
-      builder: (ctx) {
-        return Container(
-          margin: const EdgeInsets.fromLTRB(14, 0, 14, 18),
-          padding: const EdgeInsets.fromLTRB(18, 16, 18, 18),
-          decoration: BoxDecoration(
-            color: AppColors.surface.withValues(alpha: 0.94),
-            borderRadius: BorderRadius.circular(18),
-            border: Border.all(color: Colors.white24),
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  Icon(Icons.ac_unit_rounded, color: const Color(0xFF42A5F5)),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: Text(c.name, style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w800)),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 4),
-              Text('UP Govt Cooling Center', style: TextStyle(color: const Color(0xFF42A5F5).withValues(alpha: 0.85), fontSize: 11, fontWeight: FontWeight.w800)),
-              const SizedBox(height: 8),
-              Text(c.address, style: const TextStyle(color: Colors.white60, fontSize: 13)),
-              if (c.operatingHours != null) ...[
-                const SizedBox(height: 4),
-                Text('Hours: ${c.operatingHours}', style: const TextStyle(color: Colors.white54, fontSize: 12)),
-              ],
-              if (dist != null) ...[
-                const SizedBox(height: 6),
-                Text('${(dist / 1000).toStringAsFixed(1)} km away', style: const TextStyle(color: AppColors.primaryInfo, fontWeight: FontWeight.w700, fontSize: 12)),
-              ],
-              const SizedBox(height: 12),
-              Row(
-                children: [
-                  if (c.hasORS)
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                      decoration: BoxDecoration(color: const Color(0xFFFF9800).withValues(alpha: 0.3), borderRadius: BorderRadius.circular(8)),
-                      child: const Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(Icons.water_drop_rounded, size: 14, color: Color(0xFFFF9800)),
-                          SizedBox(width: 4),
-                          Text('ORS Available', style: TextStyle(fontSize: 11, color: Color(0xFFFF9800), fontWeight: FontWeight.bold)),
-                        ],
-                      ),
-                    ),
-                  if (c.hasMedicalSupport) ...[
-                    const SizedBox(width: 8),
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                      decoration: BoxDecoration(color: const Color(0xFFE53935).withValues(alpha: 0.3), borderRadius: BorderRadius.circular(8)),
-                      child: const Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(Icons.medical_services_rounded, size: 14, color: Color(0xFFE53935)),
-                          SizedBox(width: 4),
-                          Text('Medical Support', style: TextStyle(fontSize: 11, color: Color(0xFFE53935), fontWeight: FontWeight.bold)),
-                        ],
-                      ),
-                    ),
-                  ],
-                ],
-              ),
-              const SizedBox(height: 16),
-              Row(
-                children: [
-                  Expanded(
-                    child: FilledButton.icon(
-                      onPressed: () async {
-                        Navigator.pop(ctx);
-                        final uri = Uri.parse('https://www.google.com/maps/dir/?api=1&destination=${c.lat},${c.lng}');
-                        if (await canLaunchUrl(uri)) await launchUrl(uri, mode: LaunchMode.externalApplication);
-                      },
-                      icon: const Icon(Icons.navigation_rounded, size: 20),
-                      label: const Text('Navigate'),
-                      style: FilledButton.styleFrom(backgroundColor: AppColors.primaryInfo, foregroundColor: Colors.white),
-                    ),
-                  ),
-                  if (c.phoneNumber.isNotEmpty) ...[
-                    const SizedBox(width: 10),
-                    IconButton.filledTonal(
-                      onPressed: () async {
-                        final uri = Uri.parse('tel:${c.phoneNumber}');
-                        if (await canLaunchUrl(uri)) await launchUrl(uri);
-                      },
-                      icon: const Icon(Icons.phone_in_talk_rounded),
-                      tooltip: 'Call',
-                    ),
-                  ],
-                ],
-              ),
-            ],
-          ),
-        );
-      },
-    );
-  }
-
-  void _showBloodBankDetailSheet(BloodBankInfo b) {
-    final dist = _currentPosition == null
-        ? null
-        : Geolocator.distanceBetween(_currentPosition!.latitude, _currentPosition!.longitude, b.lat, b.lng);
-    showModalBottomSheet<void>(
-      context: context,
-      backgroundColor: Colors.transparent,
-      builder: (ctx) {
-        return Container(
-          margin: const EdgeInsets.fromLTRB(14, 0, 14, 18),
-          padding: const EdgeInsets.fromLTRB(18, 16, 18, 18),
-          decoration: BoxDecoration(
-            color: AppColors.surface.withValues(alpha: 0.94),
-            borderRadius: BorderRadius.circular(18),
-            border: Border.all(color: Colors.white24),
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  Icon(Icons.bloodtype_rounded, color: const Color(0xFFE53935)),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: Text(b.name, style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w800)),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 4),
-              Text('Blood Bank', style: TextStyle(color: const Color(0xFFE53935).withValues(alpha: 0.85), fontSize: 11, fontWeight: FontWeight.w800)),
-              const SizedBox(height: 8),
-              Text(b.address, style: const TextStyle(color: Colors.white60, fontSize: 13)),
-              if (dist != null) ...[
-                const SizedBox(height: 6),
-                Text('${(dist / 1000).toStringAsFixed(1)} km away', style: const TextStyle(color: AppColors.primaryInfo, fontWeight: FontWeight.w700, fontSize: 12)),
-              ],
-              const SizedBox(height: 12),
-              const Text('Blood Availability', style: TextStyle(color: Colors.white54, fontSize: 11, fontWeight: FontWeight.w800)),
-              const SizedBox(height: 8),
-              Wrap(
-                spacing: 8,
-                runSpacing: 6,
-                children: b.bloodGroups.entries.map((e) {
-                  final isAvailable = e.value.toLowerCase().contains('available') || e.value.toLowerCase().contains('stock');
-                  return Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                    decoration: BoxDecoration(
-                      color: isAvailable ? const Color(0xFF4CAF50).withValues(alpha: 0.3) : const Color(0xFFE53935).withValues(alpha: 0.3),
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: Text('${e.key}: ${e.value}', style: TextStyle(fontSize: 11, color: isAvailable ? const Color(0xFF4CAF50) : const Color(0xFFE53935), fontWeight: FontWeight.bold)),
-                  );
-                }).toList(),
-              ),
-              if (b.lastUpdated != null) ...[
-                const SizedBox(height: 8),
-                Text('Updated: ${_timeAgo(DateTime.parse(b.lastUpdated!))}', style: const TextStyle(color: Colors.white38, fontSize: 10)),
-              ],
-              const SizedBox(height: 16),
-              Row(
-                children: [
-                  Expanded(
-                    child: FilledButton.icon(
-                      onPressed: () async {
-                        Navigator.pop(ctx);
-                        final uri = Uri.parse('https://www.google.com/maps/dir/?api=1&destination=${b.lat},${b.lng}');
-                        if (await canLaunchUrl(uri)) await launchUrl(uri, mode: LaunchMode.externalApplication);
-                      },
-                      icon: const Icon(Icons.navigation_rounded, size: 20),
-                      label: const Text('Navigate'),
-                      style: FilledButton.styleFrom(backgroundColor: AppColors.primaryInfo, foregroundColor: Colors.white),
-                    ),
-                  ),
-                  const SizedBox(width: 10),
-                  IconButton.filledTonal(
-                    onPressed: () async {
-                      final uri = Uri.parse('tel:${b.phoneNumber}');
-                      if (await canLaunchUrl(uri)) await launchUrl(uri);
-                    },
-                    icon: const Icon(Icons.phone_in_talk_rounded),
-                    tooltip: 'Call',
-                  ),
-                ],
-              ),
-            ],
-          ),
-        );
-      },
-    );
-  }
-
   String _markerSnippet(EmergencyPlace p, String layerKind, double distM) {
     final km = (distM / 1000).toStringAsFixed(1);
     final spec = p.specializationForLayer(layerKind);
@@ -1158,59 +893,11 @@ class _MapScreenState extends ConsumerState<MapScreen> with TickerProviderStateM
     final pos = _currentPosition;
     final lat = pos?.latitude ?? fallback.latitude;
     final lng = pos?.longitude ?? fallback.longitude;
-    final radiusKm = _emergencyRadius / 1000;
-
-    final pharmacies = EmergencyServicesService.getNearbyPharmacies(
-      lat, lng, radiusKm,
-    );
-    final coolingCenters = EmergencyServicesService.getNearbyCoolingCenters(
-      lat, lng, radiusKm,
-    );
-    final bloodBanks = EmergencyServicesService.getNearbyBloodBanks(
-      lat, lng, radiusKm,
-    );
-    List<DiseaseOutbreak> outbreaks = [];
-    try {
-      var country = 'IN';
-      try {
-        final marks = await placemarkFromCoordinates(lat, lng);
-        final iso = marks.isNotEmpty ? marks.first.isoCountryCode : null;
-        if (iso != null && iso.length == 2) {
-          country = iso.toUpperCase();
-        }
-      } catch (_) {}
-      outbreaks = await RegionalHealthAlertsService.fetchForLocation(
-        lat: lat,
-        lng: lng,
-        countryCodeIso2: country,
-      );
-    } catch (e) {
-      debugPrint('[MapScreen] regional health alerts: $e');
-    }
-    if (outbreaks.isEmpty) {
-      outbreaks = EmergencyServicesService.getActiveOutbreaks();
-    }
-
-    AQIInfo? aqi;
-    try {
-      final hex = await EnvironmentalDataService.fetchForLocation(
-        LatLng(lat, lng),
-      );
-      if (hex != null) {
-        aqi = EnvironmentalDataService.toAqiInfo(hex);
-      }
-    } catch (e) {
-      debugPrint('[MapScreen] Google AQI: $e');
-    }
-    aqi ??= await EmergencyServicesService.getAQI(lat, lng);
-
+    final bundle = await _fetchHealthEnvironmentBundleForLatLng(lat, lng);
     if (!mounted) return;
     setState(() {
-      _pharmacies = pharmacies;
-      _coolingCenters = coolingCenters;
-      _bloodBanks = bloodBanks;
-      _outbreaks = outbreaks;
-      _aqiInfo = aqi;
+      _outbreaks = bundle.outbreaks;
+      _aqiInfo = bundle.aqi;
     });
   }
 
@@ -1482,22 +1169,15 @@ class _MapScreenState extends ConsumerState<MapScreen> with TickerProviderStateM
                         child: Container(height: 1, color: Colors.white24),
                       ),
                     if (!_mapShowZoneClassification) ...[
-                      if (_mapShowEmergencyServices)
-                        _legendRow(
-                          const Color(0xFFFF1744),
-                          l10n.mapLegendHospital,
-                          _hospitalsForMapMarkers().isEmpty ? '' : _nearestDistLabel(_hospitalsForMapMarkers()),
-                        ),
-                      if (_mapShowPharmacies && _pharmacies.isNotEmpty)
-                        _legendRow(const Color(0xFF26A69A), 'Pharmacy', '${_pharmacies.length} found'),
-                      if (_mapShowCoolingCenters && _coolingCenters.isNotEmpty)
-                        _legendRow(const Color(0xFF42A5F5), 'Cooling Centers', '${_coolingCenters.length} available'),
-                      if (_mapShowBloodBanks && _bloodBanks.isNotEmpty)
-                        _legendRow(const Color(0xFFE53935), 'Blood Banks', '${_bloodBanks.length} nearby'),
+                      _legendRow(
+                        const Color(0xFFFF1744),
+                        l10n.mapLegendHospital,
+                        _hospitalsForMapMarkers().isEmpty ? '' : _nearestDistLabel(_hospitalsForMapMarkers()),
+                      ),
                     ],
                     if ((widget.isDrillShell && _mapShowPastIncidents && _pastIncidents.isNotEmpty) ||
                         (!widget.isDrillShell && _showPastIncidentsForZone && _pastIncidentsInUserHex().isNotEmpty)) ...[
-                      if (!_mapShowZoneClassification && (_mapShowEmergencyServices && _hospitals.isNotEmpty))
+                      if (!_mapShowZoneClassification && _hospitals.isNotEmpty)
                         const SizedBox(height: 4),
                       _legendRow(
                         Colors.blueGrey,
@@ -1549,7 +1229,7 @@ class _MapScreenState extends ConsumerState<MapScreen> with TickerProviderStateM
                       borderRadius: BorderRadius.circular(14),
                       elevation: 6,
                       child: InkWell(
-                        onTap: () => unawaited(_showInfoPanel()),
+                        onTap: _showInfoPanel,
                         borderRadius: BorderRadius.circular(14),
                         child: Padding(
                           padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
@@ -1577,38 +1257,6 @@ class _MapScreenState extends ConsumerState<MapScreen> with TickerProviderStateM
                       ),
                     ),
                   ),
-                  if (_mapShowPharmacies && _pharmacies.isNotEmpty)
-                    Padding(
-                      padding: const EdgeInsets.only(left: 8),
-                      child: Tooltip(
-                        message: 'Filter pharmacies by medicine type',
-                        child: Material(
-                          color: _pharmacyMedicineFilter.isNotEmpty
-                              ? const Color(0xFF26A69A).withValues(alpha: 0.95)
-                              : Colors.black.withValues(alpha: 0.78),
-                          borderRadius: BorderRadius.circular(14),
-                          elevation: 6,
-                          child: InkWell(
-                            onTap: _showPharmacyFilterDialog,
-                            borderRadius: BorderRadius.circular(14),
-                            child: Padding(
-                              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-                              child: Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  const Icon(Icons.filter_list_rounded, color: Colors.white, size: 20),
-                                  const SizedBox(width: 8),
-                                  Text(
-                                    _pharmacyMedicineFilter.isEmpty ? 'Filter' : _pharmacyMedicineFilter,
-                                    style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 12, letterSpacing: 0.3),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
                   const Spacer(),
                   Material(
                     color: Colors.black.withValues(alpha: 0.78),
@@ -1624,31 +1272,46 @@ class _MapScreenState extends ConsumerState<MapScreen> with TickerProviderStateM
                           mainAxisSize: MainAxisSize.min,
                           crossAxisAlignment: CrossAxisAlignment.end,
                           children: [
-                            CheckboxListTile(
-                              dense: true,
-                              visualDensity: VisualDensity.compact,
-                              contentPadding: EdgeInsets.zero,
-                              tileColor: Colors.transparent,
-                              title: const Text('Zones', style: _mapFilterCheckboxTitleStyle),
-                              secondary: Icon(Icons.radar_rounded, size: 18, color: AppColors.primarySafe.withValues(alpha: _mapShowZoneClassification ? 1 : 0.5)),
-                              value: _mapShowZoneClassification,
-                              onChanged: (v) => setState(() => _mapShowZoneClassification = v ?? false),
-                              activeColor: AppColors.primarySafe,
-                              controlAffinity: ListTileControlAffinity.leading,
+                            Padding(
+                              padding: const EdgeInsets.only(left: 4, right: 4, bottom: 4),
+                              child: Row(
+                                children: [
+                                  Icon(Icons.map_rounded, size: 16, color: Colors.white.withValues(alpha: 0.75)),
+                                  const SizedBox(width: 6),
+                                  const Expanded(
+                                    child: Text('View', style: _mapFilterCheckboxTitleStyle),
+                                  ),
+                                  DropdownButtonHideUnderline(
+                                    child: DropdownButton<_MapSurfaceMode>(
+                                      value: _mapSurfaceMode,
+                                      dropdownColor: const Color(0xFF1A2330),
+                                      iconEnabledColor: const Color(0xFFFFF176),
+                                      style: const TextStyle(
+                                        color: Color(0xFFFFF176),
+                                        fontSize: 11,
+                                        fontWeight: FontWeight.w800,
+                                      ),
+                                      isDense: true,
+                                      items: [
+                                        DropdownMenuItem(
+                                          value: _MapSurfaceMode.grid,
+                                          child: const Text('Grid'),
+                                        ),
+                                        DropdownMenuItem(
+                                          value: _MapSurfaceMode.zoneRadius,
+                                          child: const Text('Zone (radius)'),
+                                        ),
+                                      ],
+                                      onChanged: (m) {
+                                        if (m == null) return;
+                                        setState(() => _mapSurfaceMode = m);
+                                      },
+                                    ),
+                                  ),
+                                ],
+                              ),
                             ),
-                            CheckboxListTile(
-                              dense: true,
-                              visualDensity: VisualDensity.compact,
-                              contentPadding: EdgeInsets.zero,
-                              tileColor: Colors.transparent,
-                              title: const Text('Emergency services', style: _mapFilterCheckboxTitleStyle),
-                              secondary: Icon(Icons.health_and_safety_rounded, size: 18, color: const Color(0xFF2979FF).withValues(alpha: _mapShowEmergencyServices ? 1 : 0.5)),
-                              value: _mapShowEmergencyServices,
-                              onChanged: (v) => setState(() => _mapShowEmergencyServices = v ?? false),
-                              activeColor: const Color(0xFF2979FF),
-                              controlAffinity: ListTileControlAffinity.leading,
-                            ),
-                            if (widget.isDrillShell) ...[
+                            if (widget.isDrillShell)
                               CheckboxListTile(
                                 dense: true,
                                 visualDensity: VisualDensity.compact,
@@ -1661,55 +1324,6 @@ class _MapScreenState extends ConsumerState<MapScreen> with TickerProviderStateM
                                 activeColor: Colors.blueGrey,
                                 controlAffinity: ListTileControlAffinity.leading,
                               ),
-                              CheckboxListTile(
-                                dense: true,
-                                visualDensity: VisualDensity.compact,
-                                contentPadding: EdgeInsets.zero,
-                                tileColor: Colors.transparent,
-                                title: const Text('Volunteers', style: _mapFilterCheckboxTitleStyle),
-                                secondary: Icon(Icons.groups_rounded, size: 18, color: const Color(0xFF69F0AE).withValues(alpha: _mapShowVolunteers ? 1 : 0.5)),
-                                value: _mapShowVolunteers,
-                                onChanged: (v) => setState(() => _mapShowVolunteers = v ?? false),
-                                activeColor: const Color(0xFF69F0AE),
-                                controlAffinity: ListTileControlAffinity.leading,
-                              ),
-                            ],
-                            CheckboxListTile(
-                              dense: true,
-                              visualDensity: VisualDensity.compact,
-                              contentPadding: EdgeInsets.zero,
-                              tileColor: Colors.transparent,
-                              title: const Text('24hr Pharmacy', style: _mapFilterCheckboxTitleStyle),
-                              secondary: Icon(Icons.local_pharmacy_rounded, size: 18, color: const Color(0xFF26A69A).withValues(alpha: _mapShowPharmacies ? 1 : 0.5)),
-                              value: _mapShowPharmacies,
-                              onChanged: (v) => setState(() => _mapShowPharmacies = v ?? false),
-                              activeColor: const Color(0xFF26A69A),
-                              controlAffinity: ListTileControlAffinity.leading,
-                            ),
-                            CheckboxListTile(
-                              dense: true,
-                              visualDensity: VisualDensity.compact,
-                              contentPadding: EdgeInsets.zero,
-                              tileColor: Colors.transparent,
-                              title: const Text('Cooling Centers', style: _mapFilterCheckboxTitleStyle),
-                              secondary: Icon(Icons.ac_unit_rounded, size: 18, color: const Color(0xFF42A5F5).withValues(alpha: _mapShowCoolingCenters ? 1 : 0.5)),
-                              value: _mapShowCoolingCenters,
-                              onChanged: (v) => setState(() => _mapShowCoolingCenters = v ?? false),
-                              activeColor: const Color(0xFF42A5F5),
-                              controlAffinity: ListTileControlAffinity.leading,
-                            ),
-                            CheckboxListTile(
-                              dense: true,
-                              visualDensity: VisualDensity.compact,
-                              contentPadding: EdgeInsets.zero,
-                              tileColor: Colors.transparent,
-                              title: const Text('Blood Banks', style: _mapFilterCheckboxTitleStyle),
-                              secondary: Icon(Icons.bloodtype_rounded, size: 18, color: const Color(0xFFE53935).withValues(alpha: _mapShowBloodBanks ? 1 : 0.5)),
-                              value: _mapShowBloodBanks,
-                              onChanged: (v) => setState(() => _mapShowBloodBanks = v ?? false),
-                              activeColor: const Color(0xFFE53935),
-                              controlAffinity: ListTileControlAffinity.leading,
-                            ),
                           ],
                         ),
                       ),
@@ -2065,7 +1679,7 @@ class _MapScreenState extends ConsumerState<MapScreen> with TickerProviderStateM
     if (_currentPosition == null) return {};
     final Set<Polyline> lines = {};
 
-    if (_mapShowEmergencyServices && _hospitalRoute.length > 1) {
+    if (_hospitalRoute.length > 1) {
       lines.add(Polyline(
         polylineId: const PolylineId('route_hospital'),
         points: _hospitalRoute,
@@ -2169,7 +1783,7 @@ class _MapScreenState extends ConsumerState<MapScreen> with TickerProviderStateM
 
   /// Firestore [ops_hospitals] pins not already represented by a Places directory marker.
   List<OpsHospitalRow> _opsHospitalsForMapMarkers() {
-    if (!_mapShowEmergencyServices || widget.isDrillShell || _currentPosition == null) {
+    if (widget.isDrillShell || _currentPosition == null) {
       return const [];
     }
     final lat = _currentPosition!.latitude;
@@ -2351,7 +1965,7 @@ class _MapScreenState extends ConsumerState<MapScreen> with TickerProviderStateM
       }
     }
 
-    if (_mapShowEmergencyServices) {
+    {
       var hi = 0;
       for (var h in _hospitalsForMapMarkers()) {
         final suffix = h.placeId.isNotEmpty ? h.placeId : 'noid_${h.lat}_${h.lng}_$hi';
@@ -2416,69 +2030,6 @@ class _MapScreenState extends ConsumerState<MapScreen> with TickerProviderStateM
         infoWindow: InfoWindow(title: '${hazard.type.label} Reported', snippet: 'By ${hazard.reportedBy}'),
       );
     }));
-
-    if (_mapShowPharmacies) {
-      for (var pi = 0; pi < _pharmacies.length; pi++) {
-        final p = _pharmacies[pi];
-        final dist = Geolocator.distanceBetween(lat, lng, p.lat, p.lng);
-        final distLabel = dist >= 1000
-            ? '${(dist / 1000).toStringAsFixed(1)} km'
-            : '${dist.round()} m';
-        markers.add(Marker(
-          markerId: MarkerId('pharmacy_$pi'),
-          position: LatLng(p.lat, p.lng),
-          icon: _pharmacyIcon ?? BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueGreen),
-          infoWindow: InfoWindow(
-            title: '${p.name}${p.is24Hours ? " (24hr)" : ""}',
-            snippet: '${p.medicineFilterSummary} · $distLabel',
-          ),
-          onTap: () => _showPharmacyDetailSheet(p),
-        ));
-      }
-    }
-
-    if (_mapShowCoolingCenters) {
-      for (var ci = 0; ci < _coolingCenters.length; ci++) {
-        final c = _coolingCenters[ci];
-        final dist = Geolocator.distanceBetween(lat, lng, c.lat, c.lng);
-        final distLabel = dist >= 1000
-            ? '${(dist / 1000).toStringAsFixed(1)} km'
-            : '${dist.round()} m';
-        final facilities = <String>[];
-        if (c.hasORS) facilities.add('ORS');
-        if (c.hasMedicalSupport) facilities.add('Medical');
-        markers.add(Marker(
-          markerId: MarkerId('cooling_$ci'),
-          position: LatLng(c.lat, c.lng),
-          icon: _coolingCenterIcon ?? BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueAzure),
-          infoWindow: InfoWindow(
-            title: c.name,
-            snippet: '${facilities.isEmpty ? "Cool shelter" : facilities.join(" + ")} · $distLabel',
-          ),
-          onTap: () => _showCoolingCenterDetailSheet(c),
-        ));
-      }
-    }
-
-    if (_mapShowBloodBanks) {
-      for (var bi = 0; bi < _bloodBanks.length; bi++) {
-        final b = _bloodBanks[bi];
-        final dist = Geolocator.distanceBetween(lat, lng, b.lat, b.lng);
-        final distLabel = dist >= 1000
-            ? '${(dist / 1000).toStringAsFixed(1)} km'
-            : '${dist.round()} m';
-        markers.add(Marker(
-          markerId: MarkerId('bloodbank_$bi'),
-          position: LatLng(b.lat, b.lng),
-          icon: _bloodBankIcon ?? BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueRed),
-          infoWindow: InfoWindow(
-            title: b.name,
-            snippet: 'Blood available · $distLabel',
-          ),
-          onTap: () => _showBloodBankDetailSheet(b),
-        ));
-      }
-    }
 
     return markers;
   }
@@ -2768,9 +2319,19 @@ class _MapScreenState extends ConsumerState<MapScreen> with TickerProviderStateM
     );
   }
 
-  Future<void> _showInfoPanel() async {
-    await _loadEmergencyServicesData();
-    if (!mounted) return;
+  void _showInfoPanel() {
+    final fallback = IndiaOpsZones.lucknow.center;
+    final pos = _currentPosition;
+    final lat = pos?.latitude ?? fallback.latitude;
+    final lng = pos?.longitude ?? fallback.longitude;
+    final fut = _fetchHealthEnvironmentBundleForLatLng(lat, lng);
+    unawaited(fut.then((b) {
+      if (!mounted) return;
+      setState(() {
+        _aqiInfo = b.aqi;
+        _outbreaks = b.outbreaks;
+      });
+    }));
     showModalBottomSheet<void>(
       context: context,
       backgroundColor: Colors.transparent,
@@ -2784,58 +2345,102 @@ class _MapScreenState extends ConsumerState<MapScreen> with TickerProviderStateM
             borderRadius: BorderRadius.circular(18),
             border: Border.all(color: Colors.white24),
           ),
-          child: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
+          child: FutureBuilder<_HealthEnvBundle>(
+            future: fut,
+            builder: (context, snap) {
+              final loading = snap.connectionState == ConnectionState.waiting;
+              final err = snap.hasError;
+              final b = snap.data;
+              final aqi = b?.aqi;
+              final outbreaks = b?.outbreaks ?? const <DiseaseOutbreak>[];
+              return SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Icon(Icons.info_rounded, color: Colors.white),
-                    const SizedBox(width: 10),
-                    const Text('Health & Environment Info', style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold)),
-                  ],
-                ),
-                const SizedBox(height: 16),
-                if (_aqiInfo != null) ...[
-                  _buildAQISection(),
-                  const SizedBox(height: 16),
-                ],
-                if (_outbreaks.isNotEmpty) ...[
-                  _buildOutbreakSection(),
-                ],
-                if (_aqiInfo == null && _outbreaks.isEmpty) ...[
-                  Container(
-                    padding: const EdgeInsets.all(16),
-                    decoration: BoxDecoration(color: Colors.white10, borderRadius: BorderRadius.circular(12)),
-                    child: const Row(
+                    Row(
                       children: [
-                        Icon(Icons.cloud_off_rounded, color: Colors.white54),
-                        SizedBox(width: 12),
-                        Expanded(child: Text('No health alerts in your area', style: TextStyle(color: Colors.white70))),
+                        Icon(Icons.info_rounded, color: Colors.white),
+                        const SizedBox(width: 10),
+                        const Expanded(
+                          child: Text(
+                            'Health & Environment Info',
+                            style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold),
+                          ),
+                        ),
                       ],
                     ),
-                  ),
-                ],
-                const SizedBox(height: 16),
-                SizedBox(
-                  width: double.infinity,
-                  child: FilledButton(
-                    onPressed: () => Navigator.pop(ctx),
-                    style: FilledButton.styleFrom(backgroundColor: AppColors.primaryInfo),
-                    child: const Text('Close'),
-                  ),
+                    const SizedBox(height: 16),
+                    if (loading)
+                      const Padding(
+                        padding: EdgeInsets.symmetric(vertical: 24),
+                        child: Center(
+                          child: Column(
+                            children: [
+                              CircularProgressIndicator(),
+                              SizedBox(height: 14),
+                              Text(
+                                'Loading air quality and alerts…',
+                                style: TextStyle(color: Colors.white54, fontSize: 13),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    if (err)
+                      Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                        child: Text(
+                          'Could not refresh health data. Try again in a moment.',
+                          style: TextStyle(color: Colors.redAccent.withValues(alpha: 0.9), fontSize: 12),
+                        ),
+                      ),
+                    if (!loading && !err && b != null) ...[
+                      if (aqi != null) ...[
+                        _buildAQISection(aqi),
+                        const SizedBox(height: 16),
+                      ],
+                      if (outbreaks.isNotEmpty) ...[
+                        _buildOutbreakSection(outbreaks),
+                      ],
+                      if (aqi == null && outbreaks.isEmpty)
+                        Container(
+                          padding: const EdgeInsets.all(16),
+                          decoration: BoxDecoration(color: Colors.white10, borderRadius: BorderRadius.circular(12)),
+                          child: const Row(
+                            children: [
+                              Icon(Icons.cloud_off_rounded, color: Colors.white54),
+                              SizedBox(width: 12),
+                              Expanded(
+                                child: Text(
+                                  'No health alerts in your area',
+                                  style: TextStyle(color: Colors.white70),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                    ],
+                    const SizedBox(height: 16),
+                    SizedBox(
+                      width: double.infinity,
+                      child: FilledButton(
+                        onPressed: () => Navigator.pop(ctx),
+                        style: FilledButton.styleFrom(backgroundColor: AppColors.primaryInfo),
+                        child: const Text('Close'),
+                      ),
+                    ),
+                  ],
                 ),
-              ],
-            ),
+              );
+            },
           ),
         );
       },
     );
   }
 
-  Widget _buildAQISection() {
-    final aqi = _aqiInfo!;
+  Widget _buildAQISection(AQIInfo aqi) {
     Color aqiColor;
     String aqiLabel;
     if (aqi.aqi <= 50) {
@@ -2905,9 +2510,9 @@ class _MapScreenState extends ConsumerState<MapScreen> with TickerProviderStateM
     );
   }
 
-  Widget _buildOutbreakSection() {
-    final criticalOutbreaks = _outbreaks.where((o) => o.isCritical).toList();
-    final otherOutbreaks = _outbreaks.where((o) => !o.isCritical).toList();
+  Widget _buildOutbreakSection(List<DiseaseOutbreak> outbreaks) {
+    final criticalOutbreaks = outbreaks.where((o) => o.isCritical).toList();
+    final otherOutbreaks = outbreaks.where((o) => !o.isCritical).toList();
 
     return Container(
       padding: const EdgeInsets.all(12),
@@ -2923,7 +2528,7 @@ class _MapScreenState extends ConsumerState<MapScreen> with TickerProviderStateM
             children: [
               Icon(Icons.warning_rounded, color: const Color(0xFFFF9800), size: 24),
               const SizedBox(width: 8),
-              Text('Disease Alerts (${_outbreaks.length})', style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold)),
+              Text('Disease Alerts (${outbreaks.length})', style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold)),
             ],
           ),
           const SizedBox(height: 12),
@@ -2990,80 +2595,6 @@ class _MapScreenState extends ConsumerState<MapScreen> with TickerProviderStateM
         const SizedBox(width: 6),
         Text(dist, style: TextStyle(color: color, fontSize: 10, fontWeight: FontWeight.w800)),
       ],
-    );
-  }
-
-  void _showPharmacyFilterDialog() {
-    showModalBottomSheet<void>(
-      context: context,
-      backgroundColor: Colors.transparent,
-      builder: (ctx) {
-        return Container(
-          margin: const EdgeInsets.fromLTRB(14, 0, 14, 18),
-          padding: const EdgeInsets.fromLTRB(18, 16, 18, 18),
-          decoration: BoxDecoration(
-            color: AppColors.surface.withValues(alpha: 0.96),
-            borderRadius: BorderRadius.circular(18),
-            border: Border.all(color: Colors.white24),
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Row(
-                children: [
-                  Icon(Icons.filter_list_rounded, color: Color(0xFF26A69A)),
-                  SizedBox(width: 10),
-                  Text('Filter Pharmacies by Medicine', style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w800)),
-                ],
-              ),
-              const SizedBox(height: 16),
-              Wrap(
-                spacing: 8,
-                runSpacing: 8,
-                children: [
-                  _buildFilterChip('All', null),
-                  _buildFilterChip('ORS', 'ors'),
-                  _buildFilterChip('Insulin', 'insulin'),
-                  _buildFilterChip('Cardiac', 'cardiac'),
-                  _buildFilterChip('Antibiotics', 'antibiotic'),
-                  _buildFilterChip('Pain Relief', 'pain'),
-                ],
-              ),
-              const SizedBox(height: 16),
-              SizedBox(
-                width: double.infinity,
-                child: TextButton(
-                  onPressed: () => Navigator.pop(ctx),
-                  child: const Text('Cancel', style: TextStyle(color: Colors.white54)),
-                ),
-              ),
-            ],
-          ),
-        );
-      },
-    );
-  }
-
-  Widget _buildFilterChip(String label, String? filterValue) {
-    final isSelected = _pharmacyMedicineFilter == (filterValue ?? '');
-    return FilterChip(
-      label: Text(label, style: TextStyle(color: isSelected ? Colors.white : Colors.white70, fontSize: 12)),
-      selected: isSelected,
-      onSelected: (selected) {
-        Navigator.pop(context);
-        setState(() {
-          _pharmacyMedicineFilter = filterValue ?? '';
-          if (filterValue != null) {
-            _pharmacies = _pharmacies.where((p) =>
-              p.availableMedicines.any((m) => m.toLowerCase().contains(filterValue.toLowerCase()))
-            ).toList();
-          }
-        });
-      },
-      backgroundColor: Colors.white10,
-      selectedColor: const Color(0xFF26A69A),
-      checkmarkColor: Colors.white,
     );
   }
 

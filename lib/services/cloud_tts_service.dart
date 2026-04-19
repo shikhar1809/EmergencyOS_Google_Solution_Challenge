@@ -58,6 +58,18 @@ class CloudTtsService {
     }
   }
 
+  /// Stop any in-flight MP3 playback immediately.
+  ///
+  /// Safe to call when nothing is playing. Used by the Lifeline voice agent so
+  /// a short-tap on the mic bubble interrupts a cloud-TTS reply mid-utterance.
+  static Future<void> stop() async {
+    try {
+      await _player.stop();
+    } catch (e) {
+      debugPrint('[CloudTts] stop failed: $e');
+    }
+  }
+
   /// Plays MP3 [bytes]; completes when playback ends or on error.
   static Future<void> playMp3(Uint8List bytes) async {
     if (bytes.isEmpty) return;

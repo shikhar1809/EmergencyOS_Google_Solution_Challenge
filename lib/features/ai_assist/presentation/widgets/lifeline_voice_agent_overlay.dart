@@ -7,6 +7,7 @@ import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 import 'package:emergency_os/core/theme/app_colors.dart';
+import 'package:emergency_os/core/widgets/ai_advisory_banner.dart';
 import 'package:emergency_os/features/ai_assist/domain/lifeline_training_levels.dart';
 import 'package:emergency_os/services/lifeline_voice_agent_service.dart';
 import 'package:emergency_os/services/voice_comms_service.dart';
@@ -348,6 +349,10 @@ class _LifelineVoiceAgentOverlayState extends State<LifelineVoiceAgentOverlay>
                             ),
                           ),
                         ),
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(8, 0, 8, 8),
+                        child: AiAdvisoryBanner.lifeline(dense: true),
+                      ),
                     ],
                   ),
                 ),

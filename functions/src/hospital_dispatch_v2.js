@@ -790,6 +790,20 @@ async function dispatchHospital({ incidentId, incident, hexFns, writeOpsAlert })
     rankedLookup: usable,
   });
 
+  // Non-blocking: have Gemini produce a plain-English rationale for why this
+  // hospital topped the chain and mirror it to the incident + assignment docs.
+  // Failures never affect the dispatch decision.
+  try {
+    const { writeAiHospitalRationale } = require("./dispatch_rationale");
+    writeAiHospitalRationale({
+      incidentId,
+      incident,
+      assignment: assignmentData,
+    }).catch((e) => console.warn("[dispatchHospital] rationale async failed:", e && e.message));
+  } catch (e) {
+    console.warn("[dispatchHospital] rationale module unavailable:", e && e.message);
+  }
+
   if (typeof writeOpsAlert === "function") {
     await writeOpsAlert({
       incidentId,

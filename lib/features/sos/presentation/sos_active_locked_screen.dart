@@ -198,6 +198,8 @@ class _SosActiveLockedScreenState extends ConsumerState<SosActiveLockedScreen> {
   StreamSubscription<List<PttMessage>>? _pttCommsAnnounceSub;
   final Set<String> _heardPttAnnouncementIds = {};
   bool _pttAnnounceHydrated = false;
+  String? _aiHospitalRationaleText;
+  StreamSubscription<DocumentSnapshot<Map<String, dynamic>>>? _aiRationaleSub;
   final Map<String, String> _interviewAnswers = {};
   DateTime? _lastConsciousCheckEndedAt;
   /// Missed voice responses to "Are you conscious?" — need [kConsciousVoiceMissesRequired] before marking unresponsive.
@@ -318,6 +320,25 @@ class _SosActiveLockedScreenState extends ConsumerState<SosActiveLockedScreen> {
     if (!widget.isDrillMode && widget.incidentId.trim().isNotEmpty) {
       unawaited(_hydrateOfflineSosBanner());
     }
+    // Subscribe to the Gemini-generated hospital rationale field on the
+    // incident doc. Mirrored server-side from the dispatch assignment.
+    if (!widget.isDrillMode && widget.incidentId.trim().isNotEmpty) {
+      _aiRationaleSub = FirebaseFirestore.instance
+          .collection('sos_incidents')
+          .doc(widget.incidentId.trim())
+          .snapshots()
+          .listen((snap) {
+        final data = snap.data();
+        if (!mounted || data == null) return;
+        final raw = data['aiHospitalRationale'];
+        if (raw is! Map) return;
+        final text = raw['text']?.toString().trim();
+        if (text == null || text.isEmpty) return;
+        if (text != _aiHospitalRationaleText) {
+          setState(() => _aiHospitalRationaleText = text);
+        }
+      });
+    }
   }
 
   @override
@@ -340,6 +361,7 @@ class _SosActiveLockedScreenState extends ConsumerState<SosActiveLockedScreen> {
     _triageDebounce?.cancel();
     _connectivityForOfflineBannerSub?.cancel();
     _dispatchMapSub?.cancel();
+    _aiRationaleSub?.cancel();
     if (widget.isDrillMode) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         clearDrillSessionDashboardDemoFromRoot();
@@ -2763,6 +2785,17 @@ class _SosActiveLockedScreenState extends ConsumerState<SosActiveLockedScreen> {
         l10n.get('sos_active_live_hospital_accepted_title'),
         _dispatchMapState!.currentHospitalName,
       ));
+      // Surface the Gemini-generated rationale for the current hospital pick
+      // (written server-side by hospital_dispatch_v2 → dispatch_rationale.js).
+      final rationaleText = _aiHospitalRationaleText;
+      if (rationaleText != null && rationaleText.isNotEmpty) {
+        rows.add(_liveUpdateRow(
+          Icons.auto_awesome_rounded,
+          const Color(0xFFBA68C8),
+          'Why this hospital (Gemini)',
+          rationaleText,
+        ));
+      }
     }
     final fleetCs = (assign?.assignedFleetCallSign ?? '').trim();
     if (fleetCs.isNotEmpty) {

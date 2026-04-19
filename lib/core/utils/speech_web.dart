@@ -42,6 +42,35 @@ bool _tryCall(String name, List<JSAny?> args) {
   }
 }
 
+/// True when the page is running inside a mobile browser (Android / iOS / iPadOS).
+///
+/// Mirrors the `_isMobile` check in `web/index.html` so Dart and JS agree on the
+/// mobile codepath. Used by the Lifeline voice agent to skip the unreliable
+/// `speechSynthesis.speak()` path (which is silently dropped by mobile browsers
+/// after an async Gemini call) and prefer the cloud-TTS MP3 fallback instead.
+bool isMobileWebBrowser() {
+  try {
+    final navigator = _g.getProperty<JSObject?>('navigator'.toJS);
+    if (navigator == null) return false;
+    final uaRaw = navigator.getProperty<JSString?>('userAgent'.toJS);
+    final ua = uaRaw?.toDart ?? '';
+    if (ua.isEmpty) return false;
+    final mobile = RegExp(
+      r'Android|iPhone|iPad|iPod|Mobile|Mobi|IEMobile|Opera Mini',
+      caseSensitive: false,
+    );
+    if (mobile.hasMatch(ua)) return true;
+    final platformRaw = navigator.getProperty<JSString?>('platform'.toJS);
+    final platform = platformRaw?.toDart ?? '';
+    final maxTouchRaw = navigator.getProperty<JSNumber?>('maxTouchPoints'.toJS);
+    final maxTouch = maxTouchRaw?.toDartInt ?? 0;
+    if (platform == 'MacIntel' && maxTouch > 1) return true;
+    return false;
+  } catch (_) {
+    return false;
+  }
+}
+
 /// Whether the browser exposes a matching voice for [bcp47].
 bool hasLocalVoiceFor(String bcp47) {
   try {

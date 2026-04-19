@@ -309,3 +309,9 @@ Future<bool> nativeVoiceAvailable(String bcp47) async {
 }
 
 void bankUserGestureForWeb() {}
+
+/// Native builds are never a mobile browser; always false.
+bool isMobileWebBrowser() => false;
+
+/// Native builds resolve voice availability through [FlutterTts] instead.
+bool hasLocalVoiceFor(String bcp47) => true;

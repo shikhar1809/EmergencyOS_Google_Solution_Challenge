@@ -2309,7 +2309,7 @@ class _AdminCommandCenterScreenState extends State<AdminCommandCenterScreen>
             hospitals: hospDirHex,
             volunteerPositions: volDutyLatLngHex,
           );
-    const hospitalInfluenceCircles = <Circle>{};
+    final hospitalInfluenceCircles = <Circle>{};
     var hospitalDemoResponding = 0;
     var hospitalDemoStandby = 0;
     if (_hospitalScopedZone) {
@@ -2647,6 +2647,90 @@ class _AdminCommandCenterScreenState extends State<AdminCommandCenterScreen>
           endCap: Cap.roundCap,
         ),
       );
+    }
+
+    // Planned hospital→scene polyline per active EMS run + fleet-emergency
+    // pulse overlay so the master command centre mirrors what the hospital
+    // dashboard + fleet operator see for every accepted EMS run.
+    for (final inc in filtered.take(80)) {
+      final accepted = (inc.emsAcceptedBy ?? '').trim();
+      if (accepted.isEmpty) continue;
+      final phase = (inc.emsWorkflowPhase ?? '').trim();
+      if (!const {'inbound', 'on_scene', 'returning'}.contains(phase)) continue;
+      if (inc.status == IncidentStatus.resolved ||
+          inc.status == IncidentStatus.blocked) continue;
+
+      final origin = inc.plannedOriginLatLng;
+      final scene = inc.liveVictimPin;
+      final emergency = inc.isFleetEmergencyActive;
+
+      if (origin != null) {
+        final alreadySelected = activeSel != null &&
+            sel != null &&
+            activeSel.id == sel.id &&
+            _selectedHospitalRoute.length >= 2 &&
+            _selectedId == sel.id &&
+            sel.id == inc.id;
+        if (!alreadySelected) {
+          mapPolylines.add(
+            Polyline(
+              polylineId: PolylineId('ems_planned_${inc.id}'),
+              points: OsrmRouteUtil.fallbackPolyline(origin, scene),
+              color: emergency
+                  ? Colors.redAccent
+                  : (phase == 'returning'
+                      ? const Color(0xFF4DD0E1)
+                      : const Color(0xFF79C0FF)),
+              width: emergency ? 5 : 4,
+              zIndex: emergency ? 6 : 3,
+              patterns: [PatternItem.dash(16), PatternItem.gap(10)],
+              jointType: JointType.round,
+            ),
+          );
+        }
+      }
+
+      if (emergency) {
+        final pulse = inc.fleetEmergencyLatLng ?? inc.craneLiveLocation ?? scene;
+        hospitalInfluenceCircles.add(
+          Circle(
+            circleId: CircleId('ems_sos_${inc.id}'),
+            center: pulse,
+            radius: 140,
+            fillColor: Colors.redAccent.withValues(alpha: 0.18),
+            strokeColor: Colors.redAccent,
+            strokeWidth: 2,
+            zIndex: 8,
+          ),
+        );
+        hospitalInfluenceCircles.add(
+          Circle(
+            circleId: CircleId('ems_sos_halo_${inc.id}'),
+            center: pulse,
+            radius: 260,
+            fillColor: Colors.redAccent.withValues(alpha: 0.06),
+            strokeColor: Colors.redAccent.withValues(alpha: 0.6),
+            strokeWidth: 1,
+            zIndex: 7,
+          ),
+        );
+        markers.add(
+          Marker(
+            markerId: MarkerId('ems_sos_pin_${inc.id}'),
+            position: pulse,
+            zIndexInt: 9,
+            icon: BitmapDescriptor.defaultMarkerWithHue(
+                BitmapDescriptor.hueRose),
+            infoWindow: InfoWindow(
+              title: 'Driver SOS',
+              snippet: (inc.fleetEmergencyRaisedByCallSign ?? '').trim().isEmpty
+                  ? inc.type
+                  : '${inc.fleetEmergencyRaisedByCallSign} · ${inc.type}',
+            ),
+            onTap: () => _applyIncidentSelection(inc, filtered),
+          ),
+        );
+      }
     }
 
     final hexModel =

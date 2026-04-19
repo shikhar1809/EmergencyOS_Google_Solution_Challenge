@@ -16,3 +16,7 @@ void speakText(String text, {String lang = 'en-IN', Function? onDone}) {
 void cancelSpeechText() {}
 
 void primeSpeechAudioContext() {}
+
+bool isMobileWebBrowser() => false;
+
+bool hasLocalVoiceFor(String bcp47) => true;

@@ -175,7 +175,24 @@ class _EmergencyServicesPanelScreenState extends State<EmergencyServicesPanelScr
     _hospitalAssignmentSub?.cancel();
     _hospitalAssignmentListenId = incidentId;
     _hospitalAssignmentSub = OpsIncidentHospitalAssignmentService.watchForIncident(incidentId).listen((a) {
-      if (mounted) setState(() => _hospitalAssignment = a);
+      if (!mounted) return;
+      setState(() => _hospitalAssignment = a);
+      // Kick an initial inbound route draw as soon as the accepting hospital is
+      // known — keeps the consignment visible even before the driver shares GPS.
+      unawaited(() async {
+        try {
+          final doc = await FirebaseFirestore.instance
+              .collection('sos_incidents')
+              .doc(incidentId)
+              .get();
+          if (!mounted || !doc.exists) return;
+          final fresh = SosIncident.fromFirestore(doc);
+          final phase = (fresh.emsWorkflowPhase ?? '').trim();
+          if (phase == 'returning' || phase == 'complete') return;
+          final pos = _lastSharePos ?? _lastDutyPos;
+          _scheduleRoute(fresh, pos?.latitude, pos?.longitude);
+        } catch (_) {}
+      }());
     });
   }
 
@@ -414,6 +431,9 @@ class _EmergencyServicesPanelScreenState extends State<EmergencyServicesPanelScr
           switch (role) {
             case StationUnitRole.medical:
               await IncidentService.adminAssignAmbulanceDriver(incidentId: incidentId, driverUid: uid);
+              // Persist the stationed hospital on the incident so every console
+              // can draw the planned hospital→scene consignment route.
+              unawaited(_persistStationedHospitalOnIncident(incidentId));
               final src = (data['source'] as String?)?.trim() ?? '';
               if (src == 'hospital_accept_dispatch' || src == 'ambulance_dispatch_escalation') {
                 try {
@@ -683,14 +703,88 @@ class _EmergencyServicesPanelScreenState extends State<EmergencyServicesPanelScr
     setState(() => _volunteerRouteToScene = path);
   }
 
-  void _scheduleRoute(SosIncident inc, double fromLat, double fromLng) {
+  /// Picks the planned hospital origin for the inbound consignment route.
+  /// Prefers `stationedHospital*` persisted on the incident at accept-time,
+  /// then the cached Fleet Management placeholder row, then the accepting
+  /// hospital from the hospital assignment doc.
+  LatLng? _inboundRouteOrigin(SosIncident inc) {
+    final sLat = inc.stationedHospitalLat;
+    final sLng = inc.stationedHospitalLng;
+    if (sLat != null && sLng != null) return LatLng(sLat, sLng);
+    final row = _cachedFleetPlaceholderRow;
+    if (row != null) return LatLng(row.lat, row.lng);
+    final aLat = _hospitalAssignment?.acceptedHospitalLat;
+    final aLng = _hospitalAssignment?.acceptedHospitalLng;
+    if (aLat != null && aLng != null) return LatLng(aLat, aLng);
+    return null;
+  }
+
+  /// Called after an accept or when the hospital assignment stream settles:
+  /// writes `stationedHospital{Id,Lat,Lng}` onto the incident for dashboards.
+  Future<void> _persistStationedHospitalOnIncident(String incidentId) async {
+    if (incidentId.isEmpty) return;
+    final hid = await _hospitalIdForFleetSync();
+    if (hid == null || hid.isEmpty) return;
+    double? lat;
+    double? lng;
+    final row = _cachedFleetPlaceholderRow ??
+        await FleetUnitService.fleetPlaceholderRowForCallSign(
+          FleetOperatorSession.fleetId ?? '',
+        );
+    _cachedFleetPlaceholderRow ??= row;
+    if (row != null) {
+      lat = row.lat;
+      lng = row.lng;
+    } else {
+      try {
+        final hSnap = await FirebaseFirestore.instance
+            .collection('ops_hospitals')
+            .doc(hid)
+            .get();
+        final data = hSnap.data();
+        lat = (data?['lat'] as num?)?.toDouble();
+        lng = (data?['lng'] as num?)?.toDouble();
+      } catch (e) {
+        debugPrint('[DriverPanel] stationed hospital lookup: $e');
+      }
+    }
+    if (lat == null || lng == null) return;
+    await IncidentService.persistStationedHospitalOnIncident(
+      incidentId: incidentId,
+      stationedHospitalId: hid,
+      stationedHospitalLat: lat,
+      stationedHospitalLng: lng,
+    );
+    if (context.mounted) {
+      // Re-kick route with the new origin now that hospital coords are on the doc.
+      try {
+        final doc = await FirebaseFirestore.instance
+            .collection('sos_incidents')
+            .doc(incidentId)
+            .get();
+        if (!context.mounted || !doc.exists) return;
+        final fresh = SosIncident.fromFirestore(doc);
+        _scheduleRoute(fresh, null, null);
+      } catch (_) {}
+    }
+  }
+
+  /// Builds the map polyline.
+  ///
+  /// - `inbound` / `on_scene`: route is the planned **hospital → scene**
+  ///   (station hospital, not driver GPS) so every console renders the same
+  ///   consignment. `fromLat`/`fromLng` are ignored in this phase.
+  /// - `returning`: live **unit → accepting hospital** — uses the driver GPS
+  ///   (`fromLat`/`fromLng`) so the arrival radius unlock still fires.
+  void _scheduleRoute(SosIncident inc, double? fromLat, double? fromLng) {
     _routeDebounce?.cancel();
     final phase = (inc.emsWorkflowPhase ?? '').trim();
+    late LatLng origin;
     late LatLng dest;
     if (phase == 'returning') {
       final lat = inc.returnHospitalLat ?? _hospitalAssignment?.acceptedHospitalLat;
       final lng = inc.returnHospitalLng ?? _hospitalAssignment?.acceptedHospitalLng;
-      if (lat == null || lng == null) {
+      if (lat == null || lng == null || fromLat == null || fromLng == null) {
         if (context.mounted) {
           setState(() {
             _routeToVictim = [];
@@ -699,12 +793,25 @@ class _EmergencyServicesPanelScreenState extends State<EmergencyServicesPanelScr
         }
         return;
       }
+      origin = LatLng(fromLat, fromLng);
       dest = LatLng(lat, lng);
     } else {
+      // Planned hospital → scene, independent of driver GPS.
+      final o = _inboundRouteOrigin(inc);
+      if (o == null) {
+        if (context.mounted) {
+          setState(() {
+            _routeToVictim = [];
+            _routeToHospital = [];
+          });
+        }
+        return;
+      }
+      origin = o;
       dest = inc.liveVictimPin;
     }
     _routeDebounce = Timer(const Duration(milliseconds: 600), () async {
-      final pts = await OsrmRouteUtil.drivingRoute(LatLng(fromLat, fromLng), dest);
+      final pts = await OsrmRouteUtil.drivingRoute(origin, dest);
       if (!context.mounted) return;
       if (phase == 'returning') {
         setState(() {
@@ -973,6 +1080,117 @@ class _EmergencyServicesPanelScreenState extends State<EmergencyServicesPanelScr
     final h = _stationedHospitalIdFromFleetCallSign(FleetOperatorSession.fleetId);
     final q = (h != null && h.isNotEmpty) ? '?h=${Uri.encodeComponent(h)}' : '';
     context.push('/fleet-live/operation/${Uri.encodeComponent(inc.id)}$q');
+  }
+
+  // ── Driver SOS (on-map Emergency) ──────────────────────────────────────────
+
+  /// Asks the driver to confirm, then writes `fleetEmergencyState='raised'`
+  /// onto the incident so hospital + master dashboards can alert.
+  Future<void> _raiseDriverEmergency(SosIncident inc) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFF1A1A2E),
+        title: const Row(
+          children: [
+            Icon(Icons.sos, color: Colors.redAccent, size: 22),
+            SizedBox(width: 10),
+            Text('Raise driver emergency?',
+                style: TextStyle(color: Colors.white, fontSize: 16)),
+          ],
+        ),
+        content: const Text(
+          'Ops will be alerted immediately and may reassign this incident to '
+          'another unit. Use only for driver / vehicle emergencies.',
+          style: TextStyle(color: Colors.white70, fontSize: 13, height: 1.45),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('Cancel', style: TextStyle(color: Colors.white54)),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: Colors.red.shade700),
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: const Text('Raise SOS'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !context.mounted) return;
+    final pos = _lastSharePos ?? _lastDutyPos;
+    try {
+      await IncidentService.raiseFleetEmergency(
+        incidentId: inc.id,
+        lat: pos?.latitude,
+        lng: pos?.longitude,
+        fleetCallSign: FleetOperatorSession.fleetId,
+      );
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            backgroundColor: Colors.red.shade900,
+            content: const Text('Emergency raised — ops is alerted.'),
+          ),
+        );
+      }
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Raise failed: $e'), backgroundColor: Colors.red.shade800),
+        );
+      }
+    }
+  }
+
+  /// Driver-side "Cancel emergency" on the banner — used when ops + driver
+  /// finish the operator-channel conversation and the run resumes normally.
+  Future<void> _cancelDriverEmergency(SosIncident inc) async {
+    try {
+      await IncidentService.resolveFleetEmergency(incidentId: inc.id);
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Emergency cleared — resuming run.')),
+        );
+      }
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Clear failed: $e'), backgroundColor: Colors.red.shade800),
+        );
+      }
+    }
+  }
+
+  /// Latest incident doc carried the `reassigned` state from the ops console —
+  /// our unit has been released; tear the selected run down and return to standby.
+  void _handleFleetReassignedIfNeeded(SosIncident inc) {
+    final state = (inc.fleetEmergencyState ?? '').trim();
+    if (state != 'reassigned') return;
+    if (_selectedIncidentId != inc.id) return;
+    final prev = (inc.fleetEmergencyPreviousDriverUid ?? '').trim();
+    final me = (_uid ?? '').trim();
+    if (prev.isNotEmpty && me.isNotEmpty && prev != me) return;
+    _stopLiveShare();
+    _ensureHospitalAssignmentListener(null);
+    if (!mounted) return;
+    setState(() {
+      _selectedIncidentId = null;
+      _routeToVictim = [];
+      _routeToHospital = [];
+      _withinVictimRadius = false;
+      _withinHospitalRadius = false;
+    });
+    if (FleetOperatorSession.isOnDuty) _startDutyHeartbeat();
+    if (context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          backgroundColor: Color(0xFF1F2A3A),
+          content: Text('Run reassigned to a new unit. You are back on standby.'),
+        ),
+      );
+    }
   }
 
   @override
@@ -1249,6 +1467,7 @@ class _EmergencyServicesPanelScreenState extends State<EmergencyServicesPanelScr
                     if (!context.mounted) return;
                     _ensureHospitalAssignmentListener(incidentForCb.id);
                     unawaited(_refreshVolunteerRouteOverlay(incidentForCb));
+                    _handleFleetReassignedIfNeeded(incidentForCb);
                   });
                   return _DriverDetailView(
                     incident: incidentForCb,
@@ -1279,6 +1498,8 @@ class _EmergencyServicesPanelScreenState extends State<EmergencyServicesPanelScr
                     onSlideOnSceneConfirm: () => _onSlideOnSceneConfirm(incidentForCb),
                     onSlideRescueComplete: () => _onSlideRescueComplete(incidentForCb),
                     onSlideResponseComplete: () => _onSlideResponseComplete(incidentForCb),
+                    onRaiseDriverEmergency: () => _raiseDriverEmergency(incidentForCb),
+                    onCancelDriverEmergency: () => _cancelDriverEmergency(incidentForCb),
                     onSelectQueuedIncident: (id) {
                       _ensureHospitalAssignmentListener(id);
                       setState(() => _selectedIncidentId = id);
@@ -2266,12 +2487,16 @@ class _DriverMapPanel extends StatelessWidget {
     required this.onFleetCameraMove,
     required this.onMapCreated,
     this.mapBottomOverlay,
+    this.mapTopOverlay,
   });
 
   final _DriverMapLayers layers;
   final ValueChanged<double> onFleetCameraMove;
   final void Function(OpsMapController) onMapCreated;
   final Widget? mapBottomOverlay;
+  /// Rendered above the sliders (top-right corner of the map) for things like
+  /// the Driver SOS button and post-raise emergency banner.
+  final Widget? mapTopOverlay;
 
   @override
   Widget build(BuildContext context) {
@@ -2294,6 +2519,16 @@ class _DriverMapPanel extends StatelessWidget {
             zoomControlsEnabled: false,
             onMapCreated: onMapCreated,
           ),
+          if (mapTopOverlay != null)
+            Positioned(
+              left: 8,
+              right: 8,
+              top: 8,
+              child: SafeArea(
+                bottom: false,
+                child: mapTopOverlay!,
+              ),
+            ),
           if (mapBottomOverlay != null)
             Positioned(
               left: 8,
@@ -2662,6 +2897,280 @@ class _DriverReportCommsColumn extends StatelessWidget {
   }
 }
 
+/// Gates the "rescue complete" slider behind a 1-minute hold after the driver
+/// confirms On Scene. Shows a live MM:SS countdown, then reveals the slider.
+///
+/// 60-second floor matches the ops rule: crews need a moment on scene before
+/// committing to the return leg so triage is not skipped on swipe-through.
+class _RescueCompleteGate extends StatefulWidget {
+  const _RescueCompleteGate({
+    required this.onSceneAt,
+    required this.onConfirm,
+  });
+
+  final DateTime? onSceneAt;
+  final Future<void> Function() onConfirm;
+
+  static const Duration holdDuration = Duration(minutes: 1);
+
+  @override
+  State<_RescueCompleteGate> createState() => _RescueCompleteGateState();
+}
+
+class _RescueCompleteGateState extends State<_RescueCompleteGate> {
+  Timer? _tick;
+
+  @override
+  void initState() {
+    super.initState();
+    _tick = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (mounted) setState(() {});
+    });
+  }
+
+  @override
+  void dispose() {
+    _tick?.cancel();
+    super.dispose();
+  }
+
+  Duration get _remaining {
+    final t = widget.onSceneAt;
+    if (t == null) return Duration.zero;
+    final rem = _RescueCompleteGate.holdDuration - DateTime.now().difference(t);
+    return rem.isNegative ? Duration.zero : rem;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final rem = _remaining;
+    if (rem.inSeconds <= 0) {
+      return SlideToConfirmAction(
+        label: 'Slide to confirm rescue complete → return to hospital',
+        idleBadge: 'RESCUE',
+        accentColor: const Color(0xFF238636),
+        onConfirm: widget.onConfirm,
+      );
+    }
+    final m = rem.inMinutes.toString().padLeft(2, '0');
+    final s = (rem.inSeconds % 60).toString().padLeft(2, '0');
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+      decoration: BoxDecoration(
+        color: const Color(0xFF1F2A3A),
+        borderRadius: BorderRadius.circular(32),
+        border: Border.all(color: Colors.orangeAccent.withValues(alpha: 0.55)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Icon(Icons.timer_outlined, color: Colors.orangeAccent, size: 20),
+          const SizedBox(width: 10),
+          Flexible(
+            child: Text(
+              'Hold on scene — rescue slider unlocks in $m:$s',
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 13,
+                fontWeight: FontWeight.w700,
+                letterSpacing: 0.3,
+              ),
+              maxLines: 2,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Driver-side Emergency (SOS) button — top-right of the map.
+///
+/// Tapping raises `fleetEmergencyState='raised'` on the incident, which alerts
+/// the hospital console + master command centre. Compact by design so it sits
+/// comfortably above the slide-to-confirm strip.
+class _DriverSosButton extends StatefulWidget {
+  const _DriverSosButton({required this.onTap});
+
+  final Future<void> Function() onTap;
+
+  @override
+  State<_DriverSosButton> createState() => _DriverSosButtonState();
+}
+
+class _DriverSosButtonState extends State<_DriverSosButton>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _pulse = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 1400),
+  )..repeat(reverse: true);
+  bool _busy = false;
+
+  @override
+  void dispose() {
+    _pulse.dispose();
+    super.dispose();
+  }
+
+  Future<void> _onPressed() async {
+    if (_busy) return;
+    setState(() => _busy = true);
+    try {
+      await widget.onTap();
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.end,
+      children: [
+        FadeTransition(
+          opacity: Tween<double>(begin: 0.7, end: 1.0)
+              .animate(CurvedAnimation(parent: _pulse, curve: Curves.easeInOut)),
+          child: Material(
+            color: Colors.red.shade700,
+            elevation: 6,
+            borderRadius: BorderRadius.circular(26),
+            child: InkWell(
+              borderRadius: BorderRadius.circular(26),
+              onTap: _busy ? null : _onPressed,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    if (_busy)
+                      const SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                      )
+                    else
+                      const Icon(Icons.sos_rounded, color: Colors.white, size: 22),
+                    const SizedBox(width: 8),
+                    const Text(
+                      'Driver SOS',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.w900,
+                        fontSize: 13,
+                        letterSpacing: 0.6,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+/// Post-raise status banner: mirrors [_DriverSosButton]'s spot once an emergency
+/// is active, lets the driver open the operator channel or cancel.
+class _DriverSosBanner extends StatelessWidget {
+  const _DriverSosBanner({
+    required this.state,
+    required this.onOpenOperatorChannel,
+    required this.onCancel,
+  });
+
+  final String state;
+  final VoidCallback onOpenOperatorChannel;
+  final Future<void> Function() onCancel;
+
+  String get _label {
+    switch (state) {
+      case 'acknowledged':
+        return 'Ops is on the line';
+      case 'raised':
+      default:
+        return 'SOS raised — ops alerted';
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: const Color(0xFF300A0A),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: Colors.redAccent.withValues(alpha: 0.7)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.red.withValues(alpha: 0.3),
+            blurRadius: 14,
+            spreadRadius: 2,
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.sos_rounded, color: Colors.redAccent, size: 20),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  _label,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.w900,
+                    fontSize: 13,
+                    letterSpacing: 0.3,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              Expanded(
+                child: FilledButton.icon(
+                  onPressed: onOpenOperatorChannel,
+                  style: FilledButton.styleFrom(
+                    backgroundColor: Colors.red.shade700,
+                    padding: const EdgeInsets.symmetric(vertical: 8),
+                  ),
+                  icon: const Icon(Icons.headset_mic_rounded, size: 16),
+                  label: const Text(
+                    'Operator channel',
+                    style: TextStyle(fontSize: 12, fontWeight: FontWeight.w800),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              OutlinedButton(
+                onPressed: () => onCancel(),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: Colors.white70,
+                  side: BorderSide(color: Colors.white.withValues(alpha: 0.3)),
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                ),
+                child: const Text(
+                  'Cancel',
+                  style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class _DriverDetailView extends StatelessWidget {
   const _DriverDetailView({
     required this.incident,
@@ -2688,6 +3197,8 @@ class _DriverDetailView extends StatelessWidget {
     required this.onSlideOnSceneConfirm,
     required this.onSlideRescueComplete,
     required this.onSlideResponseComplete,
+    required this.onRaiseDriverEmergency,
+    required this.onCancelDriverEmergency,
     required this.onSelectQueuedIncident,
   });
 
@@ -2716,6 +3227,8 @@ class _DriverDetailView extends StatelessWidget {
   final Future<void> Function() onSlideOnSceneConfirm;
   final Future<void> Function() onSlideRescueComplete;
   final Future<void> Function() onSlideResponseComplete;
+  final Future<void> Function() onRaiseDriverEmergency;
+  final Future<void> Function() onCancelDriverEmergency;
   final ValueChanged<String> onSelectQueuedIncident;
 
   @override
@@ -2751,10 +3264,8 @@ class _DriverDetailView extends StatelessWidget {
           onConfirm: onSlideOnSceneConfirm,
         );
       } else if (phase == 'on_scene') {
-        mapOverlay = SlideToConfirmAction(
-          label: 'Slide to confirm rescue complete → return to hospital',
-          idleBadge: 'RESCUE',
-          accentColor: const Color(0xFF238636),
+        mapOverlay = _RescueCompleteGate(
+          onSceneAt: incident.emsOnSceneAt,
           onConfirm: onSlideRescueComplete,
         );
       } else if (phase == 'returning' && withinHospitalRadius) {
@@ -2794,6 +3305,23 @@ class _DriverDetailView extends StatelessWidget {
     final showOperatorVoice =
         (role == StationUnitRole.medical && incident.emsAcceptedBy == uid) ||
             (role == StationUnitRole.crane && incident.craneUnitAcceptedBy == uid);
+
+    Widget? sosOverlay;
+    final emState = (incident.fleetEmergencyState ?? '').trim();
+    final isMyRun =
+        role == StationUnitRole.medical && incident.emsAcceptedBy == uid && uid.isNotEmpty;
+    final runStillActive = const {'inbound', 'on_scene', 'returning'}.contains(phase);
+    if (isMyRun && runStillActive) {
+      if (emState == '' || emState == 'none' || emState == 'resolved') {
+        sosOverlay = _DriverSosButton(onTap: onRaiseDriverEmergency);
+      } else if (emState == 'raised' || emState == 'acknowledged') {
+        sosOverlay = _DriverSosBanner(
+          state: emState,
+          onOpenOperatorChannel: onOperatorLiveKit,
+          onCancel: onCancelDriverEmergency,
+        );
+      }
+    }
 
     return DefaultTabController(
       length: 3,
@@ -2864,6 +3392,7 @@ class _DriverDetailView extends StatelessWidget {
                             onFleetCameraMove: onFleetCameraMove,
                             onMapCreated: onMapCreated,
                             mapBottomOverlay: mapOverlay,
+                            mapTopOverlay: sosOverlay,
                           ),
                         ),
                         const SizedBox(height: 10),

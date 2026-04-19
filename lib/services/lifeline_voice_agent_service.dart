@@ -5,6 +5,7 @@ import 'package:cloud_functions/cloud_functions.dart';
 import 'package:flutter/foundation.dart';
 
 import 'package:emergency_os/features/ai_assist/data/lifeline_curriculum_digest.dart';
+import 'package:emergency_os/services/cloud_tts_service.dart';
 import 'package:emergency_os/core/utils/speech_web.dart'
     if (dart.library.io) 'package:emergency_os/core/utils/speech_io.dart';
 
@@ -78,6 +79,7 @@ class LifelineVoiceAgentService {
     if (_isListening) return;
     // Any prior TTS must be silenced so the user can start talking immediately.
     cancelSpeechText();
+    unawaited(CloudTtsService.stop());
     _aborted = false;
     _lastRecognizedText = '';
     _isListening = true;
@@ -121,6 +123,7 @@ class LifelineVoiceAgentService {
   void cancelSpeaking() {
     if (_state != LifelineVoiceState.speaking) return;
     cancelSpeechText();
+    unawaited(CloudTtsService.stop());
     _setState(LifelineVoiceState.idle);
   }
 
@@ -148,17 +151,48 @@ class LifelineVoiceAgentService {
       }
       _onVoiceReply?.call(spoken, levelId);
       _setState(LifelineVoiceState.speaking);
-      speakText(
-        spoken,
-        lang: _ttsLocaleFor(spoken),
-        onDone: () {
-          if (_state == LifelineVoiceState.speaking) {
-            _setState(LifelineVoiceState.idle);
-          }
-        },
-      );
+      await _speakReply(spoken, _ttsLocaleFor(spoken));
     } catch (e) {
       debugPrint('[LifelineVoice] Gemini error: $e');
+      _setState(LifelineVoiceState.idle);
+    }
+  }
+
+  /// Speaks [spoken] in [bcp47] with a mobile-web-aware fallback.
+  ///
+  /// Mobile browsers (iOS Safari, Android Chrome) frequently drop
+  /// `speechSynthesis.speak()` calls made after an async network round-trip
+  /// because the user-activation window has expired and/or the device has no
+  /// matching voice pack. On those platforms we skip `speakText` entirely and
+  /// play the cloud-TTS MP3 through `audioplayers`, which is allowed to play
+  /// after any prior user gesture (the mic long-press). Desktop web and
+  /// native platforms keep using the original on-device TTS path.
+  Future<void> _speakReply(String spoken, String bcp47) async {
+    final preferCloud = kIsWeb &&
+        (isMobileWebBrowser() || !hasLocalVoiceFor(bcp47));
+
+    if (preferCloud) {
+      final bytes = await CloudTtsService.synthesize(spoken, bcp47);
+      if (_state != LifelineVoiceState.speaking) return;
+      if (bytes != null && bytes.isNotEmpty) {
+        await CloudTtsService.playMp3(bytes);
+        if (_state == LifelineVoiceState.speaking) {
+          _setState(LifelineVoiceState.idle);
+        }
+        return;
+      }
+    }
+
+    final done = Completer<void>();
+    speakText(
+      spoken,
+      lang: bcp47,
+      onDone: () {
+        if (!done.isCompleted) done.complete();
+      },
+    );
+    await done.future;
+    if (_state == LifelineVoiceState.speaking) {
       _setState(LifelineVoiceState.idle);
     }
   }
@@ -228,6 +262,7 @@ class LifelineVoiceAgentService {
     _isListening = false;
     stopListening();
     cancelSpeechText();
+    unawaited(CloudTtsService.stop());
     _history.clear();
     _state = LifelineVoiceState.idle;
     _onStateChanged = null;

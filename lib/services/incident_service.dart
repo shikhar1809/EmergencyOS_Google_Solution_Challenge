@@ -13,6 +13,7 @@ import 'package:uuid/uuid.dart';
 import '../core/constants/app_constants.dart';
 import '../core/utils/sos_demo_incident_filter.dart';
 import 'drill_session_persistence.dart';
+import 'fleet_assignment_service.dart';
 import 'offline_cache_service.dart';
 import 'leaderboard_service.dart';
 import 'ops_incident_hospital_assignment_service.dart';
@@ -86,6 +87,30 @@ class SosIncident {
   final double? returnHospitalLat;
   final double? returnHospitalLng;
 
+  /// Fleet unit's home station at the moment of accept — planned route origin
+  /// for hospital→scene polyline on all dashboards. Written in
+  /// `_acceptAssignment` (fleet operator) so every console can render the
+  /// consignment route without re-deriving it from the driver call sign.
+  final String? stationedHospitalId;
+  final double? stationedHospitalLat;
+  final double? stationedHospitalLng;
+
+  /// Fleet driver SOS lifecycle: `none` | `raised` | `acknowledged` |
+  /// `reassigned` | `resolved`. Non-null only after the driver taps the
+  /// in-run Emergency button on the fleet operator map.
+  final String? fleetEmergencyState;
+  final DateTime? fleetEmergencyRaisedAt;
+  final String? fleetEmergencyRaisedBy;
+  final String? fleetEmergencyRaisedByCallSign;
+  final double? fleetEmergencyLat;
+  final double? fleetEmergencyLng;
+  final String? fleetEmergencyNote;
+  final DateTime? fleetEmergencyAcknowledgedAt;
+  final String? fleetEmergencyAcknowledgedBy;
+  final DateTime? fleetEmergencyResolvedAt;
+  final String? fleetEmergencyResolvedBy;
+  final String? fleetEmergencyPreviousDriverUid;
+
   /// Crane / heavy recovery unit (mobile console + command).
   final String? craneUnitAcceptedBy;
   final DateTime? craneUnitAcceptedAt;
@@ -119,6 +144,21 @@ class SosIncident {
   /// assessment, and dispatch context. Read-only for clients — updated by
   /// Cloud Functions / backend pipelines.
   final Map<String, dynamic>? sharedSituationBrief;
+
+  /// Gemini-generated plain-English rationale for *why* the chosen hospital
+  /// topped the dispatch chain. Produced by the hospital dispatch engine after
+  /// each (re)dispatch; safe to display on ops dashboards and the victim's
+  /// hospital card. Fields: `text`, `hospitalId`, `hospitalName`,
+  /// `severityTier`, `generatedBy`, `generatedAt`. May be null if Gemini is
+  /// disabled or rationale generation failed (dispatch itself is deterministic).
+  final Map<String, dynamic>? aiHospitalRationale;
+
+  /// Pre-arrival handoff packet produced by Gemini when the ambulance is
+  /// ~2 minutes from the receiving hospital. Fields: `status`,
+  /// `patientSnapshot`, `likelyPresentation`, `prepareRoom[]`,
+  /// `prepareTeam[]`, `bloodAndMeds[]`, `contraindications[]`, `etaSeconds`,
+  /// `hospitalName`, `generatedBy`, `generatedAt`.
+  final Map<String, dynamic>? preArrivalHandoff;
 
   /// Green corridor dispatch status from Cloud Function (`sending`, `sent`, `failed`).
   final String? greenCorridorStatus;
@@ -199,6 +239,21 @@ class SosIncident {
     this.returnHospitalId,
     this.returnHospitalLat,
     this.returnHospitalLng,
+    this.stationedHospitalId,
+    this.stationedHospitalLat,
+    this.stationedHospitalLng,
+    this.fleetEmergencyState,
+    this.fleetEmergencyRaisedAt,
+    this.fleetEmergencyRaisedBy,
+    this.fleetEmergencyRaisedByCallSign,
+    this.fleetEmergencyLat,
+    this.fleetEmergencyLng,
+    this.fleetEmergencyNote,
+    this.fleetEmergencyAcknowledgedAt,
+    this.fleetEmergencyAcknowledgedBy,
+    this.fleetEmergencyResolvedAt,
+    this.fleetEmergencyResolvedBy,
+    this.fleetEmergencyPreviousDriverUid,
     this.craneUnitAcceptedBy,
     this.craneUnitAcceptedAt,
     this.craneLiveLat,
@@ -216,6 +271,8 @@ class SosIncident {
     this.triage,
     this.volunteerSceneReport,
     this.sharedSituationBrief,
+    this.aiHospitalRationale,
+    this.preArrivalHandoff,
     this.greenCorridorStatus,
     this.firstAcknowledgedAt,
     this.firstAcknowledgedByUid,
@@ -226,6 +283,31 @@ class SosIncident {
     final b = ambulanceLiveLng;
     if (a == null || b == null) return null;
     return LatLng(a, b);
+  }
+
+  /// Origin for the planned hospital→scene polyline (all dashboards + fleet map).
+  /// Prefers [stationedHospitalLat]/[stationedHospitalLng] (persisted at accept-time),
+  /// then falls back to the accepting hospital in [returnHospitalLat]/[returnHospitalLng].
+  LatLng? get plannedOriginLatLng {
+    final s1 = stationedHospitalLat;
+    final s2 = stationedHospitalLng;
+    if (s1 != null && s2 != null) return LatLng(s1, s2);
+    final r1 = returnHospitalLat;
+    final r2 = returnHospitalLng;
+    if (r1 != null && r2 != null) return LatLng(r1, r2);
+    return null;
+  }
+
+  LatLng? get fleetEmergencyLatLng {
+    final a = fleetEmergencyLat;
+    final b = fleetEmergencyLng;
+    if (a == null || b == null) return null;
+    return LatLng(a, b);
+  }
+
+  bool get isFleetEmergencyActive {
+    final s = (fleetEmergencyState ?? '').trim();
+    return s == 'raised' || s == 'acknowledged';
   }
 
   LatLng? get craneLiveLocation {
@@ -280,6 +362,28 @@ class SosIncident {
     if (returnHospitalId != null) 'returnHospitalId': returnHospitalId,
     if (returnHospitalLat != null) 'returnHospitalLat': returnHospitalLat,
     if (returnHospitalLng != null) 'returnHospitalLng': returnHospitalLng,
+    if (stationedHospitalId != null) 'stationedHospitalId': stationedHospitalId,
+    if (stationedHospitalLat != null) 'stationedHospitalLat': stationedHospitalLat,
+    if (stationedHospitalLng != null) 'stationedHospitalLng': stationedHospitalLng,
+    if (fleetEmergencyState != null) 'fleetEmergencyState': fleetEmergencyState,
+    if (fleetEmergencyRaisedAt != null)
+      'fleetEmergencyRaisedAt': fleetEmergencyRaisedAt!.toIso8601String(),
+    if (fleetEmergencyRaisedBy != null) 'fleetEmergencyRaisedBy': fleetEmergencyRaisedBy,
+    if (fleetEmergencyRaisedByCallSign != null)
+      'fleetEmergencyRaisedByCallSign': fleetEmergencyRaisedByCallSign,
+    if (fleetEmergencyLat != null) 'fleetEmergencyLat': fleetEmergencyLat,
+    if (fleetEmergencyLng != null) 'fleetEmergencyLng': fleetEmergencyLng,
+    if (fleetEmergencyNote != null) 'fleetEmergencyNote': fleetEmergencyNote,
+    if (fleetEmergencyAcknowledgedAt != null)
+      'fleetEmergencyAcknowledgedAt': fleetEmergencyAcknowledgedAt!.toIso8601String(),
+    if (fleetEmergencyAcknowledgedBy != null)
+      'fleetEmergencyAcknowledgedBy': fleetEmergencyAcknowledgedBy,
+    if (fleetEmergencyResolvedAt != null)
+      'fleetEmergencyResolvedAt': fleetEmergencyResolvedAt!.toIso8601String(),
+    if (fleetEmergencyResolvedBy != null)
+      'fleetEmergencyResolvedBy': fleetEmergencyResolvedBy,
+    if (fleetEmergencyPreviousDriverUid != null)
+      'fleetEmergencyPreviousDriverUid': fleetEmergencyPreviousDriverUid,
     if (craneUnitAcceptedBy != null) 'craneUnitAcceptedBy': craneUnitAcceptedBy,
     if (craneUnitAcceptedAt != null) 'craneUnitAcceptedAt': craneUnitAcceptedAt!.toIso8601String(),
     if (craneLiveLat != null) 'craneLiveLat': craneLiveLat,
@@ -298,6 +402,8 @@ class SosIncident {
     if (triage != null) 'triage': triage,
     if (volunteerSceneReport != null) 'volunteerSceneReport': volunteerSceneReport,
     if (sharedSituationBrief != null) 'sharedSituationBrief': sharedSituationBrief,
+    if (aiHospitalRationale != null) 'aiHospitalRationale': aiHospitalRationale,
+    if (preArrivalHandoff != null) 'preArrivalHandoff': preArrivalHandoff,
     if (firstAcknowledgedAt != null)
       'firstAcknowledgedAt': firstAcknowledgedAt!.toIso8601String(),
     if (firstAcknowledgedByUid != null) 'firstAcknowledgedByUid': firstAcknowledgedByUid,
@@ -379,6 +485,27 @@ class SosIncident {
     returnHospitalId: j['returnHospitalId'] as String?,
     returnHospitalLat: (j['returnHospitalLat'] as num?)?.toDouble(),
     returnHospitalLng: (j['returnHospitalLng'] as num?)?.toDouble(),
+    stationedHospitalId: j['stationedHospitalId'] as String?,
+    stationedHospitalLat: (j['stationedHospitalLat'] as num?)?.toDouble(),
+    stationedHospitalLng: (j['stationedHospitalLng'] as num?)?.toDouble(),
+    fleetEmergencyState: j['fleetEmergencyState'] as String?,
+    fleetEmergencyRaisedAt: j['fleetEmergencyRaisedAt'] != null
+        ? _parseInstant(j['fleetEmergencyRaisedAt'])
+        : null,
+    fleetEmergencyRaisedBy: j['fleetEmergencyRaisedBy'] as String?,
+    fleetEmergencyRaisedByCallSign: j['fleetEmergencyRaisedByCallSign'] as String?,
+    fleetEmergencyLat: (j['fleetEmergencyLat'] as num?)?.toDouble(),
+    fleetEmergencyLng: (j['fleetEmergencyLng'] as num?)?.toDouble(),
+    fleetEmergencyNote: j['fleetEmergencyNote'] as String?,
+    fleetEmergencyAcknowledgedAt: j['fleetEmergencyAcknowledgedAt'] != null
+        ? _parseInstant(j['fleetEmergencyAcknowledgedAt'])
+        : null,
+    fleetEmergencyAcknowledgedBy: j['fleetEmergencyAcknowledgedBy'] as String?,
+    fleetEmergencyResolvedAt: j['fleetEmergencyResolvedAt'] != null
+        ? _parseInstant(j['fleetEmergencyResolvedAt'])
+        : null,
+    fleetEmergencyResolvedBy: j['fleetEmergencyResolvedBy'] as String?,
+    fleetEmergencyPreviousDriverUid: j['fleetEmergencyPreviousDriverUid'] as String?,
     craneUnitAcceptedBy: j['craneUnitAcceptedBy'] as String?,
     craneUnitAcceptedAt: j['craneUnitAcceptedAt'] != null
         ? _parseInstant(j['craneUnitAcceptedAt'])
@@ -406,6 +533,12 @@ class SosIncident {
         : null,
     sharedSituationBrief: j['sharedSituationBrief'] is Map
         ? Map<String, dynamic>.from(j['sharedSituationBrief'] as Map)
+        : null,
+    aiHospitalRationale: j['aiHospitalRationale'] is Map
+        ? Map<String, dynamic>.from(j['aiHospitalRationale'] as Map)
+        : null,
+    preArrivalHandoff: j['preArrivalHandoff'] is Map
+        ? Map<String, dynamic>.from(j['preArrivalHandoff'] as Map)
         : null,
     greenCorridorStatus: j['greenCorridorStatus'] as String?,
     firstAcknowledgedAt: j['firstAcknowledgedAt'] != null
@@ -1259,6 +1392,212 @@ class IncidentService {
       );
     } catch (e) {
       debugPrint('[IncidentService] markEmsResponseComplete failed: $e');
+      rethrow;
+    }
+  }
+
+  // ── Fleet driver emergency (Driver SOS) ────────────────────────────────────
+
+  /// Persist the unit's stationed hospital on the incident at accept-time so
+  /// every console can render the planned hospital→scene route without
+  /// re-deriving it from the fleet call sign.
+  static Future<void> persistStationedHospitalOnIncident({
+    required String incidentId,
+    required String stationedHospitalId,
+    required double stationedHospitalLat,
+    required double stationedHospitalLng,
+  }) async {
+    final id = incidentId.trim();
+    final hid = stationedHospitalId.trim();
+    if (id.isEmpty || hid.isEmpty) return;
+    try {
+      await _db.collection(_col).doc(id).set(
+        {
+          'stationedHospitalId': hid,
+          'stationedHospitalLat': stationedHospitalLat,
+          'stationedHospitalLng': stationedHospitalLng,
+          'updatedAt': FieldValue.serverTimestamp(),
+        },
+        SetOptions(merge: true),
+      );
+    } catch (e) {
+      debugPrint('[IncidentService] persistStationedHospitalOnIncident failed: $e');
+    }
+  }
+
+  /// Fleet driver taps the in-run SOS button: alerts hospital + master
+  /// dashboards via the incident stream. Does NOT change `emsAcceptedBy` —
+  /// ops decides whether to reassign or keep the current unit.
+  static Future<void> raiseFleetEmergency({
+    required String incidentId,
+    double? lat,
+    double? lng,
+    String? note,
+    String? fleetCallSign,
+  }) async {
+    final id = incidentId.trim();
+    if (id.isEmpty) return;
+    final uid = FirebaseAuth.instance.currentUser?.uid ?? '';
+    final patch = <String, Object?>{
+      'fleetEmergencyState': 'raised',
+      'fleetEmergencyRaisedAt': FieldValue.serverTimestamp(),
+      if (uid.isNotEmpty) 'fleetEmergencyRaisedBy': uid,
+      if ((fleetCallSign ?? '').trim().isNotEmpty)
+        'fleetEmergencyRaisedByCallSign': fleetCallSign!.trim(),
+      if (lat != null) 'fleetEmergencyLat': lat,
+      if (lng != null) 'fleetEmergencyLng': lng,
+      if ((note ?? '').trim().isNotEmpty) 'fleetEmergencyNote': note!.trim(),
+      'fleetEmergencyAcknowledgedAt': FieldValue.delete(),
+      'fleetEmergencyAcknowledgedBy': FieldValue.delete(),
+      'fleetEmergencyResolvedAt': FieldValue.delete(),
+      'fleetEmergencyResolvedBy': FieldValue.delete(),
+      'medicalStatus': 'Driver emergency — ops bridging',
+      'updatedAt': FieldValue.serverTimestamp(),
+    };
+    try {
+      await _db.collection(_col).doc(id).update(patch);
+      await appendIncidentAuditLog(
+        id,
+        action: 'fleet_emergency_raised',
+        note: (note ?? '').trim().isEmpty ? null : note,
+      );
+    } catch (e) {
+      debugPrint('[IncidentService] raiseFleetEmergency failed: $e');
+      rethrow;
+    }
+  }
+
+  /// Ops (hospital or master) tapped "Open operator channel" — records that the
+  /// emergency has been seen so the driver UI flips from "Raised" to "Ack'd".
+  static Future<void> acknowledgeFleetEmergency({
+    required String incidentId,
+  }) async {
+    final id = incidentId.trim();
+    if (id.isEmpty) return;
+    final uid = FirebaseAuth.instance.currentUser?.uid ?? '';
+    try {
+      await _db.collection(_col).doc(id).update({
+        'fleetEmergencyState': 'acknowledged',
+        'fleetEmergencyAcknowledgedAt': FieldValue.serverTimestamp(),
+        if (uid.isNotEmpty) 'fleetEmergencyAcknowledgedBy': uid,
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+      await appendIncidentAuditLog(id, action: 'fleet_emergency_acknowledged');
+    } catch (e) {
+      debugPrint('[IncidentService] acknowledgeFleetEmergency failed: $e');
+      rethrow;
+    }
+  }
+
+  /// Driver cancels their own SOS (false alarm / situation resolved) or ops
+  /// clears the banner after the operator-channel call.
+  static Future<void> resolveFleetEmergency({
+    required String incidentId,
+  }) async {
+    final id = incidentId.trim();
+    if (id.isEmpty) return;
+    final uid = FirebaseAuth.instance.currentUser?.uid ?? '';
+    try {
+      await _db.collection(_col).doc(id).update({
+        'fleetEmergencyState': 'resolved',
+        'fleetEmergencyResolvedAt': FieldValue.serverTimestamp(),
+        if (uid.isNotEmpty) 'fleetEmergencyResolvedBy': uid,
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+      await appendIncidentAuditLog(id, action: 'fleet_emergency_resolved');
+    } catch (e) {
+      debugPrint('[IncidentService] resolveFleetEmergency failed: $e');
+      rethrow;
+    }
+  }
+
+  /// Ops picks "Allot new fleet": releases the current unit, reopens the
+  /// assignment, and dispatches a fresh pending `ops_fleet_assignments` doc
+  /// to the next-nearest available unit (excluding the previous driver uid).
+  ///
+  /// Returns the new fleet doc id that was selected (or null if none suitable).
+  static Future<String?> reassignFleetForEmergency({
+    required String incidentId,
+  }) async {
+    final id = incidentId.trim();
+    if (id.isEmpty) return null;
+    try {
+      final snap = await _db.collection(_col).doc(id).get();
+      if (!snap.exists) return null;
+      final inc = SosIncident.fromFirestore(snap);
+      final prevDriver = (inc.emsAcceptedBy ?? '').trim();
+      final scene = inc.liveVictimPin;
+
+      final unitsSnap = await _db.collection('ops_fleet_units').get();
+      QueryDocumentSnapshot<Map<String, dynamic>>? best;
+      double bestDist = double.infinity;
+      for (final d in unitsSnap.docs) {
+        final data = d.data();
+        final vt = (data['vehicleType'] as String?)?.toLowerCase() ?? '';
+        if (vt != 'medical') continue;
+        final avail = data['available'];
+        if (avail != true) continue;
+        final aid = (data['assignedIncidentId'] as String?)?.trim() ?? '';
+        if (aid.isNotEmpty) continue;
+        final opUid = (data['operatorUid'] as String?)?.trim() ?? d.id;
+        if (opUid.isNotEmpty && opUid == prevDriver) continue;
+        if (d.id == prevDriver) continue;
+        final lat = (data['lat'] as num?)?.toDouble();
+        final lng = (data['lng'] as num?)?.toDouble();
+        if (lat == null || lng == null) continue;
+        final dist = Geolocator.distanceBetween(
+          lat,
+          lng,
+          scene.latitude,
+          scene.longitude,
+        );
+        if (dist < bestDist) {
+          bestDist = dist;
+          best = d;
+        }
+      }
+
+      // Release the previous driver + reopen the run so the new unit can accept.
+      final uid = FirebaseAuth.instance.currentUser?.uid ?? '';
+      await _db.collection(_col).doc(id).update({
+        'emsAcceptedBy': FieldValue.delete(),
+        'emsAcceptedAt': FieldValue.delete(),
+        'emsWorkflowPhase': FieldValue.delete(),
+        'medicalStatus': 'Driver emergency — reassigning to new unit',
+        'fleetEmergencyState': 'reassigned',
+        'fleetEmergencyResolvedAt': FieldValue.serverTimestamp(),
+        if (uid.isNotEmpty) 'fleetEmergencyResolvedBy': uid,
+        if (prevDriver.isNotEmpty) 'fleetEmergencyPreviousDriverUid': prevDriver,
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+
+      // Dispatch a fresh pending assignment to the next-nearest unit.
+      if (best != null) {
+        final data = best.data();
+        final cs = (data['fleetCallSign'] as String?)?.trim() ?? best.id;
+        try {
+          await FleetAssignmentService.sendAssignment(
+            fleetId: best.id,
+            incidentId: id,
+            vehicleType: 'medical',
+            callSign: cs,
+            source: FleetAssignmentService.sourceFleetManagementPanel,
+          );
+        } catch (e) {
+          debugPrint('[IncidentService] reassign sendAssignment failed: $e');
+        }
+      }
+
+      await appendIncidentAuditLog(
+        id,
+        action: 'fleet_reassigned_after_emergency',
+        note: best == null
+            ? 'No available unit found — reopen + manual dispatch required.'
+            : 'Re-dispatched to ${best.id}',
+      );
+      return best?.id;
+    } catch (e) {
+      debugPrint('[IncidentService] reassignFleetForEmergency failed: $e');
       rethrow;
     }
   }

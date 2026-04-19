@@ -2,6 +2,7 @@
 // forthcoming video-assessment and fleet detail rows.
 // ignore_for_file: unused_element
 
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -177,6 +178,158 @@ class _CommandCenterInspectorState extends State<CommandCenterInspector> {
                 ],
               ),
             ),
+        ],
+      ),
+    );
+  }
+
+  /// Pre-arrival handoff packet produced by Gemini when the ambulance is ~2
+  /// minutes out. Shown prominently so the trauma team can prep the bay before
+  /// the ambulance rolls in.
+  Widget _preArrivalHandoffCard(SosIncident inc) {
+    final h = inc.preArrivalHandoff;
+    if (h == null) return const SizedBox.shrink();
+    final status = (h['status'] ?? '').toString();
+    if (status != 'ready') return const SizedBox.shrink();
+    final snapshot = (h['patientSnapshot'] ?? '').toString().trim();
+    final presentation = (h['likelyPresentation'] ?? '').toString().trim();
+    final prepareRoom = (h['prepareRoom'] is List)
+        ? (h['prepareRoom'] as List).map((e) => e?.toString() ?? '').where((s) => s.isNotEmpty).toList()
+        : const <String>[];
+    final prepareTeam = (h['prepareTeam'] is List)
+        ? (h['prepareTeam'] as List).map((e) => e?.toString() ?? '').where((s) => s.isNotEmpty).toList()
+        : const <String>[];
+    final bloodAndMeds = (h['bloodAndMeds'] is List)
+        ? (h['bloodAndMeds'] as List).map((e) => e?.toString() ?? '').where((s) => s.isNotEmpty).toList()
+        : const <String>[];
+    final contraindications = (h['contraindications'] is List)
+        ? (h['contraindications'] as List).map((e) => e?.toString() ?? '').where((s) => s.isNotEmpty).toList()
+        : const <String>[];
+    final hospitalName = (h['hospitalName'] ?? '').toString().trim();
+    final etaSec = (h['etaSeconds'] is num) ? (h['etaSeconds'] as num).round() : 0;
+
+    Widget sectionList(String title, IconData icon, Color color, List<String> items) {
+      if (items.isEmpty) return const SizedBox.shrink();
+      return Padding(
+        padding: const EdgeInsets.only(top: 10),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(children: [
+              Icon(icon, size: 14, color: color),
+              const SizedBox(width: 6),
+              Text(title, style: TextStyle(color: color, fontSize: 11, fontWeight: FontWeight.w900, letterSpacing: 1.1)),
+            ]),
+            const SizedBox(height: 4),
+            ...items.take(6).map((s) => Padding(
+                  padding: const EdgeInsets.only(top: 3, left: 18),
+                  child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                    Text('• ', style: TextStyle(color: color, fontSize: 12)),
+                    Expanded(child: Text(s, style: const TextStyle(color: Colors.white, fontSize: 12, height: 1.35))),
+                  ]),
+                )),
+          ],
+        ),
+      );
+    }
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.redAccent.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.redAccent.withValues(alpha: 0.55), width: 1.4),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.redAccent.withValues(alpha: 0.15),
+            blurRadius: 14,
+            spreadRadius: 1,
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.bolt_rounded, color: Colors.redAccent, size: 18),
+              const SizedBox(width: 6),
+              const Text('PRE-ARRIVAL HANDOFF',
+                  style: TextStyle(color: Colors.redAccent, fontSize: 11, letterSpacing: 1.4, fontWeight: FontWeight.w900)),
+              const Spacer(),
+              if (etaSec > 0)
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: Colors.redAccent.withValues(alpha: 0.2),
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                  child: Text('ETA ${etaSec}s',
+                      style: const TextStyle(color: Colors.redAccent, fontSize: 10, fontWeight: FontWeight.w900)),
+                ),
+            ],
+          ),
+          if (hospitalName.isNotEmpty) ...[
+            const SizedBox(height: 4),
+            Text('Receiving: $hospitalName',
+                style: const TextStyle(color: Colors.white70, fontSize: 11, fontWeight: FontWeight.w600)),
+          ],
+          if (snapshot.isNotEmpty) ...[
+            const SizedBox(height: 8),
+            Text(snapshot, style: const TextStyle(color: Colors.white, fontSize: 12.5, height: 1.4, fontWeight: FontWeight.w600)),
+          ],
+          if (presentation.isNotEmpty) ...[
+            const SizedBox(height: 6),
+            Text(presentation, style: const TextStyle(color: Colors.white70, fontSize: 12, height: 1.35, fontStyle: FontStyle.italic)),
+          ],
+          sectionList('PREPARE ROOM', Icons.meeting_room_rounded, Colors.amberAccent, prepareRoom),
+          sectionList('PAGE TEAM', Icons.people_alt_rounded, const Color(0xFF64B5F6), prepareTeam),
+          sectionList('BLOOD / MEDS', Icons.bloodtype_rounded, Colors.redAccent, bloodAndMeds),
+          sectionList('CONTRAINDICATIONS', Icons.warning_rounded, Colors.orangeAccent, contraindications),
+        ],
+      ),
+    );
+  }
+
+  /// Short Gemini-written explanation for why the current hospital was chosen
+  /// by the dispatch engine (`aiHospitalRationale` on the incident doc).
+  Widget _aiHospitalRationaleCard(SosIncident inc) {
+    final r = inc.aiHospitalRationale;
+    if (r == null) return const SizedBox.shrink();
+    final text = (r['text'] ?? '').toString().trim();
+    if (text.isEmpty) return const SizedBox.shrink();
+    final hospital = (r['hospitalName'] ?? '').toString().trim();
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: const Color(0xFFBA68C8).withValues(alpha: 0.06),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: const Color(0xFFBA68C8).withValues(alpha: 0.30)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.local_hospital_rounded, color: Color(0xFFBA68C8), size: 16),
+              const SizedBox(width: 6),
+              const Text('GEMINI HOSPITAL RATIONALE',
+                  style: TextStyle(color: Color(0xFFBA68C8), fontSize: 11, letterSpacing: 1.4, fontWeight: FontWeight.w900)),
+              const Spacer(),
+              if (hospital.isNotEmpty)
+                Flexible(
+                  child: Text(
+                    hospital,
+                    style: const TextStyle(color: Colors.white70, fontSize: 10, fontWeight: FontWeight.w600),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Text(text, style: const TextStyle(color: Colors.white, fontSize: 12, height: 1.4)),
         ],
       ),
     );
@@ -701,8 +854,10 @@ class _CommandCenterInspectorState extends State<CommandCenterInspector> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          _dispatchPriorityBanner(inc),
-          _aiTriageCard(inc),
+                      _dispatchPriorityBanner(inc),
+                      _preArrivalHandoffCard(inc),
+                      _aiTriageCard(inc),
+                      _aiHospitalRationaleCard(inc),
           SharedSituationBriefCard(
             incidentId: inc.id,
             accentColor: const Color(0xFF7C4DFF),
@@ -779,9 +934,20 @@ class _CommandCenterInspectorState extends State<CommandCenterInspector> {
                 ),
                 _statusLine('Type of emergency', inc.type),
                 _statusLine('Victim conscious', _victimConsciousLabel(inc)),
+                if ((inc.emsWorkflowPhase ?? '').trim() == 'on_scene' &&
+                    inc.emsOnSceneAt != null)
+                  _OnSceneHoldCountdownLine(onSceneAt: inc.emsOnSceneAt!),
+                if ((inc.emsWorkflowPhase ?? '').trim() == 'returning')
+                  _statusLine(
+                    'Return distance',
+                    _returnDistanceLabel(inc),
+                  ),
               ],
             ),
           ),
+          if (inc.isFleetEmergencyActive ||
+              (inc.fleetEmergencyState ?? '').trim() == 'reassigned')
+            _FleetEmergencyInspectorBlock(incident: inc),
           StreamBuilder<OpsIncidentHospitalAssignment?>(
             stream: OpsIncidentHospitalAssignmentService.watchForIncident(inc.id),
             builder: (context, asSnap) {
@@ -1387,6 +1553,20 @@ class _CommandCenterInspectorState extends State<CommandCenterInspector> {
     return 'Unknown';
   }
 
+  String _returnDistanceLabel(SosIncident inc) {
+    final driver = inc.craneLiveLocation;
+    final hospital = inc.plannedOriginLatLng;
+    if (driver == null || hospital == null) return '—';
+    final meters = Geolocator.distanceBetween(
+      driver.latitude,
+      driver.longitude,
+      hospital.latitude,
+      hospital.longitude,
+    );
+    if (meters >= 1000) return '${(meters / 1000).toStringAsFixed(1)} km';
+    return '${meters.round()} m';
+  }
+
   Widget _sectionTitle(String t) => Padding(
         padding: const EdgeInsets.only(bottom: 6),
         child: Text(
@@ -1414,4 +1594,288 @@ class _CommandCenterInspectorState extends State<CommandCenterInspector> {
           decoration: _denseDeco(label),
         ),
       );
+}
+
+/// Ticking countdown for the driver's 1-minute "on-scene hold" before the
+/// rescue-complete slider unlocks. Displayed inside the Status overview card.
+class _OnSceneHoldCountdownLine extends StatefulWidget {
+  const _OnSceneHoldCountdownLine({required this.onSceneAt});
+  final DateTime onSceneAt;
+
+  @override
+  State<_OnSceneHoldCountdownLine> createState() =>
+      _OnSceneHoldCountdownLineState();
+}
+
+class _OnSceneHoldCountdownLineState extends State<_OnSceneHoldCountdownLine> {
+  Timer? _t;
+
+  @override
+  void initState() {
+    super.initState();
+    _t = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (!mounted) return;
+      setState(() {});
+    });
+  }
+
+  @override
+  void dispose() {
+    _t?.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final elapsed =
+        DateTime.now().difference(widget.onSceneAt).inSeconds.clamp(0, 60);
+    final remaining = 60 - elapsed;
+    final value =
+        remaining <= 0 ? 'Ready to return' : '${remaining}s until return unlock';
+    final color = remaining <= 0 ? Colors.greenAccent : const Color(0xFFFFB74D);
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 2),
+      child: Row(
+        children: [
+          const Expanded(
+            flex: 2,
+            child: Text(
+              'On-scene hold',
+              style: TextStyle(color: Colors.white54, fontSize: 11),
+            ),
+          ),
+          Expanded(
+            flex: 3,
+            child: Text(
+              value,
+              textAlign: TextAlign.right,
+              style: TextStyle(
+                color: color,
+                fontSize: 11,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Dedicated ops panel that surfaces an in-run driver SOS on the master
+/// command centre inspector. Offers the two supported ops actions:
+/// opening the operator channel (ack's the emergency) and allotting a
+/// fresh ambulance (releases the current unit + re-dispatches).
+class _FleetEmergencyInspectorBlock extends StatefulWidget {
+  const _FleetEmergencyInspectorBlock({required this.incident});
+
+  final SosIncident incident;
+
+  @override
+  State<_FleetEmergencyInspectorBlock> createState() =>
+      _FleetEmergencyInspectorBlockState();
+}
+
+class _FleetEmergencyInspectorBlockState
+    extends State<_FleetEmergencyInspectorBlock> {
+  bool _busy = false;
+
+  Future<void> _openOperatorChannel() async {
+    if (_busy) return;
+    setState(() => _busy = true);
+    try {
+      await IncidentService.acknowledgeFleetEmergency(
+        incidentId: widget.incident.id,
+      );
+    } catch (_) {}
+    if (!mounted) return;
+    setState(() => _busy = false);
+    GoRouter.of(context).go(
+      '/master-dashboard?focus=${Uri.encodeComponent(widget.incident.id)}'
+      '&comms=${Uri.encodeComponent('operation')}',
+    );
+  }
+
+  Future<void> _allotNewFleet() async {
+    if (_busy) return;
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFF11181F),
+        title: const Text(
+          'Allot new fleet?',
+          style: TextStyle(color: Colors.white),
+        ),
+        content: const Text(
+          'The current ambulance will be released and a fresh unit will be '
+          'dispatched to this incident.',
+          style: TextStyle(color: Colors.white70),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: Colors.redAccent),
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: const Text('Allot new fleet'),
+          ),
+        ],
+      ),
+    );
+    if (confirm != true || !mounted) return;
+    setState(() => _busy = true);
+    String? newFleet;
+    try {
+      newFleet = await IncidentService.reassignFleetForEmergency(
+        incidentId: widget.incident.id,
+      );
+    } catch (_) {}
+    if (!mounted) return;
+    setState(() => _busy = false);
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          newFleet == null
+              ? 'No available ambulance found — manual dispatch required.'
+              : 'Dispatched new ambulance to the incident.',
+        ),
+      ),
+    );
+  }
+
+  Future<void> _resolve() async {
+    if (_busy) return;
+    setState(() => _busy = true);
+    try {
+      await IncidentService.resolveFleetEmergency(
+        incidentId: widget.incident.id,
+      );
+    } catch (_) {}
+    if (!mounted) return;
+    setState(() => _busy = false);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final inc = widget.incident;
+    final state = (inc.fleetEmergencyState ?? '').trim();
+    final active = inc.isFleetEmergencyActive;
+    final reassigned = state == 'reassigned';
+    final cs = (inc.fleetEmergencyRaisedByCallSign ?? '').trim();
+    final note = (inc.fleetEmergencyNote ?? '').trim();
+    final raisedAt = inc.fleetEmergencyRaisedAt;
+
+    final headline = reassigned
+        ? 'Fleet reassigned after SOS'
+        : (state == 'acknowledged'
+            ? 'Driver SOS · ops on the channel'
+            : 'Driver SOS · needs support');
+
+    return Container(
+      margin: const EdgeInsets.only(top: 12),
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(
+        color: reassigned
+            ? const Color(0xFF10212A)
+            : Colors.redAccent.withValues(alpha: 0.1),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(
+          color: reassigned
+              ? Colors.cyanAccent.withValues(alpha: 0.4)
+              : Colors.redAccent.withValues(alpha: 0.8),
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              Icon(
+                reassigned
+                    ? Icons.check_circle_rounded
+                    : Icons.priority_high_rounded,
+                color: reassigned ? Colors.cyanAccent : Colors.redAccent,
+                size: 18,
+              ),
+              const SizedBox(width: 6),
+              Expanded(
+                child: Text(
+                  headline,
+                  style: TextStyle(
+                    color: reassigned ? Colors.cyanAccent : Colors.redAccent,
+                    fontWeight: FontWeight.w800,
+                    fontSize: 12,
+                    letterSpacing: 0.4,
+                  ),
+                ),
+              ),
+              if (raisedAt != null)
+                Text(
+                  DateFormat.Hm().format(raisedAt),
+                  style: const TextStyle(
+                      color: Colors.white54, fontSize: 10),
+                ),
+            ],
+          ),
+          if (cs.isNotEmpty || note.isNotEmpty) ...[
+            const SizedBox(height: 4),
+            Text(
+              [
+                if (cs.isNotEmpty) 'Unit: $cs',
+                if (note.isNotEmpty) note,
+              ].join(' · '),
+              style: const TextStyle(color: Colors.white70, fontSize: 11),
+            ),
+          ],
+          if (active) ...[
+            const SizedBox(height: 10),
+            Wrap(
+              spacing: 8,
+              runSpacing: 6,
+              children: [
+                FilledButton.icon(
+                  onPressed: _busy ? null : _openOperatorChannel,
+                  icon: const Icon(Icons.headset_mic_rounded, size: 16),
+                  label: const Text('Open operator channel'),
+                  style: FilledButton.styleFrom(
+                    backgroundColor: Colors.redAccent,
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 12, vertical: 8),
+                    textStyle: const TextStyle(
+                        fontSize: 11, fontWeight: FontWeight.w800),
+                  ),
+                ),
+                OutlinedButton.icon(
+                  onPressed: _busy ? null : _allotNewFleet,
+                  icon: const Icon(Icons.swap_horiz_rounded, size: 16),
+                  label: const Text('Allot new fleet'),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: Colors.white,
+                    side: BorderSide(
+                        color: Colors.white.withValues(alpha: 0.5)),
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 12, vertical: 8),
+                    textStyle: const TextStyle(
+                        fontSize: 11, fontWeight: FontWeight.w700),
+                  ),
+                ),
+                TextButton.icon(
+                  onPressed: _busy ? null : _resolve,
+                  icon: const Icon(Icons.close_rounded,
+                      size: 16, color: Colors.white60),
+                  label: const Text(
+                    'Clear banner',
+                    style: TextStyle(color: Colors.white60),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ],
+      ),
+    );
+  }
 }

@@ -18,6 +18,8 @@ const hospitalDispatchV2 = require("./src/hospital_dispatch_v2");
 
 // Shared AI safety preamble — every Gemini prompt in this file must include it.
 const { AI_SAFETY_PREAMBLE, withSafetyForRole } = require("./src/ai_safety");
+const preArrivalHandoff = require("./src/pre_arrival_handoff");
+const clinicalReport = require("./src/clinical_report");
 
 /** Fleet operator must accept/reject a pending assignment within this window (matches client UI). */
 const FLEET_ASSIGNMENT_RESPONSE_MS = 180000;
@@ -2198,12 +2200,40 @@ exports.generateSituationBriefForIncident = onCall(
     const ref = db.collection("sos_incidents").doc(incidentId);
     const snap = await ref.get();
     if (!snap.exists) throw new HttpsError("not-found", "Incident not found.");
-    const inc = snap.data() || {};
+    const inc = { ...(snap.data() || {}), id: incidentId };
     const ok = await callerMayRefreshSituationBrief(request.auth.uid, inc);
     if (!ok) throw new HttpsError("permission-denied", "Not allowed to refresh this brief.");
 
     const result = await generateSituationBriefCore(incidentId, { force });
     return result;
+  }
+);
+
+/** ED-oriented clinical synthesis for incident_reports (client persists; no Firestore write here). */
+exports.generateClinicalReport = onCall(
+  {
+    cors: true,
+    memory: "1GiB",
+    timeoutSeconds: 120,
+    maxInstances: 8,
+    secrets: [geminiApiKeySecret],
+  },
+  async (request) => {
+    if (!request.auth) {
+      throw new HttpsError("unauthenticated", "Sign in required.");
+    }
+    const incidentId = (request.data?.incidentId || "").toString().trim();
+    if (!incidentId) throw new HttpsError("invalid-argument", "incidentId required.");
+
+    const ref = db.collection("sos_incidents").doc(incidentId);
+    const snap = await ref.get();
+    if (!snap.exists) throw new HttpsError("not-found", "Incident not found.");
+    const raw = snap.data() || {};
+    const inc = { ...raw, id: incidentId };
+    const allowed = await callerMayRefreshSituationBrief(request.auth.uid, inc);
+    if (!allowed) throw new HttpsError("permission-denied", "Not allowed to generate this report.");
+
+    return clinicalReport.generateClinicalReportCore(incidentId);
   }
 );
 
@@ -3521,6 +3551,32 @@ exports.onExternalIncidentTrigger = onRequest(
         }
 
         res.status(200).json({ ok: true, ignored: true });
+    }
+);
+
+// ─── 4b. Pre-arrival hospital handoff (ETA < 2 min → Gemini generates packet) ─
+// When the ambulance crosses the 2-minute window to the receiving hospital,
+// Gemini produces a structured handoff packet (bay prep, team to page, blood,
+// contraindications) that the receiving trauma team sees immediately. This is
+// annotation-only — dispatch decisions do not depend on it.
+exports.onIncidentUpdateGenerateHandoff = onDocumentUpdated(
+    {
+        document: "sos_incidents/{id}",
+        region: "us-central1",
+        secrets: [geminiApiKeySecret],
+        cpu: 0.5,
+        memory: "512MiB",
+        timeoutSeconds: 60,
+    },
+    async (event) => {
+        const before = event.data.before.data() || {};
+        const after = event.data.after.data() || {};
+        const id = event.params.id;
+        try {
+            await preArrivalHandoff.maybeGeneratePreArrivalHandoff(id, after, before);
+        } catch (e) {
+            console.warn("[onIncidentUpdateGenerateHandoff] failed:", e && e.message);
+        }
     }
 );
 

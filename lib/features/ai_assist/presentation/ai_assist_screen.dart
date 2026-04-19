@@ -254,6 +254,9 @@ class _ScenarioSearchBarState extends State<_ScenarioSearchBar> {
   final TextEditingController _controller = TextEditingController();
   final FocusNode _focusNode = FocusNode();
   String _query = '';
+  /// True while a pointer is down on the results list. Keeps the dropdown
+  /// mounted when the [TextField] loses focus on the same gesture (web).
+  bool _pointerOverResults = false;
 
   @override
   void initState() {
@@ -307,7 +310,17 @@ class _ScenarioSearchBarState extends State<_ScenarioSearchBar> {
 
   void _clear() {
     _controller.clear();
-    setState(() => _query = '');
+    setState(() {
+      _query = '';
+      _pointerOverResults = false;
+    });
+  }
+
+  void _scheduleReleaseResultsPointer() {
+    Future.microtask(() {
+      if (!mounted) return;
+      setState(() => _pointerOverResults = false);
+    });
   }
 
   void _jumpTo(int idx) {
@@ -315,7 +328,10 @@ class _ScenarioSearchBarState extends State<_ScenarioSearchBar> {
     // (unfocusing first can drop the result list and swallow follow-up work).
     widget.onSelect(idx);
     _controller.clear();
-    setState(() => _query = '');
+    setState(() {
+      _query = '';
+      _pointerOverResults = false;
+    });
     _focusNode.unfocus();
   }
 
@@ -323,7 +339,8 @@ class _ScenarioSearchBarState extends State<_ScenarioSearchBar> {
   Widget build(BuildContext context) {
     final matches = _matches();
     final hasQuery = _query.trim().isNotEmpty;
-    final showResults = hasQuery && _focusNode.hasFocus;
+    final showResults =
+        hasQuery && (_focusNode.hasFocus || _pointerOverResults);
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -401,119 +418,131 @@ class _ScenarioSearchBarState extends State<_ScenarioSearchBar> {
         if (showResults)
           Padding(
             padding: const EdgeInsets.only(top: 6),
-            child: Material(
-              color: Colors.transparent,
-              child: DecoratedBox(
-                decoration: BoxDecoration(
-                  color: AppColors.surface.withValues(alpha: 0.96),
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(
-                    color: AppColors.stroke.withValues(alpha: 0.6),
-                    width: 1,
-                  ),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withValues(alpha: 0.25),
-                      blurRadius: 20,
-                      offset: const Offset(0, 8),
+            child: Listener(
+              behavior: HitTestBehavior.translucent,
+              onPointerDown: (_) {
+                if (!_pointerOverResults) {
+                  setState(() => _pointerOverResults = true);
+                }
+              },
+              onPointerUp: (_) => _scheduleReleaseResultsPointer(),
+              onPointerCancel: (_) => _scheduleReleaseResultsPointer(),
+              child: Material(
+                color: Colors.transparent,
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    color: AppColors.surface.withValues(alpha: 0.96),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(
+                      color: AppColors.stroke.withValues(alpha: 0.6),
+                      width: 1,
                     ),
-                  ],
-                ),
-                child: ConstrainedBox(
-                  constraints: const BoxConstraints(maxHeight: 280),
-                  child: matches.isEmpty
-                      ? Padding(
-                          padding: const EdgeInsets.symmetric(
-                              vertical: 14, horizontal: 14),
-                          child: Text(
-                            'No scenarios match "${_query.trim()}"',
-                            style: GoogleFonts.inter(
-                              fontSize: 12.5,
-                              fontWeight: FontWeight.w500,
-                              color: AppColors.textSecondary,
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withValues(alpha: 0.25),
+                        blurRadius: 20,
+                        offset: const Offset(0, 8),
+                      ),
+                    ],
+                  ),
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(maxHeight: 280),
+                    child: matches.isEmpty
+                        ? Padding(
+                            padding: const EdgeInsets.symmetric(
+                                vertical: 14, horizontal: 14),
+                            child: Text(
+                              'No scenarios match "${_query.trim()}"',
+                              style: GoogleFonts.inter(
+                                fontSize: 12.5,
+                                fontWeight: FontWeight.w500,
+                                color: AppColors.textSecondary,
+                              ),
                             ),
-                          ),
-                        )
-                      : ListView.separated(
-                          shrinkWrap: true,
-                          physics: const ClampingScrollPhysics(),
-                          padding: const EdgeInsets.symmetric(vertical: 4),
-                          itemCount: matches.length,
-                          separatorBuilder: (context, _) => Divider(
-                            height: 1,
-                            thickness: 1,
-                            color: AppColors.stroke.withValues(alpha: 0.35),
-                          ),
-                          itemBuilder: (ctx, i) {
-                            final m = matches[i];
-                            return InkWell(
-                              onTap: () => _jumpTo(m.index),
-                              child: Padding(
-                                padding: const EdgeInsets.symmetric(
-                                    horizontal: 12, vertical: 10),
-                                child: Row(
-                                  children: [
-                                    Container(
-                                      width: 32,
-                                      height: 32,
-                                      decoration: BoxDecoration(
-                                        color: m.level.accent
-                                            .withValues(alpha: 0.15),
-                                        borderRadius: BorderRadius.circular(9),
-                                        border: Border.all(
+                          )
+                        : ListView.separated(
+                            shrinkWrap: true,
+                            physics: const ClampingScrollPhysics(),
+                            padding: const EdgeInsets.symmetric(vertical: 4),
+                            itemCount: matches.length,
+                            separatorBuilder: (context, _) => Divider(
+                              height: 1,
+                              thickness: 1,
+                              color: AppColors.stroke.withValues(alpha: 0.35),
+                            ),
+                            itemBuilder: (ctx, i) {
+                              final m = matches[i];
+                              return InkWell(
+                                onTap: () => _jumpTo(m.index),
+                                child: Padding(
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 12, vertical: 10),
+                                  child: Row(
+                                    children: [
+                                      Container(
+                                        width: 32,
+                                        height: 32,
+                                        decoration: BoxDecoration(
                                           color: m.level.accent
-                                              .withValues(alpha: 0.5),
-                                          width: 1,
+                                              .withValues(alpha: 0.15),
+                                          borderRadius:
+                                              BorderRadius.circular(9),
+                                          border: Border.all(
+                                            color: m.level.accent
+                                                .withValues(alpha: 0.5),
+                                            width: 1,
+                                          ),
+                                        ),
+                                        child: Icon(
+                                          m.level.icon,
+                                          size: 18,
+                                          color: m.level.accent,
                                         ),
                                       ),
-                                      child: Icon(
-                                        m.level.icon,
-                                        size: 18,
-                                        color: m.level.accent,
-                                      ),
-                                    ),
-                                    const SizedBox(width: 10),
-                                    Expanded(
-                                      child: Column(
-                                        crossAxisAlignment:
-                                            CrossAxisAlignment.start,
-                                        children: [
-                                          Text(
-                                            m.level.title,
-                                            maxLines: 1,
-                                            overflow: TextOverflow.ellipsis,
-                                            style: GoogleFonts.inter(
-                                              fontSize: 13,
-                                              fontWeight: FontWeight.w700,
-                                              color: AppColors.textPrimary,
+                                      const SizedBox(width: 10),
+                                      Expanded(
+                                        child: Column(
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.start,
+                                          children: [
+                                            Text(
+                                              m.level.title,
+                                              maxLines: 1,
+                                              overflow: TextOverflow.ellipsis,
+                                              style: GoogleFonts.inter(
+                                                fontSize: 13,
+                                                fontWeight: FontWeight.w700,
+                                                color: AppColors.textPrimary,
+                                              ),
                                             ),
-                                          ),
-                                          const SizedBox(height: 2),
-                                          Text(
-                                            m.level.subtitle,
-                                            maxLines: 1,
-                                            overflow: TextOverflow.ellipsis,
-                                            style: GoogleFonts.inter(
-                                              fontSize: 11.5,
-                                              fontWeight: FontWeight.w500,
-                                              color: AppColors.textSecondary,
+                                            const SizedBox(height: 2),
+                                            Text(
+                                              m.level.subtitle,
+                                              maxLines: 1,
+                                              overflow: TextOverflow.ellipsis,
+                                              style: GoogleFonts.inter(
+                                                fontSize: 11.5,
+                                                fontWeight: FontWeight.w500,
+                                                color: AppColors.textSecondary,
+                                              ),
                                             ),
-                                          ),
-                                        ],
+                                          ],
+                                        ),
                                       ),
-                                    ),
-                                    Icon(
-                                      Icons.arrow_forward_rounded,
-                                      size: 16,
-                                      color: AppColors.textSecondary
-                                          .withValues(alpha: 0.7),
-                                    ),
-                                  ],
+                                      Icon(
+                                        Icons.arrow_forward_rounded,
+                                        size: 16,
+                                        color: AppColors.textSecondary
+                                            .withValues(alpha: 0.7),
+                                      ),
+                                    ],
+                                  ),
                                 ),
-                              ),
-                            );
-                          },
-                        ),
+                              );
+                            },
+                          ),
+                    ),
+                  ),
                 ),
               ),
             ),
