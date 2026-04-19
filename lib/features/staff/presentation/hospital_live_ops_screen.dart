@@ -1688,8 +1688,12 @@ class _MiniConsignmentMap extends StatelessWidget {
   }
 }
 
-/// Right-side rail shown on wide viewports; keeps active consignments visible
-/// alongside the capacity/alert columns instead of burying them at the bottom.
+/// **Data surface (vs command center / map):** this rail and [_AcceptedConsignmentSection]
+/// only list `ops_incident_hospital_assignments` with `dispatchStatus == accepted` (plus a
+/// 1h `acceptedAt` client window). Terminal `failed_to_assist` rows are not queried here.
+/// The medical command center instead joins `sos_incidents` with assignments including
+/// `failed_to_assist` for status pills; the main map path may run client SOS TTL via
+/// [IncidentService.autoArchiveExpiredIncidents].
 class _LiveOpsRightRail extends StatelessWidget {
   const _LiveOpsRightRail({required this.hospitalIds});
 

@@ -217,6 +217,8 @@ class OpsIncidentHospitalAssignment {
   final DateTime? assignedAt;
   final String? ambulanceDispatchStatus;
   /// Set when [dispatchStatus] becomes `failed_to_assist` (1h TTL after accept).
+  /// Server job `expireStaleHospitalConsignments` then archives open `sos_incidents` to
+  /// `sos_incidents_archive` when status is still pending/dispatched/blocked.
   final DateTime? consignmentClosedAt;
   final String? consignmentCloseReason;
   final String? assignedFleetCallSign;

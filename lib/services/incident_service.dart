@@ -167,7 +167,28 @@ class SosIncident {
   final DateTime? firstAcknowledgedAt;
   final String? firstAcknowledgedByUid;
 
+  /// Raw Firestore `status` before enum coercion (e.g. `archived_stale` incorrectly maps to [IncidentStatus.pending]).
+  final String? rawFirestoreStatus;
+  /// Set when ops jobs tag stale rows (`archivedAt` on live doc) without moving to archive yet.
+  final DateTime? archivedAt;
+
   bool get smsRelayOrOrigin => smsOrigin || smsRelayReceived;
+
+  /// Rows that should not appear as an active fleet driver allotment (roster / queue).
+  bool get isExcludedFromFleetDriverAllotment {
+    final raw = (rawFirestoreStatus ?? '').trim();
+    if (raw.isNotEmpty &&
+        raw != IncidentStatus.pending.name &&
+        raw != IncidentStatus.dispatched.name &&
+        raw != IncidentStatus.blocked.name) {
+      return true;
+    }
+    if (archivedAt != null) return true;
+    final phase = (emsWorkflowPhase ?? '').trim();
+    if (phase == 'complete') return true;
+    if (status == IncidentStatus.resolved || status == IncidentStatus.blocked) return true;
+    return false;
+  }
 
   /// Human-readable lifecycle bucket for ops consoles (open → assigned → closed).
   String get lifecyclePhaseLabel {
@@ -276,6 +297,8 @@ class SosIncident {
     this.greenCorridorStatus,
     this.firstAcknowledgedAt,
     this.firstAcknowledgedByUid,
+    this.rawFirestoreStatus,
+    this.archivedAt,
   });
 
   LatLng? get ambulanceLiveLocation {
@@ -283,6 +306,17 @@ class SosIncident {
     final b = ambulanceLiveLng;
     if (a == null || b == null) return null;
     return LatLng(a, b);
+  }
+
+  /// Volunteer / public map: use ambulance iconography at the **scene pin** only when EMS
+  /// is actually in play — not for every [IncidentStatus.dispatched] (volunteer accept also
+  /// sets dispatched).
+  bool get publicMapSceneUsesAmbulanceIcon {
+    if (ambulanceLiveLocation != null) return true;
+    if ((emsAcceptedBy ?? '').trim().isNotEmpty) return true;
+    final p = (emsWorkflowPhase ?? '').trim();
+    if (p.isEmpty || p == 'complete') return false;
+    return true;
   }
 
   /// Origin for the planned hospital→scene polyline (all dashboards + fleet map).
@@ -408,6 +442,7 @@ class SosIncident {
       'firstAcknowledgedAt': firstAcknowledgedAt!.toIso8601String(),
     if (firstAcknowledgedByUid != null) 'firstAcknowledgedByUid': firstAcknowledgedByUid,
     if (greenCorridorStatus != null) 'greenCorridorStatus': greenCorridorStatus,
+    if (archivedAt != null) 'archivedAt': archivedAt!.toIso8601String(),
   };
 
   static Map<String, String> _parseResponderNames(dynamic v) {
@@ -545,6 +580,20 @@ class SosIncident {
         ? _parseInstant(j['firstAcknowledgedAt'])
         : null,
     firstAcknowledgedByUid: j['firstAcknowledgedByUid'] as String?,
+    rawFirestoreStatus: () {
+      final v = j['status'];
+      if (v == null) return null;
+      final s = v.toString().trim();
+      return s.isEmpty ? null : s;
+    }(),
+    archivedAt: () {
+      final v = j['archivedAt'];
+      if (v == null) return null;
+      if (v is Timestamp) return v.toDate();
+      if (v is int) return DateTime.fromMillisecondsSinceEpoch(v);
+      if (v is String) return DateTime.tryParse(v);
+      return null;
+    }(),
   );
 
   factory SosIncident.fromFirestore(DocumentSnapshot doc) {
@@ -1602,6 +1651,71 @@ class IncidentService {
     }
   }
 
+  /// Fleet operator (driver) abandons the in-app rescue run: clears acceptance on
+  /// the incident and, for ambulance units, re-opens hospital ambulance dispatch
+  /// so ops can assign another operator.
+  static Future<void> abandonFleetOperatorRescue({
+    required String incidentId,
+    required bool medicalUnit,
+  }) async {
+    final id = incidentId.trim();
+    if (id.isEmpty) return;
+    final uid = (FirebaseAuth.instance.currentUser?.uid ?? '').trim();
+    if (uid.isEmpty) {
+      throw StateError('Sign in required to abandon a rescue call.');
+    }
+    final snap = await _db.collection(_col).doc(id).get();
+    if (!snap.exists) {
+      throw StateError('Incident not found.');
+    }
+    final inc = SosIncident.fromFirestore(snap);
+    if (medicalUnit) {
+      if ((inc.emsAcceptedBy ?? '').trim() != uid) {
+        throw StateError('You are not the assigned ambulance operator for this incident.');
+      }
+      final batch = _db.batch();
+      batch.update(_db.collection(_col).doc(id), {
+        'emsAcceptedBy': FieldValue.delete(),
+        'emsAcceptedAt': FieldValue.delete(),
+        'emsWorkflowPhase': FieldValue.delete(),
+        'ambulanceLiveLat': FieldValue.delete(),
+        'ambulanceLiveLng': FieldValue.delete(),
+        'ambulanceLiveUpdatedAt': FieldValue.delete(),
+        'ambulanceLiveHeadingDeg': FieldValue.delete(),
+        'ambulanceEta': FieldValue.delete(),
+        'medicalStatus': 'Operator abandoned rescue run — awaiting reassignment',
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+      batch.set(
+        _db.collection('ops_incident_hospital_assignments').doc(id),
+        {
+          'ambulanceDispatchStatus': 'pending_operator',
+          'assignedFleetCallSign': FieldValue.delete(),
+          'assignedFleetOperatorUid': FieldValue.delete(),
+          'ambulanceAcceptedAt': FieldValue.delete(),
+          'ambulanceDispatchedAt': FieldValue.serverTimestamp(),
+        },
+        SetOptions(merge: true),
+      );
+      await batch.commit();
+      await appendIncidentAuditLog(id, action: 'fleet_operator_abandoned_rescue');
+    } else {
+      if ((inc.craneUnitAcceptedBy ?? '').trim() != uid) {
+        throw StateError('You are not the assigned crane operator for this incident.');
+      }
+      await _db.collection(_col).doc(id).update({
+        'craneUnitAcceptedBy': FieldValue.delete(),
+        'craneUnitAcceptedAt': FieldValue.delete(),
+        'craneLiveLat': FieldValue.delete(),
+        'craneLiveLng': FieldValue.delete(),
+        'craneLiveUpdatedAt': FieldValue.delete(),
+        'craneLiveHeadingDeg': FieldValue.delete(),
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+      await appendIncidentAuditLog(id, action: 'fleet_operator_abandoned_crane_run');
+    }
+  }
+
   /// Admin / EMS: ops note on incident.
   static Future<void> setAdminDispatchNote(String incidentId, String note) async {
     final id = incidentId.trim();
@@ -1898,16 +2012,16 @@ class IncidentService {
 
     try {
       await archiveRef.set(payload, SetOptions(merge: true));
-    } catch (e) {
-      debugPrint('[IncidentService] archiveAndCloseIncident archive write failed: $e');
-      // If we can’t archive, don’t delete the active incident.
-      return;
+    } catch (e, st) {
+      debugPrint('[IncidentService] archiveAndCloseIncident archive write failed: $e\n$st');
+      throw Exception('Archive copy failed: $e');
     }
 
     try {
       await activeRef.delete();
-    } catch (e) {
-      debugPrint('[IncidentService] archiveAndCloseIncident delete failed: $e');
+    } catch (e, st) {
+      debugPrint('[IncidentService] archiveAndCloseIncident delete failed: $e\n$st');
+      throw Exception('Archive succeeded but removing active incident failed: $e');
     }
 
     unawaited(_clearResponderAssignmentsForIncident(incidentId, closureResponderIds));

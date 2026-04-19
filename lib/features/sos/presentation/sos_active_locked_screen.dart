@@ -3002,6 +3002,7 @@ class _SosActiveLockedScreenState extends ConsumerState<SosActiveLockedScreen> {
       children: [
         EosHybridMap(
           ignoreRemoteLeafletTiles: false,
+          googleMapLoadTimeout: kIsWeb ? const Duration(seconds: 8) : const Duration(seconds: 14),
           cameraTargetBounds: IndiaOpsZones.lucknowCameraTargetBounds,
           initialCameraPosition: IndiaOpsZones.lucknowSafeCamera(_victimLatLng, preferZoom: 15.0),
           onCameraMove: (CameraPosition p) {
@@ -4803,6 +4804,7 @@ class _MapTab extends StatelessWidget {
           clipBehavior: Clip.antiAlias,
           child: EosHybridMap(
             ignoreRemoteLeafletTiles: false,
+            googleMapLoadTimeout: kIsWeb ? const Duration(seconds: 8) : const Duration(seconds: 14),
             cameraTargetBounds: IndiaOpsZones.lucknowCameraTargetBounds,
             initialCameraPosition: victimLatLng == null
                 ? IndiaOpsZones.lucknowCameraPosition(zoom: IndiaOpsZones.lucknow.defaultZoom)

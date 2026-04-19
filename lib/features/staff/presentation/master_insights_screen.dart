@@ -170,7 +170,7 @@ class _MasterInsightsScreenState extends State<MasterInsightsScreen> {
     context.go('$path?focus=${Uri.encodeComponent(id)}&dock=live');
   }
 
-  Future<void> _send(String text) async {
+  Future<void> _send(String text, {List<SosIncident>? incidentsFeed}) async {
     final t = text.trim();
     if (t.isEmpty || _loading) return;
     setState(() {
@@ -187,6 +187,7 @@ class _MasterInsightsScreenState extends State<MasterInsightsScreen> {
         history: _historyBeforeLatest(),
         scenario: _MasterInsightsScreenState._scenarioHint,
         analyticsMode: true,
+        preloadedIncidents: incidentsFeed,
       );
       if (mounted) {
         setState(() => _msgs.add(_InsightMsg(false, reply)));
@@ -210,8 +211,8 @@ class _MasterInsightsScreenState extends State<MasterInsightsScreen> {
     }
   }
 
-  Future<void> _quick(String prompt) async {
-    await _send(prompt);
+  Future<void> _quick(String prompt, {List<SosIncident>? incidentsFeed}) async {
+    await _send(prompt, incidentsFeed: incidentsFeed);
   }
 
   Future<void> _shareViaEmail(String body) async {
@@ -313,191 +314,211 @@ class _MasterInsightsScreenState extends State<MasterInsightsScreen> {
             ),
           ),
           const SizedBox(height: 8),
-          _OpsPressureStrip(
-            zone: _zone,
-            onTileTap: (label, detail) {
-              _send(
-                '[$label] $detail\n\n'
-                'Using digest data for ${_zone.label}, give a **3-bullet executive brief** plus '
-                'numbered actions. Use lines starting with `Incident: <id>` for each affected incident.',
-              );
-            },
-          ),
-          const SizedBox(height: 10),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 20),
-            child: Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: [
-                ActionChip(
-                  label: Text(context.opsTr('SLA breach & oldest open'), style: const TextStyle(fontSize: 11)),
-                  onPressed: _loading
-                      ? null
-                      : () => _quick(
-                            'For ${_zone.label}: list **open incidents breaching a 90s acknowledgement SLA** '
-                            '(or closest to breach). Order by age. For each line start with `Incident: <id>`. '
-                            'Add one-line recommended next action (dispatch / hospital / volunteer).',
-                          ),
-                ),
-                ActionChip(
-                  label: Text(context.opsTr('Pre-stage & hotspots'), style: const TextStyle(fontSize: 11)),
-                  onPressed: _loading
-                      ? null
-                      : () => _quick(
-                            'For ${_zone.label}: **pre-stage ambulances** recommendation from 48h hex hotspots + '
-                            'which hospital catchment is hottest. Reference digest hotspot summaries. '
-                            'When citing incidents use `Incident: <id>` lines.',
-                          ),
-                ),
-                ActionChip(
-                  label: Text(context.opsTr('Shift handoff brief'), style: const TextStyle(fontSize: 11)),
-                  onPressed: _loading
-                      ? null
-                      : () => _quick(
-                            'For ${_zone.label}: produce a **shift handoff brief** — active load, fleet posture, '
-                            'hospital bed risk, top 3 risks, top 3 wins. Plain markdown, copy-ready.',
-                          ),
-                ),
-                ActionChip(
-                  label: Text(context.opsTr('Bottleneck analysis'), style: const TextStyle(fontSize: 11)),
-                  onPressed: _loading
-                      ? null
-                      : () => _quick(
-                            'For ${_zone.label}: **bottleneck analysis** — EMS lifecycle stalls vs hospital accept '
-                            'delay vs volunteer coverage. Cite digest numbers; end with 3 prioritized fixes.',
-                          ),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 8),
           Expanded(
-            child: Container(
-              margin: const EdgeInsets.fromLTRB(16, 0, 16, 0),
-              decoration: BoxDecoration(
-                color: const Color(0xFF161B22),
-                borderRadius: BorderRadius.circular(14),
-                border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
-              ),
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(14),
-                child: Column(
+            child: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+              stream: FirebaseFirestore.instance.collection('sos_incidents').limit(400).snapshots(),
+              builder: (context, snapInc) {
+                final incDocs = snapInc.data?.docs ?? const [];
+                final incidentsFeed = incDocs.map(SosIncident.fromFirestore).toList();
+                return Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    Expanded(
-                      child: ListView.builder(
-                        controller: _scroll,
-                        padding: const EdgeInsets.all(16),
-                        itemCount: _msgs.length,
-                        itemBuilder: (_, i) {
-                          final m = _msgs[i];
-                          final ids = !m.isUser ? _incidentIdsInText(m.text) : <String>{};
-                          return Align(
-                            alignment: m.isUser ? Alignment.centerRight : Alignment.centerLeft,
-                            child: Container(
-                              margin: const EdgeInsets.only(bottom: 10),
-                              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                              constraints: const BoxConstraints(maxWidth: 620),
-                              decoration: BoxDecoration(
-                                color: m.isUser
-                                    ? AppColors.accentBlue.withValues(alpha: 0.22)
-                                    : Colors.white.withValues(alpha: 0.06),
-                                borderRadius: BorderRadius.circular(14),
-                                border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
-                              ),
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  SelectableText(
-                                    m.text,
-                                    style: TextStyle(
-                                      color: Colors.white.withValues(alpha: 0.92),
-                                      fontSize: 13,
-                                      height: 1.45,
-                                    ),
-                                  ),
-                                  if (!m.isUser) ...[
-                                    const SizedBox(height: 8),
-                                    Wrap(
-                                      spacing: 6,
-                                      runSpacing: 6,
-                                      children: [
-                                        IconButton(
-                                          tooltip: context.opsTr('Copy'),
-                                          icon: const Icon(Icons.copy, size: 18, color: Colors.white54),
-                                          onPressed: () async {
-                                            await Clipboard.setData(ClipboardData(text: m.text));
-                                            if (context.mounted) {
-                                              ScaffoldMessenger.of(context).showSnackBar(
-                                                SnackBar(content: Text(context.opsTr('Copied'))),
-                                              );
-                                            }
-                                          },
-                                        ),
-                                        IconButton(
-                                          tooltip: context.opsTr('Share via email'),
-                                          icon: const Icon(Icons.outgoing_mail, size: 18, color: Colors.white54),
-                                          onPressed: () => _shareViaEmail(m.text),
-                                        ),
-                                        for (final id in ids)
-                                          ActionChip(
-                                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 0),
-                                            label: Text(id, style: const TextStyle(fontSize: 11)),
-                                            onPressed: () => _openIncidentInLiveOps(id),
-                                          ),
-                                      ],
-                                    ),
-                                  ],
-                                ],
-                              ),
-                            ),
-                          );
-                        },
-                      ),
+                    _OpsPressureStrip(
+                      zone: _zone,
+                      incidentsFeed: incidentsFeed,
+                      onTileTap: (label, detail) {
+                        _send(
+                          '[$label] $detail\n\n'
+                          'Using digest data for ${_zone.label}, give a **3-bullet executive brief** plus '
+                          'numbered actions. Use lines starting with `Incident: <id>` for each affected incident.',
+                          incidentsFeed: incidentsFeed,
+                        );
+                      },
                     ),
-                    if (_loading) const LinearProgressIndicator(minHeight: 2),
+                    const SizedBox(height: 10),
                     Padding(
-                      padding: const EdgeInsets.fromLTRB(12, 10, 12, 12),
-                      child: Row(
-                        crossAxisAlignment: CrossAxisAlignment.end,
+                      padding: const EdgeInsets.symmetric(horizontal: 20),
+                      child: Wrap(
+                        spacing: 8,
+                        runSpacing: 8,
                         children: [
-                          Expanded(
-                            child: TextField(
-                              controller: _ctrl,
-                              minLines: 1,
-                              maxLines: 5,
-                              style: const TextStyle(color: Colors.white, fontSize: 13),
-                              decoration: InputDecoration(
-                                hintText: context.opsTr(
-                                  'e.g. Summarize fleet + hospital pressure for tonight…',
-                                ),
-                                hintStyle: const TextStyle(color: Colors.white30, fontSize: 12),
-                                filled: true,
-                                fillColor: Colors.black26,
-                                border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-                              ),
-                              onSubmitted: (_) => _send(_ctrl.text),
-                            ),
+                          ActionChip(
+                            label: Text(context.opsTr('SLA breach & oldest open'), style: const TextStyle(fontSize: 11)),
+                            onPressed: _loading
+                                ? null
+                                : () => _quick(
+                                      'For ${_zone.label}: list **open incidents breaching a 90s acknowledgement SLA** '
+                                      '(or closest to breach). Order by age. For each line start with `Incident: <id>`. '
+                                      'Add one-line recommended next action (dispatch / hospital / volunteer).',
+                                      incidentsFeed: incidentsFeed,
+                                    ),
                           ),
-                          const SizedBox(width: 8),
-                          FilledButton(
-                            onPressed: _loading ? null : () => _send(_ctrl.text),
-                            style: FilledButton.styleFrom(
-                              backgroundColor: AppColors.accentBlue,
-                              padding: const EdgeInsets.all(14),
-                            ),
-                            child: const Icon(Icons.send_rounded, size: 22),
+                          ActionChip(
+                            label: Text(context.opsTr('Pre-stage & hotspots'), style: const TextStyle(fontSize: 11)),
+                            onPressed: _loading
+                                ? null
+                                : () => _quick(
+                                      'For ${_zone.label}: **pre-stage ambulances** recommendation from 48h hex hotspots + '
+                                      'which hospital catchment is hottest. Reference digest hotspot summaries. '
+                                      'When citing incidents use `Incident: <id>` lines.',
+                                      incidentsFeed: incidentsFeed,
+                                    ),
+                          ),
+                          ActionChip(
+                            label: Text(context.opsTr('Shift handoff brief'), style: const TextStyle(fontSize: 11)),
+                            onPressed: _loading
+                                ? null
+                                : () => _quick(
+                                      'For ${_zone.label}: produce a **shift handoff brief** — active load, fleet posture, '
+                                      'hospital bed risk, top 3 risks, top 3 wins. Plain markdown, copy-ready.',
+                                      incidentsFeed: incidentsFeed,
+                                    ),
+                          ),
+                          ActionChip(
+                            label: Text(context.opsTr('Bottleneck analysis'), style: const TextStyle(fontSize: 11)),
+                            onPressed: _loading
+                                ? null
+                                : () => _quick(
+                                      'For ${_zone.label}: **bottleneck analysis** — EMS lifecycle stalls vs hospital accept '
+                                      'delay vs volunteer coverage. Cite digest numbers; end with 3 prioritized fixes.',
+                                      incidentsFeed: incidentsFeed,
+                                    ),
                           ),
                         ],
                       ),
                     ),
+                    const SizedBox(height: 8),
+                    Expanded(
+                      child: Container(
+                        margin: const EdgeInsets.fromLTRB(16, 0, 16, 0),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF161B22),
+                          borderRadius: BorderRadius.circular(14),
+                          border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+                        ),
+                        child: ClipRRect(
+                          borderRadius: BorderRadius.circular(14),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
+                              Expanded(
+                                child: ListView.builder(
+                                  controller: _scroll,
+                                  padding: const EdgeInsets.all(16),
+                                  itemCount: _msgs.length,
+                                  itemBuilder: (_, i) {
+                                    final m = _msgs[i];
+                                    final ids = !m.isUser ? _incidentIdsInText(m.text) : <String>{};
+                                    return Align(
+                                      alignment: m.isUser ? Alignment.centerRight : Alignment.centerLeft,
+                                      child: Container(
+                                        margin: const EdgeInsets.only(bottom: 10),
+                                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                                        constraints: const BoxConstraints(maxWidth: 620),
+                                        decoration: BoxDecoration(
+                                          color: m.isUser
+                                              ? AppColors.accentBlue.withValues(alpha: 0.22)
+                                              : Colors.white.withValues(alpha: 0.06),
+                                          borderRadius: BorderRadius.circular(14),
+                                          border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+                                        ),
+                                        child: Column(
+                                          crossAxisAlignment: CrossAxisAlignment.start,
+                                          children: [
+                                            SelectableText(
+                                              m.text,
+                                              style: TextStyle(
+                                                color: Colors.white.withValues(alpha: 0.92),
+                                                fontSize: 13,
+                                                height: 1.45,
+                                              ),
+                                            ),
+                                            if (!m.isUser) ...[
+                                              const SizedBox(height: 8),
+                                              Wrap(
+                                                spacing: 6,
+                                                runSpacing: 6,
+                                                children: [
+                                                  IconButton(
+                                                    tooltip: context.opsTr('Copy'),
+                                                    icon: const Icon(Icons.copy, size: 18, color: Colors.white54),
+                                                    onPressed: () async {
+                                                      await Clipboard.setData(ClipboardData(text: m.text));
+                                                      if (context.mounted) {
+                                                        ScaffoldMessenger.of(context).showSnackBar(
+                                                          SnackBar(content: Text(context.opsTr('Copied'))),
+                                                        );
+                                                      }
+                                                    },
+                                                  ),
+                                                  IconButton(
+                                                    tooltip: context.opsTr('Share via email'),
+                                                    icon: const Icon(Icons.outgoing_mail, size: 18, color: Colors.white54),
+                                                    onPressed: () => _shareViaEmail(m.text),
+                                                  ),
+                                                  for (final id in ids)
+                                                    ActionChip(
+                                                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 0),
+                                                      label: Text(id, style: const TextStyle(fontSize: 11)),
+                                                      onPressed: () => _openIncidentInLiveOps(id),
+                                                    ),
+                                                ],
+                                              ),
+                                            ],
+                                          ],
+                                        ),
+                                      ),
+                                    );
+                                  },
+                                ),
+                              ),
+                              if (_loading) const LinearProgressIndicator(minHeight: 2),
+                              Padding(
+                                padding: const EdgeInsets.fromLTRB(12, 10, 12, 12),
+                                child: Row(
+                                  crossAxisAlignment: CrossAxisAlignment.end,
+                                  children: [
+                                    Expanded(
+                                      child: TextField(
+                                        controller: _ctrl,
+                                        minLines: 1,
+                                        maxLines: 5,
+                                        style: const TextStyle(color: Colors.white, fontSize: 13),
+                                        decoration: InputDecoration(
+                                          hintText: context.opsTr(
+                                            'e.g. Summarize fleet + hospital pressure for tonight…',
+                                          ),
+                                          hintStyle: const TextStyle(color: Colors.white30, fontSize: 12),
+                                          filled: true,
+                                          fillColor: Colors.black26,
+                                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                                        ),
+                                        onSubmitted: (_) => _send(_ctrl.text, incidentsFeed: incidentsFeed),
+                                      ),
+                                    ),
+                                    const SizedBox(width: 8),
+                                    FilledButton(
+                                      onPressed: _loading ? null : () => _send(_ctrl.text, incidentsFeed: incidentsFeed),
+                                      style: FilledButton.styleFrom(
+                                        backgroundColor: AppColors.accentBlue,
+                                        padding: const EdgeInsets.all(14),
+                                      ),
+                                      child: const Icon(Icons.send_rounded, size: 22),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
                   ],
-                ),
-              ),
+                );
+              },
             ),
           ),
-          const SizedBox(height: 12),
         ],
       ),
     );
@@ -508,10 +529,13 @@ class _MasterInsightsScreenState extends State<MasterInsightsScreen> {
 class _OpsPressureStrip extends StatelessWidget {
   const _OpsPressureStrip({
     required this.zone,
+    required this.incidentsFeed,
     required this.onTileTap,
   });
 
   final IndiaOpsZone zone;
+  /// Raw `sos_incidents` rows (same snapshot the Insights chat uses for digests).
+  final List<SosIncident> incidentsFeed;
   final void Function(String label, String detail) onTileTap;
 
   static bool _activeSos(SosIncident e) =>
@@ -529,117 +553,111 @@ class _OpsPressureStrip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final incidents = incidentsFeed.where((e) {
+      if (OpsLifelineAnalyticsChat.excludeTrainingIncident(e)) return false;
+      return zone.containsLatLng(e.liveVictimPin);
+    }).toList();
+
+    final active = incidents.where(_activeSos).length;
+    final oldest = _oldestPendingAge(incidents);
+    final oldestLabel = oldest == null
+        ? context.opsTr('None')
+        : '${oldest.inMinutes}m ${(oldest.inSeconds % 60)}s';
+
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16),
       child: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-        stream: FirebaseFirestore.instance.collection('sos_incidents').limit(400).snapshots(),
-        builder: (context, snapInc) {
-          final incDocs = snapInc.data?.docs ?? const [];
-          final incidents = incDocs.map(SosIncident.fromFirestore).where((e) {
-            if (OpsLifelineAnalyticsChat.excludeTrainingIncident(e)) return false;
-            return zone.containsLatLng(e.liveVictimPin);
+        stream: FirebaseFirestore.instance.collection('ops_hospitals').snapshots(),
+        builder: (context, snapH) {
+          final rows = snapH.data?.docs.map(OpsHospitalRow.fromFirestore).toList() ?? [];
+          final inZoneH = rows.where((h) {
+            if (h.lat == null || h.lng == null) return false;
+            return zone.containsLatLng(LatLng(h.lat!, h.lng!));
           }).toList();
-
-          final active = incidents.where(_activeSos).length;
-          final oldest = _oldestPendingAge(incidents);
-          final oldestLabel = oldest == null
-              ? context.opsTr('None')
-              : '${oldest.inMinutes}m ${(oldest.inSeconds % 60)}s';
+          final atRisk = inZoneH.where((h) => h.bedsAvailable < 3 || !h.mapListingOnline).length;
 
           return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-            stream: FirebaseFirestore.instance.collection('ops_hospitals').snapshots(),
-            builder: (context, snapH) {
-              final rows = snapH.data?.docs.map(OpsHospitalRow.fromFirestore).toList() ?? [];
-              final inZoneH = rows.where((h) {
-                if (h.lat == null || h.lng == null) return false;
-                return zone.containsLatLng(LatLng(h.lat!, h.lng!));
-              }).toList();
-              final atRisk = inZoneH.where((h) => h.bedsAvailable < 3 || !h.mapListingOnline).length;
+            stream: FleetUnitService.watchFleetUnits(),
+            builder: (context, snapF) {
+              var free = 0;
+              for (final d in snapF.data?.docs ?? const []) {
+                if (!fleetDocIsStaffedAvailable(d)) continue;
+                final lat = (d.data()['lat'] as num?)?.toDouble();
+                final lng = (d.data()['lng'] as num?)?.toDouble();
+                if (lat == null || lng == null) continue;
+                if (!zone.containsLatLng(LatLng(lat, lng))) continue;
+                final aid = (d.data()['assignedIncidentId'] as String?)?.trim() ?? '';
+                if (aid.isEmpty) free++;
+              }
 
-              return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-                stream: FleetUnitService.watchFleetUnits(),
-                builder: (context, snapF) {
-                  var free = 0;
-                  for (final d in snapF.data?.docs ?? const []) {
-                    if (!fleetDocIsStaffedAvailable(d)) continue;
-                    final lat = (d.data()['lat'] as num?)?.toDouble();
-                    final lng = (d.data()['lng'] as num?)?.toDouble();
-                    if (lat == null || lng == null) continue;
-                    if (!zone.containsLatLng(LatLng(lat, lng))) continue;
-                    final aid = (d.data()['assignedIncidentId'] as String?)?.trim() ?? '';
-                    if (aid.isEmpty) free++;
-                  }
-
-                  Widget tile(String title, String value, Color accent, String detail) {
-                    return Expanded(
-                      child: Material(
-                        color: Colors.white.withValues(alpha: 0.05),
-                        borderRadius: BorderRadius.circular(12),
-                        child: InkWell(
-                          borderRadius: BorderRadius.circular(12),
-                          onTap: () => onTileTap(title, detail),
-                          child: Padding(
-                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  title,
-                                  style: const TextStyle(color: Colors.white54, fontSize: 10, height: 1.2),
-                                ),
-                                const SizedBox(height: 4),
-                                Text(
-                                  value,
-                                  style: TextStyle(
-                                    color: accent,
-                                    fontWeight: FontWeight.w800,
-                                    fontSize: 18,
-                                  ),
-                                ),
-                              ],
+              Widget tile(String title, String value, Color accent, String detail) {
+                return Expanded(
+                  child: Material(
+                    color: Colors.white.withValues(alpha: 0.05),
+                    borderRadius: BorderRadius.circular(12),
+                    child: InkWell(
+                      borderRadius: BorderRadius.circular(12),
+                      onTap: () => onTileTap(title, detail),
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              title,
+                              style: const TextStyle(color: Colors.white54, fontSize: 10, height: 1.2),
                             ),
-                          ),
+                            const SizedBox(height: 4),
+                            Text(
+                              value,
+                              style: TextStyle(
+                                color: accent,
+                                fontWeight: FontWeight.w800,
+                                fontSize: 18,
+                              ),
+                            ),
+                          ],
                         ),
                       ),
-                    );
-                  }
+                    ),
+                  ),
+                );
+              }
 
-                  final warn = oldest != null && oldest > const Duration(seconds: 90);
+              final warn = oldest != null && oldest > const Duration(seconds: 90);
 
-                  return Row(
-                    children: [
-                      tile(
-                        context.opsTr('Active SOS'),
-                        '$active',
-                        AppColors.accentBlue,
-                        'There are $active active SOS incidents in ${zone.label} right now.',
-                      ),
-                      const SizedBox(width: 8),
-                      tile(
-                        context.opsTr('Oldest pending'),
-                        oldestLabel,
-                        warn ? Colors.redAccent : Colors.white70,
-                        oldest == null
-                            ? 'No pending incidents in this zone.'
-                            : 'Oldest pending incident has been waiting $oldestLabel.',
-                      ),
-                      const SizedBox(width: 8),
-                      tile(
-                        context.opsTr('Hospitals at risk'),
-                        '$atRisk',
-                        atRisk > 0 ? Colors.orangeAccent : Colors.white70,
-                        '$atRisk hospitals in-zone have low beds or map offline.',
-                      ),
-                      const SizedBox(width: 8),
-                      tile(
-                        context.opsTr('Fleet free'),
-                        '$free',
-                        Colors.tealAccent,
-                        '$free staffed available units in-zone with no assigned incident.',
-                      ),
-                    ],
-                  );
-                },
+              return Row(
+                children: [
+                  tile(
+                    context.opsTr('Active SOS'),
+                    '$active',
+                    AppColors.accentBlue,
+                    'There are $active active SOS incidents in ${zone.label} right now.',
+                  ),
+                  const SizedBox(width: 8),
+                  tile(
+                    context.opsTr('Oldest pending'),
+                    oldestLabel,
+                    warn ? Colors.redAccent : Colors.white70,
+                    oldest == null
+                        ? 'No pending incidents in this zone.'
+                        : 'Oldest pending incident has been waiting $oldestLabel.',
+                  ),
+                  const SizedBox(width: 8),
+                  tile(
+                    context.opsTr('Hospitals at risk'),
+                    '$atRisk',
+                    atRisk > 0 ? Colors.orangeAccent : Colors.white70,
+                    '$atRisk hospitals in-zone have low beds or map offline.',
+                  ),
+                  const SizedBox(width: 8),
+                  tile(
+                    context.opsTr('Fleet free'),
+                    '$free',
+                    Colors.tealAccent,
+                    '$free staffed available units in-zone with no assigned incident.',
+                  ),
+                ],
               );
             },
           );

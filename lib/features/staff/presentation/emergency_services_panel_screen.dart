@@ -83,6 +83,8 @@ class _EmergencyServicesPanelScreenState extends State<EmergencyServicesPanelScr
   StreamSubscription<OpsIncidentHospitalAssignment?>? _hospitalAssignmentSub;
   OpsIncidentHospitalAssignment? _hospitalAssignment;
   String? _hospitalAssignmentListenId;
+  StreamSubscription<QuerySnapshot<Map<String, dynamic>>>? _myHospitalAssignmentsSub;
+  Map<String, OpsIncidentHospitalAssignment> _myHospitalAssignmentsByIncidentId = {};
   bool _withinVictimRadius = false;
   bool _withinHospitalRadius = false;
 
@@ -91,7 +93,7 @@ class _EmergencyServicesPanelScreenState extends State<EmergencyServicesPanelScr
     super.initState();
     // Pre-fill demo credentials for judge demo access.
     const demoFleet = DemoCredentials.fleetId;
-    const demoGatePw = DemoCredentials.adminPassword;
+    const demoGatePw = DemoCredentials.fleetGatePassword;
     if (demoFleet.isNotEmpty) _fleetIdCtrl.text = demoFleet;
     if (demoGatePw.isNotEmpty) _passwordCtrl.text = demoGatePw;
     final f = widget.focusIncidentId?.trim();
@@ -111,6 +113,7 @@ class _EmergencyServicesPanelScreenState extends State<EmergencyServicesPanelScr
           });
           _startDutyHeartbeat();
           _startAssignmentListener();
+          _startMyHospitalAssignmentsListenerIfNeeded();
           WidgetsBinding.instance.addPostFrameCallback((_) => unawaited(_dutyHeartbeatTick()));
         } else {
           setState(() {
@@ -137,6 +140,7 @@ class _EmergencyServicesPanelScreenState extends State<EmergencyServicesPanelScr
     _assignmentTickTimer?.cancel();
     _assignmentSub?.cancel();
     _hospitalAssignmentSub?.cancel();
+    _myHospitalAssignmentsSub?.cancel();
     _standbyMapCtl?.dispose();
     _fleetIdCtrl.dispose();
     _passwordCtrl.dispose();
@@ -177,6 +181,12 @@ class _EmergencyServicesPanelScreenState extends State<EmergencyServicesPanelScr
     _hospitalAssignmentSub = OpsIncidentHospitalAssignmentService.watchForIncident(incidentId).listen((a) {
       if (!mounted) return;
       setState(() => _hospitalAssignment = a);
+      if (_selectedIncidentId == incidentId && _hospitalAssignmentEndsDriverRun(a)) {
+        _localBailToStandbyAfterReleased(
+          snackMessage:
+              'Hospital closed this consignment — you are back on standby.',
+        );
+      }
       // Kick an initial inbound route draw as soon as the accepting hospital is
       // known — keeps the consignment visible even before the driver shares GPS.
       unawaited(() async {
@@ -196,13 +206,108 @@ class _EmergencyServicesPanelScreenState extends State<EmergencyServicesPanelScr
     });
   }
 
+  bool _hospitalAssignmentEndsDriverRun(OpsIncidentHospitalAssignment? a) {
+    if (a == null) return false;
+    if (a.consignmentClosedAt != null) return true;
+    final ds = (a.dispatchStatus ?? '').trim();
+    return ds == 'failed_to_assist' || ds == 'exhausted' || ds == 'no_candidates';
+  }
+
   bool _isAllotted(SosIncident e, String? uid, StationUnitRole role) {
     if (uid == null || uid.isEmpty) return false;
-    if (e.status == IncidentStatus.resolved || e.status == IncidentStatus.blocked) return false;
-    return switch (role) {
-      StationUnitRole.medical => e.emsAcceptedBy == uid,
-      StationUnitRole.crane => e.craneUnitAcceptedBy == uid,
+    if (e.isExcludedFromFleetDriverAllotment) return false;
+    final base = switch (role) {
+      StationUnitRole.medical => (e.emsAcceptedBy ?? '').trim() == uid,
+      StationUnitRole.crane => (e.craneUnitAcceptedBy ?? '').trim() == uid,
     };
+    if (!base) return false;
+    if (role == StationUnitRole.medical) {
+      final ha = _myHospitalAssignmentsByIncidentId[e.id];
+      if (_hospitalAssignmentEndsDriverRun(ha)) return false;
+    }
+    return true;
+  }
+
+  void _localBailToStandbyAfterReleased({required String snackMessage}) {
+    final hadFocus = _selectedIncidentId != null || (_locTimer?.isActive ?? false);
+    if (!hadFocus) return;
+    _stopLiveShare();
+    _ensureHospitalAssignmentListener(null);
+    if (!mounted) return;
+    setState(() {
+      _selectedIncidentId = null;
+      _volunteerRouteToScene = [];
+      _volunteerRouteOverlaySig = '';
+      _routeToVictim = [];
+      _routeToHospital = [];
+      _withinVictimRadius = false;
+      _withinHospitalRadius = false;
+    });
+    if (FleetOperatorSession.isOnDuty) _startDutyHeartbeat();
+    if (context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          backgroundColor: const Color(0xFF1F2A3A),
+          content: Text(snackMessage),
+        ),
+      );
+    }
+  }
+
+  Future<void> _confirmAbandonRescueAndLeave() async {
+    final sel = _selectedIncidentId?.trim();
+    if (sel == null || sel.isEmpty || !mounted) return;
+    final go = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFF161B22),
+        title: Text(
+          context.opsTr('Abandon rescue call?'),
+          style: const TextStyle(color: Colors.white),
+        ),
+        content: Text(
+          context.opsTr(
+            'You will leave this run and return to standby. Command can assign another unit.',
+          ),
+          style: const TextStyle(color: Colors.white70, height: 1.35),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: Text(context.opsTr('Cancel')),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: Colors.redAccent),
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: Text(context.opsTr('Yes, abandon')),
+          ),
+        ],
+      ),
+    );
+    if (go != true || !mounted) return;
+    final role = _role;
+    if (role == null) return;
+    try {
+      await IncidentService.abandonFleetOperatorRescue(
+        incidentId: sel,
+        medicalUnit: role == StationUnitRole.medical,
+      );
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Could not abandon run: $e'),
+            backgroundColor: Colors.red.shade900,
+          ),
+        );
+      }
+      return;
+    }
+    if (!mounted) return;
+    _localBailToStandbyAfterReleased(
+      snackMessage: context.opsTr('Rescue call abandoned — you are on standby.'),
+    );
   }
 
   /// Map overlay for this unit before/without Firestore `ambulanceLiveLocation`.
@@ -305,7 +410,34 @@ class _EmergencyServicesPanelScreenState extends State<EmergencyServicesPanelScr
     });
     _startDutyHeartbeat();
     _startAssignmentListener();
+    _startMyHospitalAssignmentsListenerIfNeeded();
     await _dutyHeartbeatTick();
+  }
+
+  void _startMyHospitalAssignmentsListenerIfNeeded() {
+    _stopMyHospitalAssignmentsListener();
+    if (_phase != _OperatorPhase.roster || _role != StationUnitRole.medical) return;
+    if (!FleetOperatorSession.isOnDuty) return;
+    final uid = _uid;
+    if (uid == null || uid.isEmpty) return;
+    _myHospitalAssignmentsSub = FirebaseFirestore.instance
+        .collection('ops_incident_hospital_assignments')
+        .where('assignedFleetOperatorUid', isEqualTo: uid)
+        .snapshots()
+        .listen((snap) {
+      if (!mounted) return;
+      final next = <String, OpsIncidentHospitalAssignment>{};
+      for (final d in snap.docs) {
+        next[d.id] = OpsIncidentHospitalAssignment.fromFirestore(d);
+      }
+      setState(() => _myHospitalAssignmentsByIncidentId = next);
+    });
+  }
+
+  void _stopMyHospitalAssignmentsListener() {
+    _myHospitalAssignmentsSub?.cancel();
+    _myHospitalAssignmentsSub = null;
+    _myHospitalAssignmentsByIncidentId = {};
   }
 
   // ── Assignment notification listener ────────────────────────────────────────
@@ -503,6 +635,7 @@ class _EmergencyServicesPanelScreenState extends State<EmergencyServicesPanelScr
 
   Future<void> _endDutySession() async {
     _stopAssignmentListener();
+    _stopMyHospitalAssignmentsListener();
     _ensureHospitalAssignmentListener(null);
     _stopDutyHeartbeat();
     _locTimer?.cancel();
@@ -526,6 +659,7 @@ class _EmergencyServicesPanelScreenState extends State<EmergencyServicesPanelScr
 
   Future<void> _signOutFleetGate() async {
     _stopAssignmentListener();
+    _stopMyHospitalAssignmentsListener();
     _ensureHospitalAssignmentListener(null);
     _stopDutyHeartbeat();
     _locTimer?.cancel();
@@ -1172,25 +1306,9 @@ class _EmergencyServicesPanelScreenState extends State<EmergencyServicesPanelScr
     final prev = (inc.fleetEmergencyPreviousDriverUid ?? '').trim();
     final me = (_uid ?? '').trim();
     if (prev.isNotEmpty && me.isNotEmpty && prev != me) return;
-    _stopLiveShare();
-    _ensureHospitalAssignmentListener(null);
-    if (!mounted) return;
-    setState(() {
-      _selectedIncidentId = null;
-      _routeToVictim = [];
-      _routeToHospital = [];
-      _withinVictimRadius = false;
-      _withinHospitalRadius = false;
-    });
-    if (FleetOperatorSession.isOnDuty) _startDutyHeartbeat();
-    if (context.mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          backgroundColor: Color(0xFF1F2A3A),
-          content: Text('Run reassigned to a new unit. You are back on standby.'),
-        ),
-      );
-    }
+    _localBailToStandbyAfterReleased(
+      snackMessage: 'Run reassigned to a new unit. You are back on standby.',
+    );
   }
 
   @override
@@ -1344,76 +1462,72 @@ class _EmergencyServicesPanelScreenState extends State<EmergencyServicesPanelScr
       );
     }
 
-    return Scaffold(
-      backgroundColor: const Color(0xFF0D1117),
-      appBar: AppBar(
-        backgroundColor: const Color(0xFF161B22),
-        title: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(role.shortLabel, style: const TextStyle(fontSize: 16)),
-            Text(
-              FleetOperatorSession.fleetId ?? '',
-              style: const TextStyle(fontSize: 11, color: Colors.white54, fontWeight: FontWeight.normal),
+    return PopScope(
+      canPop: _selectedIncidentId == null,
+      onPopInvokedWithResult: (didPop, _) async {
+        if (didPop) return;
+        await _confirmAbandonRescueAndLeave();
+      },
+      child: Scaffold(
+        backgroundColor: const Color(0xFF0D1117),
+        appBar: AppBar(
+          backgroundColor: const Color(0xFF161B22),
+          title: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(role.shortLabel, style: const TextStyle(fontSize: 16)),
+              Text(
+                FleetOperatorSession.fleetId ?? '',
+                style: const TextStyle(fontSize: 11, color: Colors.white54, fontWeight: FontWeight.normal),
+              ),
+            ],
+          ),
+          actions: [
+            const LanguageSwitcherButton(),
+            StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+              stream: FirebaseFirestore.instance.collection('sos_incidents').limit(200).snapshots(),
+              builder: (context, snap) {
+                if (!snap.hasData) return const SizedBox.shrink();
+                final uid = _uid;
+                final all = snap.data!.docs.map(SosIncident.fromFirestore).toList();
+                final mine = all.where((e) => _isAllotted(e, uid, role)).length;
+                if (mine < 2) return const SizedBox.shrink();
+                return Padding(
+                  padding: const EdgeInsets.only(right: 6, top: 10, bottom: 10),
+                  child: Container(
+                    alignment: Alignment.center,
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF238636).withValues(alpha: 0.25),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: const Color(0xFF79C0FF).withValues(alpha: 0.4)),
+                    ),
+                    child: Text(
+                      'Queue: $mine',
+                      style: const TextStyle(color: Color(0xFF79C0FF), fontSize: 11, fontWeight: FontWeight.w800),
+                    ),
+                  ),
+                );
+              },
+            ),
+            TextButton(
+              onPressed: () => unawaited(_endDutySession()),
+              child: Text(context.opsTr('End duty'), style: TextStyle(color: Colors.orangeAccent, fontSize: 13)),
             ),
           ],
-        ),
-        actions: [
-          const LanguageSwitcherButton(),
-          StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-            stream: FirebaseFirestore.instance.collection('sos_incidents').limit(200).snapshots(),
-            builder: (context, snap) {
-              if (!snap.hasData) return const SizedBox.shrink();
-              final uid = _uid;
-              final all = snap.data!.docs.map(SosIncident.fromFirestore).toList();
-              final mine = all.where((e) => _isAllotted(e, uid, role)).length;
-              if (mine < 2) return const SizedBox.shrink();
-              return Padding(
-                padding: const EdgeInsets.only(right: 6, top: 10, bottom: 10),
-                child: Container(
-                  alignment: Alignment.center,
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFF238636).withValues(alpha: 0.25),
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: const Color(0xFF79C0FF).withValues(alpha: 0.4)),
-                  ),
-                  child: Text(
-                    'Queue: $mine',
-                    style: const TextStyle(color: Color(0xFF79C0FF), fontSize: 11, fontWeight: FontWeight.w800),
-                  ),
-                ),
-              );
+          leading: IconButton(
+            icon: const Icon(Icons.arrow_back),
+            onPressed: () {
+              if (_selectedIncidentId != null) {
+                unawaited(_confirmAbandonRescueAndLeave());
+              } else {
+                unawaited(_signOutFleetGate());
+              }
             },
           ),
-          TextButton(
-            onPressed: () => unawaited(_endDutySession()),
-            child: Text(context.opsTr('End duty'), style: TextStyle(color: Colors.orangeAccent, fontSize: 13)),
-          ),
-        ],
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back),
-          onPressed: () {
-            if (_selectedIncidentId != null) {
-              _ensureHospitalAssignmentListener(null);
-              setState(() {
-                _selectedIncidentId = null;
-                _volunteerRouteToScene = [];
-                _volunteerRouteOverlaySig = '';
-                _routeToVictim = [];
-                _routeToHospital = [];
-                _withinVictimRadius = false;
-                _withinHospitalRadius = false;
-              });
-              if (FleetOperatorSession.isOnDuty) _startDutyHeartbeat();
-            } else {
-              unawaited(_signOutFleetGate());
-            }
-          },
         ),
-      ),
-      body: Column(
+        body: Column(
         children: [
           // \u2500\u2500 Incoming assignment banner \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
           if (_pendingAssignmentDocs.isNotEmpty)
@@ -1449,17 +1563,34 @@ class _EmergencyServicesPanelScreenState extends State<EmergencyServicesPanelScr
                   }
                 }
 
-                if (sid != null && selected == null && mine.isNotEmpty) {
-                  WidgetsBinding.instance.addPostFrameCallback((_) {
-                    if (mounted) setState(() => _selectedIncidentId = mine.first.id);
-                  });
+                if (sid != null && selected == null) {
+                  SosIncident? incBySid;
+                  for (final e in all) {
+                    if (e.id == sid) {
+                      incBySid = e;
+                      break;
+                    }
+                  }
+                  final uidLocal = uid;
+                  final mustClear = incBySid == null ||
+                      uidLocal == null ||
+                      !_isAllotted(incBySid, uidLocal, role);
+                  if (mustClear) {
+                    WidgetsBinding.instance.addPostFrameCallback((_) {
+                      if (!mounted || _selectedIncidentId != sid) return;
+                      _localBailToStandbyAfterReleased(
+                        snackMessage: incBySid == null
+                            ? 'Incident is no longer available.'
+                            : 'You are no longer assigned to this incident.',
+                      );
+                    });
+                  }
                 }
 
-                if (mine.length == 1 && _selectedIncidentId == null) {
-                  WidgetsBinding.instance.addPostFrameCallback((_) {
-                    if (mounted) setState(() => _selectedIncidentId = mine.first.id);
-                  });
-                }
+                // Do not auto-open the response view when there is exactly one
+                // allotment: keep the operator on the roster / allotment list until
+                // they choose the run (same as multi-queue). Deep links may still
+                // set `_selectedIncidentId` via `focusIncidentId` or after accept.
 
                 if (selected != null) {
                   final incidentForCb = selected;
@@ -1588,6 +1719,7 @@ class _EmergencyServicesPanelScreenState extends State<EmergencyServicesPanelScr
             ),
         ],
       ),
+    ),
     );
   }
 }

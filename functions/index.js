@@ -3744,59 +3744,83 @@ exports.updateLeaderboardOnIncidentChange = onDocumentCreated(
 );
 
 // ─── 7. Hard TTL: expire all SOS after 1 hour ────────────────────────────────
-// Runs every 5 minutes and force-closes incidents older than 60 minutes,
-// regardless of status. This guarantees no SOS stays active indefinitely.
+// Runs every 5 minutes and force-closes open incidents older than 60 minutes.
+//
+// Paginates on `timestamp` ascending so old docs are not starved when many newer
+// open incidents exist (previous `status in … limit(300)` was unordered).
 //
 // Canonical server-side 1h archival (writes `sos_incidents_archive`, deletes active doc).
 // Deploy with: firebase deploy --only functions:expireStaleSosIncidents
 // `src/hospital_chain.js` defines a separate 24h in-place job; it is not merged here unless you require it.
 exports.expireStaleSosIncidents = onSchedule(
     {
-      schedule: "every 5 minutes",
-      timeZone: "UTC",
-      memory: "256MiB",
-      cpu: 0.25,
-      timeoutSeconds: 120,
+        schedule: "every 5 minutes",
+        timeZone: "UTC",
+        memory: "256MiB",
+        cpu: 0.25,
+        timeoutSeconds: 120,
     },
     async () => {
       const cutoffMs = Date.now() - (60 * 60 * 1000);
+      const cutoffTs = Timestamp.fromMillis(cutoffMs);
       const activeCol = db.collection("sos_incidents");
       const archiveCol = db.collection("sos_incidents_archive");
-
-      const snap = await activeCol
-          .where("status", "in", ["pending", "dispatched", "blocked"])
-          .limit(300)
-          .get();
-
-      if (snap.empty) {
-        console.log("[expireStaleSosIncidents] No active incidents.");
-        return;
-      }
+      const openStatuses = new Set(["pending", "dispatched", "blocked"]);
 
       let expiredCount = 0;
-      const tasks = snap.docs.map(async (doc) => {
-        const data = doc.data() || {};
-        const createdMs =
-          timestampToMillis(data.timestamp) ||
-          timestampToMillis(data.goldenHourStart) ||
-          null;
-        if (!createdMs || createdMs > cutoffMs) return;
+      let lastDoc = null;
+      const pageSize = 100;
+      const maxPages = 30;
 
-        const payload = {
-          ...data,
-          id: doc.id,
-          status: "expired",
-          expiredAt: FieldValue.serverTimestamp(),
-          expiredReason: "unattended_master_ttl",
-          closureLabel: "unattended",
-        };
+      for (let page = 0; page < maxPages; page++) {
+        let q = activeCol
+            .where("timestamp", "<", cutoffTs)
+            .orderBy("timestamp", "asc")
+            .limit(pageSize);
+        if (lastDoc) {
+          q = q.startAfter(lastDoc);
+        }
+        const snap = await q.get();
+        if (snap.empty) {
+          break;
+        }
 
-        await archiveCol.doc(doc.id).set(payload, { merge: true });
-        await doc.ref.delete();
-        expiredCount++;
-      });
+        const deltas = await Promise.all(
+            snap.docs.map(async (doc) => {
+              const data = doc.data() || {};
+              const st = String(data.status || "");
+              if (!openStatuses.has(st)) {
+                return 0;
+              }
+              const createdMs =
+                  timestampToMillis(data.timestamp) ||
+                  timestampToMillis(data.goldenHourStart) ||
+                  null;
+              if (!createdMs || createdMs > cutoffMs) {
+                return 0;
+              }
 
-      await Promise.all(tasks);
+              const payload = {
+                ...data,
+                id: doc.id,
+                status: "expired",
+                expiredAt: FieldValue.serverTimestamp(),
+                expiredReason: "unattended_master_ttl",
+                closureLabel: "unattended",
+              };
+
+              await archiveCol.doc(doc.id).set(payload, { merge: true });
+              await doc.ref.delete();
+              return 1;
+            })
+        );
+        expiredCount += deltas.reduce((a, b) => a + b, 0);
+        lastDoc = snap.docs[snap.docs.length - 1];
+        if (snap.size < pageSize) {
+          break;
+        }
+      }
+
       console.log(`[expireStaleSosIncidents] Expired ${expiredCount} incident(s).`);
     }
 );
@@ -3873,7 +3897,7 @@ exports.pruneStaleFcmTokens = onSchedule(
 
 );
 
-/** Accepted hospital consignments older than 1h → terminal status (client hides from active lists). */
+/** Accepted hospital consignments older than 1h → terminal status + archive active SOS when still open. */
 exports.expireStaleHospitalConsignments = onSchedule(
     {
       schedule: "every 5 minutes",
@@ -3886,6 +3910,8 @@ exports.expireStaleHospitalConsignments = onSchedule(
       const cutoffMs = Date.now() - 60 * 60 * 1000;
       const cutoffTs = Timestamp.fromMillis(cutoffMs);
       const col = db.collection("ops_incident_hospital_assignments");
+      const archiveCol = db.collection("sos_incidents_archive");
+      const openStatuses = new Set(["pending", "dispatched", "blocked"]);
       const snap = await col
           .where("dispatchStatus", "==", "accepted")
           .where("acceptedAt", "<", cutoffTs)
@@ -3896,6 +3922,8 @@ exports.expireStaleHospitalConsignments = onSchedule(
         console.log("[expireStaleHospitalConsignments] No stale accepted assignments.");
         return;
       }
+
+      const medicalLine = "Hospital consignment closed — assistance window expired (1h)";
 
       const tasks = snap.docs.map(async (doc) => {
         await doc.ref.set(
@@ -3908,15 +3936,34 @@ exports.expireStaleHospitalConsignments = onSchedule(
         );
         const incRef = db.collection("sos_incidents").doc(doc.id);
         const incSnap = await incRef.get();
-        if (incSnap.exists) {
+        if (!incSnap.exists) {
+          return;
+        }
+        const data = incSnap.data() || {};
+        const st = String(data.status || "");
+        if (!openStatuses.has(st)) {
           await incRef.set(
             {
-              medicalStatus: "Hospital consignment closed — assistance window expired (1h)",
+              medicalStatus: medicalLine,
               updatedAt: FieldValue.serverTimestamp(),
             },
             { merge: true }
           );
+          return;
         }
+
+        const payload = {
+          ...data,
+          id: doc.id,
+          medicalStatus: medicalLine,
+          updatedAt: FieldValue.serverTimestamp(),
+          status: "expired",
+          expiredAt: FieldValue.serverTimestamp(),
+          expiredReason: "hospital_consignment_ttl_1h",
+          closureLabel: "hospital_consignment_ttl",
+        };
+        await archiveCol.doc(doc.id).set(payload, { merge: true });
+        await incRef.delete();
       });
       await Promise.all(tasks);
       console.log(`[expireStaleHospitalConsignments] Closed ${snap.docs.length} stale assignment(s).`);

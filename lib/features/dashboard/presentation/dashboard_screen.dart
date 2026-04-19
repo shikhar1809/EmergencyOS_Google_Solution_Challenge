@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import '../../../core/l10n/app_localizations.dart';
 import '../../../core/theme/app_colors.dart';
@@ -708,6 +709,29 @@ class _VolunteerToggle extends ConsumerStatefulWidget {
 class _VolunteerToggleState extends ConsumerState<_VolunteerToggle> {
   DateTime? _dutyStartTime;
 
+  Future<void> _warnWebLocationIfBlocked(BuildContext context) async {
+    try {
+      var p = await Geolocator.checkPermission();
+      if (p == LocationPermission.denied) {
+        p = await Geolocator.requestPermission();
+      }
+      if (p == LocationPermission.unableToDetermine) {
+        p = await Geolocator.requestPermission();
+      }
+      if (!context.mounted) return;
+      final blocked = p == LocationPermission.denied ||
+          p == LocationPermission.deniedForever;
+      if (blocked && context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(AppLocalizations.of(context).dutyWebLocationBlockedAdvice),
+            duration: const Duration(seconds: 7),
+          ),
+        );
+      }
+    } catch (_) {}
+  }
+
   @override
   Widget build(BuildContext context) {
     final isOnDuty = ref.watch(isOnDutyProvider);
@@ -748,9 +772,14 @@ class _VolunteerToggleState extends ConsumerState<_VolunteerToggle> {
                   _dutyStartTime = DateTime.now();
                   ref.read(isOnDutyProvider.notifier).toggle(true);
                   unawaited(VolunteerPresenceService.publishDutyPresence(onDuty: true));
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(content: Text('🟢 ${AppLocalizations.of(context).onDutySnack}')),
-                  );
+                  if (context.mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(content: Text('🟢 ${AppLocalizations.of(context).onDutySnack}')),
+                    );
+                  }
+                  if (kIsWeb) {
+                    unawaited(_warnWebLocationIfBlocked(context));
+                  }
                 } else {
                   // Going OFF DUTY — drop persisted response + record session
                   await IncidentService.clearVolunteerAssignment();

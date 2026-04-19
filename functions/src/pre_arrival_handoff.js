@@ -10,8 +10,15 @@
 // Dispatch decisions NEVER depend on this module — it only annotates.
 
 const admin = require("firebase-admin");
-const { GoogleGenAI } = require("@google/genai");
 const { withSafetyForRole } = require("./ai_safety");
+
+/** Lazy so `firebase deploy` can parse `index.js` within the discovery timeout. */
+function loadGoogleGenAI() {
+  if (!loadGoogleGenAI._c) {
+    loadGoogleGenAI._c = require("@google/genai").GoogleGenAI;
+  }
+  return loadGoogleGenAI._c;
+}
 
 const db = admin.firestore();
 const { FieldValue } = admin.firestore;
@@ -167,6 +174,7 @@ async function maybeGeneratePreArrivalHandoff(incidentId, after, before) {
 
   let parsed = null;
   try {
+    const GoogleGenAI = loadGoogleGenAI();
     const ai = new GoogleGenAI({ apiKey: getGeminiKey() });
     const response = await ai.models.generateContent({
       model: "gemini-2.5-flash",

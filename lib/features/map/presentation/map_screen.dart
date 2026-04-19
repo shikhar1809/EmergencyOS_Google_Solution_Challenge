@@ -567,6 +567,8 @@ class _MapScreenState extends ConsumerState<MapScreen> with TickerProviderStateM
         return;
       }
 
+      // Map surface: periodic past-incident load also runs client SOS TTL (open pending/dispatched/blocked >1h).
+      // Hospital Live Ops / admin command center do not call this — server `expireStaleSosIncidents` is canonical.
       unawaited(IncidentService.autoArchiveExpiredIncidents());
 
       final past = await IncidentService.fetchPastIncidents(
@@ -1455,7 +1457,7 @@ class _MapScreenState extends ConsumerState<MapScreen> with TickerProviderStateM
           children: [
             AnimatedBuilder(
               animation: _pulseController,
-              builder: (_, __) => Container(
+              builder: (context, _) => Container(
                 width: 56 + 12 * _pulseController.value,
                 height: 56 + 12 * _pulseController.value,
                 decoration: BoxDecoration(
@@ -1855,9 +1857,15 @@ class _MapScreenState extends ConsumerState<MapScreen> with TickerProviderStateM
               BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueOrange),
             );
       case IncidentStatus.dispatched:
-        return OpsMapMarkers.ambulanceOr(
-          catPin ?? BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueAzure),
-        );
+        if (incident.publicMapSceneUsesAmbulanceIcon) {
+          return OpsMapMarkers.ambulanceOr(
+            catPin ?? BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueAzure),
+          );
+        }
+        return catPin ??
+            OpsMapMarkers.volunteerDutyOr(
+              BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueGreen),
+            );
       case IncidentStatus.blocked:
         return OpsMapMarkers.sceneOr(
           BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueViolet),
@@ -1887,7 +1895,11 @@ class _MapScreenState extends ConsumerState<MapScreen> with TickerProviderStateM
     for (final incident in liveIncidents) {
       final String statusEmoji = incident.status == IncidentStatus.pending
           ? '🆘'
-          : (incident.status == IncidentStatus.blocked ? '⏸️' : '🚑');
+          : incident.status == IncidentStatus.blocked
+              ? '⏸️'
+              : incident.status == IncidentStatus.dispatched
+                  ? (incident.publicMapSceneUsesAmbulanceIcon ? '🚑' : '👥')
+                  : '🚑';
       final String timeAgo = _timeAgo(incident.timestamp);
       final String category = incident.type.toLowerCase();
 
@@ -2331,6 +2343,8 @@ class _MapScreenState extends ConsumerState<MapScreen> with TickerProviderStateM
         _aqiInfo = b.aqi;
         _outbreaks = b.outbreaks;
       });
+    }).catchError((Object e) {
+      debugPrint('[MapScreen] health bundle sync: $e');
     }));
     showModalBottomSheet<void>(
       context: context,

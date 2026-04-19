@@ -43,6 +43,33 @@ service cloud.firestore {
         && userHospitalBindingMatches(get(ap).data.get('acceptedHospitalId', ''));
     }
 
+    /// Fleet operator abandoning EMS run (`IncidentService.abandonFleetOperatorRescue`): merge patch only.
+    /// Batched writes are evaluated against final state, so `emsAcceptedBy` is already cleared — tie to the
+    /// same abandon `medicalStatus` string the client sets on `sos_incidents` in that batch.
+    function fleetOperatorAbandonHospitalAssignment(incidentId) {
+      let inc = /databases/$(database)/documents/sos_incidents/$(incidentId);
+      return request.auth != null
+        && exists(inc)
+        && get(inc).data.get('medicalStatus', '')
+          == 'Operator abandoned rescue run — awaiting reassignment'
+        && request.resource.data.get('ambulanceDispatchStatus', '') == 'pending_operator'
+        && request.resource.data.keys().size() < 80;
+    }
+
+    /// Master or accepting-hospital staff may archive an active incident to `sos_incidents_archive`.
+    function staffMayArchiveIncident(incidentId) {
+      return isMasterOpsConsoleEmail() || incidentAcceptedByUserHospital(incidentId);
+    }
+
+    /// Victim / allotted EMS driver client archive (`IncidentService.archiveAndCloseIncident` payload copy).
+    function victimOrEmsArchivedPayload() {
+      return request.auth != null
+        && (
+          request.auth.uid == request.resource.data.get('userId', '')
+          || request.auth.uid == request.resource.data.get('emsAcceptedBy', '')
+        );
+    }
+
     /// Hospital dashboard / command center: assign EMS unit (`IncidentService.adminAssignAmbulanceDriver`).
     function isAmbulanceDispatchOpsPatch() {
       return request.resource.data.diff(resource.data).affectedKeys()
@@ -72,6 +99,36 @@ service cloud.firestore {
         ])
         && request.resource.data.get('fleetId', '') == callSign
         && request.resource.data.get('status', '') == 'awaiting_response';
+    }
+
+    /// Public timeline under `sos_incidents/{id}/victim_activity` (victim, volunteers,
+    /// dispatch UIs, command center). Append-only; keys must match client writers.
+    function victimActivityPayloadOk() {
+      return request.resource.data.keys().hasOnly(['text', 'createdAt', 'source'])
+        && request.resource.data.text is string
+        && request.resource.data.text.size() > 0
+        && request.resource.data.text.size() < 12000
+        && (
+          !('source' in request.resource.data)
+          || (
+            request.resource.data.source is string
+            && request.resource.data.source.size() < 128
+          )
+        );
+    }
+
+    function victimActivityAuthorOk(incidentId) {
+      let p = /databases/$(database)/documents/sos_incidents/$(incidentId);
+      return request.auth != null
+        && exists(p)
+        && (
+          request.auth.uid == get(p).data.userId
+          || request.auth.uid in get(p).data.get('acceptedVolunteerIds', [])
+          || request.auth.uid == get(p).data.get('emsAcceptedBy', '')
+          || request.auth.uid == get(p).data.get('craneUnitAcceptedBy', '')
+          || isMasterOpsConsoleEmail()
+          || incidentAcceptedByUserHospital(incidentId)
+        );
     }
 
     // ── Users: own profile read/write; Cloud Functions use Admin SDK (bypasses rules) ──
@@ -129,11 +186,13 @@ service cloud.firestore {
                       || (isMasterOpsConsoleEmail() && isAmbulanceDispatchOpsPatch())
                       || (incidentAcceptedByUserHospital(id) && isAmbulanceDispatchOpsPatch())
                     );
-      // Client-side archive (victim resolve / fleet response complete) removes active doc.
+      // Client-side archive (victim resolve / fleet response complete / hospital or master close) removes active doc.
       allow delete: if request.auth != null
                     && (
                       request.auth.uid == resource.data.userId
                       || request.auth.uid == resource.data.emsAcceptedBy
+                      || isMasterOpsConsoleEmail()
+                      || incidentAcceptedByUserHospital(id)
                     );
     }
 
@@ -149,10 +208,24 @@ service cloud.firestore {
       allow update, delete: if false;
     }
 
-    // ── Incident archive: read-only; CF writes via Admin SDK ─────────────────
+    // ── Victim / volunteer / dispatch “live feed” lines (victim app, consignment,
+    //    master & hospital command surfaces). Was missing from rules → denied by default.
+    match /sos_incidents/{id}/victim_activity/{actId} {
+      allow read:   if request.auth != null;
+      allow create: if victimActivityAuthorOk(id) && victimActivityPayloadOk();
+      allow update, delete: if false;
+    }
+
+    // ── Incident archive: CF + privileged client closure (hospital dashboard / master).
     match /sos_incidents_archive/{id} {
       allow read:  if request.auth != null;
-      allow write: if false;
+      allow create, update: if request.auth != null
+                            && request.resource.data.keys().size() < 600
+                            && (
+                              staffMayArchiveIncident(id)
+                              || victimOrEmsArchivedPayload()
+                            );
+      allow delete: if false;
     }
 
     // ── Narrative incident reports: staff UI reads via collectionGroup, ──────
@@ -182,10 +255,12 @@ service cloud.firestore {
       );
     }
 
-    // ── Hospital assignments: read for authenticated; CF writes only ──────────
+    // ── Hospital assignments: CF writes; fleet operator may merge abandon patch only.
     match /ops_incident_hospital_assignments/{id} {
       allow read:  if request.auth != null;
-      allow write: if false;
+      allow create: if fleetOperatorAbandonHospitalAssignment(id);
+      allow update: if fleetOperatorAbandonHospitalAssignment(id);
+      allow delete: if false;
     }
 
     // ── Hospital inbox: per-hospital persistent queue written by the v2
@@ -231,6 +306,15 @@ service cloud.firestore {
                         .hasOnly(['status', 'expiredAt', 'reason'])
                     );
       allow delete: if request.auth != null && fleetOperatorOwnsCallSign(callSign);
+    }
+
+    // ── Fleet gate accounts (`password`, `vehicleType`, `active`) for operator
+    //    app sign-in. Master console creates/rotates; verify flow does a single
+    //    doc get (see `FleetOperatorAuthService` — no list/query from clients).
+    match /ops_fleet_accounts/{callSign} {
+      allow get: if request.auth != null;
+      allow list: if false;
+      allow create, update, delete: if isMasterOpsConsoleEmail();
     }
 
     // ── PTT channels: any authenticated participant can read/post ─────────────

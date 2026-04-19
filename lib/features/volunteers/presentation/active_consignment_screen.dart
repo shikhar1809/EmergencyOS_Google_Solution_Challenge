@@ -187,6 +187,9 @@ class _ActiveConsignmentScreenState extends ConsumerState<ActiveConsignmentScree
 
   StreamSubscription<DocumentSnapshot<Map<String, dynamic>>>? _dispatchAssignmentSub;
   bool _useLiveAmbulanceFromDispatch = false;
+  /// Production volunteers: show the ambulance marker only once `sos_incidents` has live
+  /// `ambulanceLiveLat`/`Lng` (same bar as ops consoles). Victim and drill keep prior UX.
+  bool _incidentHasAmbulanceLivePing = false;
 
   StreamSubscription? _dispatchChainSub;
   DispatchChainState? _dispatchChainState;
@@ -296,14 +299,19 @@ class _ActiveConsignmentScreenState extends ConsumerState<ActiveConsignmentScree
         if (mounted) {
           setState(() {
             _responderCount = accepted.length;
-            if (_useLiveAmbulanceFromDispatch) {
-              final alat = (d['ambulanceLiveLat'] as num?)?.toDouble();
-              final alng = (d['ambulanceLiveLng'] as num?)?.toDouble();
-              final hdg = (d['ambulanceLiveHeadingDeg'] as num?)?.toDouble();
-              if (alat != null && alng != null) {
-                _hospCurrent = LatLng(alat, alng);
-                if (hdg != null) _ambulanceBearing = hdg;
+            final alat = (d['ambulanceLiveLat'] as num?)?.toDouble();
+            final alng = (d['ambulanceLiveLng'] as num?)?.toDouble();
+            final hdg = (d['ambulanceLiveHeadingDeg'] as num?)?.toDouble();
+            final hasLivePing = alat != null && alng != null;
+            if (!widget.isDrillMode) {
+              _incidentHasAmbulanceLivePing = hasLivePing;
+            }
+            if (hasLivePing && (!widget.isDrillMode || _useLiveAmbulanceFromDispatch)) {
+              if (!widget.isDrillMode) {
+                _trackingController.stop();
               }
+              _hospCurrent = LatLng(alat!, alng!);
+              if (hdg != null) _ambulanceBearing = hdg;
             }
           });
         }
@@ -522,6 +530,9 @@ class _ActiveConsignmentScreenState extends ConsumerState<ActiveConsignmentScree
   }
 
   void _updateTrackingPositions() {
+    if (!widget.isDrillMode && !widget.isVictim && _incidentHasAmbulanceLivePing) {
+      return;
+    }
     if (_hospRoute.isEmpty) return;
 
     final double t = _trackingController.value;
@@ -1082,6 +1093,7 @@ class _ActiveConsignmentScreenState extends ConsumerState<ActiveConsignmentScree
         await _initLocationAfterPermission(
           allowMissingUserLocation: true,
           startPositionStream: false,
+          skipGpsFetch: true,
         );
       } catch (e, st) {
         debugPrint('Consignment map init failed: $e\n$st');
@@ -1127,19 +1139,22 @@ class _ActiveConsignmentScreenState extends ConsumerState<ActiveConsignmentScree
     required bool allowMissingUserLocation,
     required bool startPositionStream,
     bool isDrillSetup = false,
+    bool skipGpsFetch = false,
   }) async {
-    try {
-      _currentPosition = await Geolocator.getCurrentPosition(
-        locationSettings: LocationSettings(
-          accuracy: isDrillSetup ? LocationAccuracy.medium : _volunteerStreamAccuracy,
-          timeLimit: Duration(seconds: kIsWeb ? 18 : 25),
-        ),
-      );
-      if (_currentPosition != null) _bumpUserCourseFrom(_currentPosition!);
-    } catch (e) {
-      debugPrint('getCurrentPosition failed: $e');
-      _currentPosition = await Geolocator.getLastKnownPosition();
-      if (_currentPosition != null) _bumpUserCourseFrom(_currentPosition!);
+    if (!skipGpsFetch) {
+      try {
+        _currentPosition = await Geolocator.getCurrentPosition(
+          locationSettings: LocationSettings(
+            accuracy: isDrillSetup ? LocationAccuracy.medium : _volunteerStreamAccuracy,
+            timeLimit: Duration(seconds: kIsWeb ? 18 : 25),
+          ),
+        );
+        if (_currentPosition != null) _bumpUserCourseFrom(_currentPosition!);
+      } catch (e) {
+        debugPrint('getCurrentPosition failed: $e');
+        _currentPosition = await Geolocator.getLastKnownPosition();
+        if (_currentPosition != null) _bumpUserCourseFrom(_currentPosition!);
+      }
     }
 
     if (isDrillSetup) {
@@ -1925,7 +1940,9 @@ class _ActiveConsignmentScreenState extends ConsumerState<ActiveConsignmentScree
                       mapId: AppConstants.googleMapsDarkMapId.isNotEmpty ? AppConstants.googleMapsDarkMapId : null,
                       style: effectiveGoogleMapsEmbeddedStyleJson(),
                       mapType: lowPowerMap ? MapType.normal : MapType.hybrid,
-                      trafficEnabled: !lowPowerMap,
+                      trafficEnabled: kIsWeb ? false : !lowPowerMap,
+                      googleMapLoadTimeout:
+                          kIsWeb ? const Duration(seconds: 8) : const Duration(seconds: 14),
                       gestureRecognizers: <Factory<OneSequenceGestureRecognizer>>{
                         Factory<OneSequenceGestureRecognizer>(() => EagerGestureRecognizer()),
                       },
@@ -2029,23 +2046,26 @@ class _ActiveConsignmentScreenState extends ConsumerState<ActiveConsignmentScree
                                   : BitmapDescriptor.hueOrange,
                             ),
                           ),
-                        // --- Ambulance: rotates to face direction of travel ---
-                        Marker(
-                          markerId: const MarkerId('hospital_unit'),
-                          position: _hospCurrent,
-                          icon: FleetMapIcons.ambulanceForZoom(
-                            _consignmentMapZoom,
-                            BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueCyan),
+                        // --- Ambulance: same asset as ops; volunteers only after live GPS pings ---
+                        if (widget.isDrillMode ||
+                            widget.isVictim ||
+                            _incidentHasAmbulanceLivePing)
+                          Marker(
+                            markerId: const MarkerId('hospital_unit'),
+                            position: _hospCurrent,
+                            icon: FleetMapIcons.ambulanceForZoom(
+                              _consignmentMapZoom,
+                              BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueCyan),
+                            ),
+                            rotation: suppressMotion ? 0.0 : _ambulanceBearing,
+                            flat: true,
+                            anchor: const Offset(0.5, 0.5),
+                            infoWindow: InfoWindow(
+                              title: _trackingController.value >= 0.98
+                                  ? AppLocalizations.of(context).get('vol_marker_ambulance_on_scene')
+                                  : AppLocalizations.of(context).get('vol_marker_ambulance_en_route'),
+                            ),
                           ),
-                          rotation: suppressMotion ? 0.0 : _ambulanceBearing,
-                          flat: true,
-                          anchor: const Offset(0.5, 0.5),
-                          infoWindow: InfoWindow(
-                            title: _trackingController.value >= 0.98
-                                ? AppLocalizations.of(context).get('vol_marker_ambulance_on_scene')
-                                : AppLocalizations.of(context).get('vol_marker_ambulance_en_route'),
-                          ),
-                        ),
                       },
                     ),
 

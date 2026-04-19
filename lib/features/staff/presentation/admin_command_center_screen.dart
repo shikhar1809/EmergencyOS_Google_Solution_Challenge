@@ -198,6 +198,9 @@ class _AdminCommandCenterScreenState extends State<AdminCommandCenterScreen>
       _scheduleDemoRoutePrefetch();
       _applyFleetTargets();
     });
+    // Command-center sidebar + map: live `sos_incidents` (not `ops_incident_hospital_assignments`).
+    // Client SOS TTL is not invoked here — see map shell / splash [IncidentService.autoArchiveExpiredIncidents]
+    // and Cloud Function `expireStaleSosIncidents` for server-side expiry.
     _allIncidentSub = FirebaseFirestore.instance
         .collection('sos_incidents')
         .limit(400)

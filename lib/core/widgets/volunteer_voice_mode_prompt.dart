@@ -1,5 +1,3 @@
-import 'dart:io' show Platform;
-
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
@@ -50,7 +48,12 @@ class _VolunteerVoiceModeCard extends StatelessWidget {
     if (mode == VolunteerVoiceMode.audio) {
       VoiceCommsService.silenceMode = false;
       // Web / desktop: prime audio inside the same gesture.
-      if (kIsWeb || (!kIsWeb && (Platform.isAndroid || Platform.isIOS || Platform.isMacOS || Platform.isWindows))) {
+      final t = defaultTargetPlatform;
+      if (kIsWeb ||
+          t == TargetPlatform.android ||
+          t == TargetPlatform.iOS ||
+          t == TargetPlatform.macOS ||
+          t == TargetPlatform.windows) {
         VoiceCommsService.primeForVoiceGuidance();
       }
     } else {

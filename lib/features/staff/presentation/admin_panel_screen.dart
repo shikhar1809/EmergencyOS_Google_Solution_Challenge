@@ -441,10 +441,16 @@ class _OpsDashboardScreenState extends ConsumerState<OpsDashboardScreen> {
             (hospitalDisplay != null && hospitalDisplay.isNotEmpty)
             ? hospitalDisplay
             : hid;
-        try {
-          await FirebaseAuth.instance.signOut();
-        } catch (_) {}
-        await FirebaseAuth.instance.signInAnonymously();
+        // Avoid signOut → anonymous when we are already anonymous from
+        // [_ensureFirebaseUserForGateRead]. That auth flip mid-Firestore-session
+        // especially hurts the web JS client (watch stream / persistence).
+        final gateUser = FirebaseAuth.instance.currentUser;
+        if (gateUser == null || !gateUser.isAnonymous) {
+          try {
+            await FirebaseAuth.instance.signOut();
+          } catch (_) {}
+          await FirebaseAuth.instance.signInAnonymously();
+        }
         access = AdminPanelAccess(
           role: AdminConsoleRole.medical,
           boundHospitalDocId: hid,

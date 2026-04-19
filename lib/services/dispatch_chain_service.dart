@@ -30,11 +30,27 @@ class DispatchChainState {
     }
   }
 
-  String get currentHospitalName =>
-      assignment?.notifiedHospitalName ??
-      assignment?.acceptedHospitalName ??
-      assignment?.primaryHospitalName ??
-      '—';
+  /// After [dispatchStatus] is `accepted`, prefer the facility that actually
+  /// accepted. `notifiedHospitalName` is the wave primary and can differ when
+  /// several hospitals were notified in parallel (first-accept-wins).
+  String get currentHospitalName {
+    final a = assignment;
+    if (a == null) return '—';
+    final st = (a.dispatchStatus ?? '').trim();
+    if (st == 'accepted') {
+      final acc = (a.acceptedHospitalName ?? '').trim();
+      if (acc.isNotEmpty) return acc;
+      final prim = (a.primaryHospitalName ?? '').trim();
+      if (prim.isNotEmpty) return prim;
+    }
+    final notified = (a.notifiedHospitalName ?? '').trim();
+    if (notified.isNotEmpty) return notified;
+    final acc = (a.acceptedHospitalName ?? '').trim();
+    if (acc.isNotEmpty) return acc;
+    final prim = (a.primaryHospitalName ?? '').trim();
+    if (prim.isNotEmpty) return prim;
+    return '—';
+  }
 
   /// 1-indexed dispatch tier (1 = same hex, 2 = nearby 5 rings, 3 = all specialists).
   int get currentTier => assignment?.currentTier ?? 1;

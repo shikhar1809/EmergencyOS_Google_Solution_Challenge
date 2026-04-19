@@ -162,6 +162,8 @@ class AppLocalizations {
   String get turnOnDutyMsg => get('turn_on_duty_msg');
   String get onDutySnack => get('on_duty_snack');
   String get offDutySnack => get('off_duty_snack');
+  /// Shown on web when toggling on duty if browser location is denied or blocked (HTTPS required).
+  String get dutyWebLocationBlockedAdvice => get('duty_web_location_blocked');
   String get nearbyVolunteersLocating => get('nearby_volunteers_locating');
   String get activeVolunteersGridNone => get('active_volunteers_grid_none');
   String activeVolunteersGridCount(int n) {
@@ -511,6 +513,8 @@ class AppLocalizations {
       'duty_monitoring': 'Incoming SOS pop-ups are ON while you are on duty.',
       'turn_on_duty_msg': 'Turn ON DUTY to receive SOS pop-ups.',
       'on_duty_snack': 'ON DUTY — Monitoring for incidents in your area...',
+      'duty_web_location_blocked':
+          'Location is blocked or unavailable in this browser. Enable location for this site (HTTPS required), or you may miss proximity alerts.',
       'off_duty_snack': 'STANDBY — Duty session recorded.',
       'nearby_volunteers_locating': 'Finding your position…',
       'active_volunteers_grid_none': 'No other volunteers in your grid yet',

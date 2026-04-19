@@ -62,8 +62,12 @@ Future<void> bootstrapEmergencyOS(AppVariant variant) async {
       return true;
     };
 
-    FirebaseFirestore.instance.settings = const Settings(
-      persistenceEnabled: true,
+    // Web uses the Firestore JS SDK. IndexedDB persistence + rapid auth changes
+    // (hospital gate: signOut → signInAnonymously) has triggered INTERNAL ASSERTION
+    // failures in WatchChangeAggregator (e.g. FIRESTORE 12.9.x). Memory cache on web
+    // avoids that class of bugs; mobile/desktop keep disk persistence.
+    FirebaseFirestore.instance.settings = Settings(
+      persistenceEnabled: !kIsWeb,
       cacheSizeBytes: 50 * 1024 * 1024,
     );
 

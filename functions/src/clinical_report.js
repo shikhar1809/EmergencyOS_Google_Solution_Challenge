@@ -2,8 +2,15 @@
 // Does not write Firestore. Always resolves — never throws to the client.
 
 const admin = require("firebase-admin");
-const { GoogleGenAI } = require("@google/genai");
 const { withSafetyForRole } = require("./ai_safety");
+
+/** Lazy so `firebase deploy` can parse `index.js` within the discovery timeout. */
+function loadGoogleGenAI() {
+  if (!loadGoogleGenAI._c) {
+    loadGoogleGenAI._c = require("@google/genai").GoogleGenAI;
+  }
+  return loadGoogleGenAI._c;
+}
 
 const db = admin.firestore();
 
@@ -186,6 +193,7 @@ async function generateClinicalReportCore(incidentId) {
       required: ["clinicalSynthesis", "redFlags", "expectedInterventions", "handoverScript"],
     };
 
+    const GoogleGenAI = loadGoogleGenAI();
     const ai = new GoogleGenAI({ apiKey: k });
     const response = await ai.models.generateContent({
       model: "gemini-2.5-flash",

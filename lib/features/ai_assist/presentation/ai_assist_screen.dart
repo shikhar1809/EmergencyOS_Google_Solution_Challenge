@@ -541,7 +541,6 @@ class _ScenarioSearchBarState extends State<_ScenarioSearchBar> {
                               );
                             },
                           ),
-                    ),
                   ),
                 ),
               ),

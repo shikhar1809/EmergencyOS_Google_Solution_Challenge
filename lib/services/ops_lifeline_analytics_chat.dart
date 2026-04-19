@@ -14,21 +14,32 @@ abstract final class OpsLifelineAnalyticsChat {
   }
 
   /// [history] = prior turns only (do not include the current user message).
+  ///
+  /// When [preloadedIncidents] is set (e.g. Insights reuses the same `snapshots()`
+  /// feed already on screen), Firestore is not queried again. That avoids overlapping
+  /// collection targets on Flutter web, which can trigger Firestore JS
+  /// `INTERNAL ASSERTION FAILED` / `TargetState` crashes.
   static Future<String> send({
     required String message,
     required IndiaOpsZone zone,
     required List<Map<String, String>> history,
     required String scenario,
     bool analyticsMode = true,
+    List<SosIncident>? preloadedIncidents,
   }) async {
-    final snap = await FirebaseFirestore.instance
-        .collection('sos_incidents')
-        .limit(500)
-        .get();
-    final all = snap.docs
-        .map(SosIncident.fromFirestore)
-        .where((e) => !excludeTrainingIncident(e))
-        .toList();
+    final List<SosIncident> all;
+    if (preloadedIncidents != null) {
+      all = preloadedIncidents.where((e) => !excludeTrainingIncident(e)).toList();
+    } else {
+      final snap = await FirebaseFirestore.instance
+          .collection('sos_incidents')
+          .limit(500)
+          .get();
+      all = snap.docs
+          .map(SosIncident.fromFirestore)
+          .where((e) => !excludeTrainingIncident(e))
+          .toList();
+    }
     final nowAi = DateTime.now();
     final inZ = all.where((e) => zone.containsLatLng(e.liveVictimPin)).toList();
     final inc48 = inZ

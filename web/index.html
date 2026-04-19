@@ -32,20 +32,22 @@
   <link rel="icon" type="image/png" href="favicon.png">
   <link rel="apple-touch-icon" href="favicon.png">
 
-  <script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyADAZzkECSDAHj0NT-QNBaqZ8ejFs31tGM" defer></script>
+  <!--
+    Google requires window.gm_authFailure to exist BEFORE the Maps JS loads; otherwise
+    auth/referrer errors show "Oops! Something went wrong" and Flutter never receives
+    eos-google-maps-unavailable to switch EosHybridMap to OSM/Leaflet.
+    See: https://developers.google.com/maps/documentation/javascript/events#auth-errors
+  -->
   <script>
-    window.addEventListener('load', function () {
-      try {
-        if (window.google && google.maps && google.maps.event) {
-          google.maps.event.addDomListener(window, 'gm_authFailure', function () {
-            try {
-              window.dispatchEvent(new CustomEvent('eos-google-maps-unavailable', { detail: 'gm_authFailure' }));
-            } catch (e) {}
-          });
-        }
-      } catch (e) {}
-    });
+    (function () {
+      window.gm_authFailure = function () {
+        try {
+          window.dispatchEvent(new CustomEvent('eos-google-maps-unavailable', { detail: 'gm_authFailure' }));
+        } catch (e) {}
+      };
+    })();
   </script>
+  <script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyADAZzkECSDAHj0NT-QNBaqZ8ejFs31tGM" defer></script>
   <link rel="manifest" href="manifest.json">
 
   <!-- Places API disabled - stub for Flutter Dart -->

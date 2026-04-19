@@ -37,6 +37,12 @@ Color commandPriorityChipColor(String label) {
 }
 
 /// Active SOS rows for command sidebars (master + medical).
+///
+/// **Medical vs Live Ops:** hospital-scoped builds stream
+/// `ops_incident_hospital_assignments` with `dispatchStatus in [accepted, failed_to_assist]`
+/// so pills can show chain state. Rows still come from parent [filtered] (`sos_incidents` in
+/// zone). Incidents whose assignment is only `failed_to_assist` are hidden here so the
+/// queue matches “active consignment” expectations once the chain is terminal.
 class CommandCenterActiveIncidentList extends StatelessWidget {
   const CommandCenterActiveIncidentList({
     super.key,
@@ -125,18 +131,25 @@ class CommandCenterActiveIncidentList extends StatelessWidget {
     required bool useHospitalStatus,
   }) {
     final fmt = DateFormat.MMMd().add_Hm();
+    final rows = useHospitalStatus
+        ? filtered
+            .where((e) =>
+                (assignmentChainDispatchStatusByIncident[e.id]?.trim() ?? '') !=
+                'failed_to_assist')
+            .toList()
+        : filtered;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         Padding(
           padding: const EdgeInsets.fromLTRB(12, 10, 12, 6),
           child: Text(
-            '${filtered.length} active consignments${zone != null ? " · ${zone!.label}" : ""}',
+            '${rows.length} active consignments${zone != null ? " · ${zone!.label}" : ""}',
             style: const TextStyle(color: Colors.white54, fontWeight: FontWeight.w700, fontSize: 11),
           ),
         ),
         Expanded(
-          child: filtered.isEmpty
+          child: rows.isEmpty
               ? const Center(
                   child: Padding(
                     padding: EdgeInsets.all(16),
@@ -148,9 +161,9 @@ class CommandCenterActiveIncidentList extends StatelessWidget {
                   ),
                 )
               : ListView.builder(
-                  itemCount: filtered.length,
+                  itemCount: rows.length,
                   itemBuilder: (_, i) {
-                    final e = filtered[i];
+                    final e = rows[i];
                     final on = e.id == selectedId;
                     final hospDist = distanceFromHospitalLine(e, hospitalLocation);
                     final pl = priorityLabelFor;
