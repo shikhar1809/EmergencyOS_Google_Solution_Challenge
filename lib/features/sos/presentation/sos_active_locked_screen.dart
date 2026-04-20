@@ -4480,8 +4480,8 @@ class _DispatchChainStatusStripState extends State<_DispatchChainStatusStrip> {
               tierColor = Colors.greenAccent;
               break;
             case 'exhausted':
-              title = l10n.get('sos_active_dispatch_exhausted_title');
-              subtitle = l10n.get('sos_active_dispatch_exhausted_subtitle');
+              title = 'No Hospital Available';
+              subtitle = 'All nearby hospitals declined. Please call 102 immediately for a government ambulance.';
               tierColor = AppColors.primaryDanger;
               break;
             default:
@@ -4539,6 +4539,23 @@ class _DispatchChainStatusStripState extends State<_DispatchChainStatusStrip> {
                         height: 1.35,
                       ),
                     ),
+                    if (status == 'exhausted') ...[
+                      const SizedBox(height: 12),
+                      FilledButton.icon(
+                        onPressed: () => launchUrl(Uri.parse('tel:102')),
+                        style: FilledButton.styleFrom(
+                          backgroundColor: AppColors.primaryDanger,
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                        ),
+                        icon: const Icon(Icons.call, size: 18),
+                        label: const Text(
+                          'Call 102',
+                          style: TextStyle(fontWeight: FontWeight.w900, letterSpacing: 0.5),
+                        ),
+                      ),
+                    ],
                   ],
                 ),
               ),

@@ -970,7 +970,7 @@ async function escalateAssignment(assignmentRef, beforeData, escalationReason, w
   if (waves[currentWave]) {
     waves[currentWave] = Object.assign({}, waves[currentWave], {
       outcome: escalationReason === "declined" ? "declined" : "timeout",
-      closedAt: FieldValue.serverTimestamp(),
+      closedAt: Timestamp.fromMillis(Date.now()),
     });
   }
 
@@ -983,7 +983,7 @@ async function escalateAssignment(assignmentRef, beforeData, escalationReason, w
       hospitalIds: [],
       outcome: "exhausted",
       reason: escalationReason || "exhausted",
-      startedAt: FieldValue.serverTimestamp(),
+      startedAt: Timestamp.fromMillis(Date.now()),
     });
     await assignmentRef.set({
       dispatchStatus: "exhausted",

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:url_launcher/url_launcher_string.dart';
 import '../../../../core/l10n/app_localizations.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../services/dispatch_chain_service.dart';
@@ -139,9 +140,9 @@ class _DispatchStatusStripState extends State<DispatchStatusStrip> {
               tierColor = Colors.greenAccent;
               break;
             case 'exhausted':
-              title = 'All hospitals notified';
+              title = 'No Hospital Available';
               subtitle =
-                  'No hospital accepted in time. Dispatch is escalating to emergency services.';
+                  'All nearby hospitals declined. Please call 102 immediately for a government ambulance.';
               tierColor = AppColors.primaryDanger;
               break;
             default:
@@ -196,6 +197,23 @@ class _DispatchStatusStripState extends State<DispatchStatusStrip> {
                         height: 1.35,
                       ),
                     ),
+                    if (status == 'exhausted') ...[
+                      const SizedBox(height: 12),
+                      FilledButton.icon(
+                        onPressed: () => launchUrlString('tel:102'),
+                        style: FilledButton.styleFrom(
+                          backgroundColor: AppColors.primaryDanger,
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                        ),
+                        icon: const Icon(Icons.call, size: 18),
+                        label: const Text(
+                          'Call 102',
+                          style: TextStyle(fontWeight: FontWeight.w900, letterSpacing: 0.5),
+                        ),
+                      ),
+                    ],
                   ],
                 ),
               ),

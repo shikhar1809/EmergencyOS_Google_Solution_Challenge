@@ -317,6 +317,9 @@ class OpsIncidentHospitalAssignment {
 
   /// Current dispatch tier (1-indexed) based on notifyIndex and tier boundaries.
   int get currentTier {
+    if (engineVersion == 2) {
+      return (currentWaveIndex ?? 0) + 1;
+    }
     final idx = notifyIndex ?? 0;
     if (tier1EndIndex != null && idx < tier1EndIndex!) return 1;
     if (tier2EndIndex != null && idx < tier2EndIndex!) return 2;

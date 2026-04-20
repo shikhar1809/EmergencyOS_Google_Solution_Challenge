@@ -708,7 +708,7 @@ class AppLocalizations {
       'volunteer_dispatch_hospital_accepted':
           '{hospital} has accepted the emergency. Ambulance coordination underway.',
       'volunteer_dispatch_all_hospitals_notified':
-          'All hospitals notified. Escalating to emergency services.',
+          'All nearby hospitals declined. Dispatch exhausted, please assist victim to call 102.',
       'sos_dispatch_alerting_nearest_trying':
           'Alerting nearest hospital in your area. Trying {hospital}.',
       'sos_dispatch_escalating_tier_trying':
@@ -716,7 +716,7 @@ class AppLocalizations {
       'sos_dispatch_retry_previous_trying':
           'No response from previous hospital. Trying {hospital}.',
       'sos_dispatch_all_hospitals_call_112':
-          'All hospitals notified. Please call 112 for emergency services.',
+          'All hospitals notified. Please call 102 for a government ambulance.',
       'profile_synced': 'Synced',
       'profile_not_synced': 'Not synced',
       'profile_saving': 'Saving…',
