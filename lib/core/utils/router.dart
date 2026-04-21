@@ -139,9 +139,11 @@ GoRouter buildRouter(AppVariant variant) {
         builder: (context, state) {
           final incidentId = state.pathParameters['incidentId'] ?? '';
           final isDrill = state.uri.queryParameters['drill'] == '1';
+          final skipVoice = state.uri.queryParameters['skipVoice'] == 'true';
           return SosActiveLockedScreen(
             incidentId: incidentId,
             isDrillMode: isDrill,
+            skipInitialVoiceIntake: skipVoice,
           );
         },
       ),

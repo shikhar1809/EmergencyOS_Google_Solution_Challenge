@@ -20,6 +20,9 @@ const hospitalDispatchV2 = require("./src/hospital_dispatch_v2");
 const { AI_SAFETY_PREAMBLE, withSafetyForRole } = require("./src/ai_safety");
 const preArrivalHandoff = require("./src/pre_arrival_handoff");
 const clinicalReport = require("./src/clinical_report");
+const phasedReports = require("./src/phased_reports_cron");
+
+exports.progressPhasedLiveReports = phasedReports.progressPhasedLiveReports;
 
 /** Fleet operator must accept/reject a pending assignment within this window (matches client UI). */
 const FLEET_ASSIGNMENT_RESPONSE_MS = 180000;
@@ -3918,7 +3921,7 @@ exports.pruneStaleFcmTokens = onSchedule(
 
 );
 
-/** Accepted hospital consignments older than 1h → terminal status + archive active SOS when still open. */
+/** Accepted hospital consignments older than 30m → terminal status + archive active SOS when still open. */
 exports.expireStaleHospitalConsignments = onSchedule(
     {
       schedule: "every 5 minutes",
@@ -3928,7 +3931,7 @@ exports.expireStaleHospitalConsignments = onSchedule(
       timeoutSeconds: 120,
     },
     async () => {
-      const cutoffMs = Date.now() - 60 * 60 * 1000;
+      const cutoffMs = Date.now() - 30 * 60 * 1000;
       const cutoffTs = Timestamp.fromMillis(cutoffMs);
       const col = db.collection("ops_incident_hospital_assignments");
       const archiveCol = db.collection("sos_incidents_archive");
@@ -3944,14 +3947,14 @@ exports.expireStaleHospitalConsignments = onSchedule(
         return;
       }
 
-      const medicalLine = "Hospital consignment closed — assistance window expired (1h)";
+      const medicalLine = "Hospital consignment closed — assistance window expired (30m)";
 
       const tasks = snap.docs.map(async (doc) => {
         await doc.ref.set(
           {
             dispatchStatus: "failed_to_assist",
             consignmentClosedAt: FieldValue.serverTimestamp(),
-            consignmentCloseReason: "ttl_1h_after_accept",
+            consignmentCloseReason: "ttl_30m_after_accept",
           },
           { merge: true }
         );
@@ -3980,7 +3983,7 @@ exports.expireStaleHospitalConsignments = onSchedule(
           updatedAt: FieldValue.serverTimestamp(),
           status: "expired",
           expiredAt: FieldValue.serverTimestamp(),
-          expiredReason: "hospital_consignment_ttl_1h",
+          expiredReason: "hospital_consignment_ttl_30m",
           closureLabel: "hospital_consignment_ttl",
         };
         await archiveCol.doc(doc.id).set(payload, { merge: true });

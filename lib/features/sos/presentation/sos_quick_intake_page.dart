@@ -217,7 +217,7 @@ class _SosQuickIntakePageState extends ConsumerState<SosQuickIntakePage>
     if (!context.mounted) return;
     final id = createdId;
     if (id.isNotEmpty) {
-      context.go('/sos-active/${Uri.encodeComponent(id)}');
+      context.go('/sos-active/${Uri.encodeComponent(id)}?skipVoice=true');
     } else {
       if (kIsWeb) VoiceCommsService.discardSosVoicePriming();
       final loc = AppLocalizations.of(context);

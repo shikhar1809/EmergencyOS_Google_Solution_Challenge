@@ -181,6 +181,10 @@ class SosIncident {
   /// Set when ops jobs tag stale rows (`archivedAt` on live doc) without moving to archive yet.
   final DateTime? archivedAt;
 
+  /// Phased Live Report state (1-min cron sweeps).
+  final int? liveReportPhase;
+  final Map<String, dynamic>? liveReportData;
+
   bool get smsRelayOrOrigin => smsOrigin || smsRelayReceived;
 
   /// Rows that should not appear as an active fleet driver allotment (roster / queue).
@@ -317,6 +321,8 @@ class SosIncident {
     this.firstAcknowledgedByUid,
     this.rawFirestoreStatus,
     this.archivedAt,
+    this.liveReportPhase,
+    this.liveReportData,
   });
 
   LatLng? get ambulanceLiveLocation {
@@ -461,6 +467,8 @@ class SosIncident {
     if (firstAcknowledgedByUid != null) 'firstAcknowledgedByUid': firstAcknowledgedByUid,
     if (greenCorridorStatus != null) 'greenCorridorStatus': greenCorridorStatus,
     if (archivedAt != null) 'archivedAt': archivedAt!.toIso8601String(),
+    if (liveReportPhase != null) 'liveReportPhase': liveReportPhase,
+    if (liveReportData != null) 'liveReportData': liveReportData,
   };
 
   static Map<String, String> _parseResponderNames(dynamic v) {
@@ -621,6 +629,10 @@ class SosIncident {
       if (v is String) return DateTime.tryParse(v);
       return null;
     }(),
+    liveReportPhase: j['liveReportPhase'] as int?,
+    liveReportData: j['liveReportData'] is Map
+        ? Map<String, dynamic>.from(j['liveReportData'] as Map)
+        : null,
   );
 
   factory SosIncident.fromFirestore(DocumentSnapshot doc) {

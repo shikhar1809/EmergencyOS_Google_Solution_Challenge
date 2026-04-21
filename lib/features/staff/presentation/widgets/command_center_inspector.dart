@@ -1371,7 +1371,38 @@ class _CommandCenterInspectorState extends State<CommandCenterInspector> {
                 ),
               ],
             ),
+            ),
           ),
+          if (inc.liveReportPhase != null && inc.liveReportPhase! > 0) ...[
+            const SizedBox(height: 18),
+            _sectionTitle('Live Medical Intelligence (Phase ${inc.liveReportPhase})'),
+            Container(
+              margin: const EdgeInsets.only(top: 4, bottom: 10),
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: AppColors.slate800,
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: Colors.cyanAccent.withValues(alpha: 0.3)),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  if (inc.liveReportData?['patientEssentials'] != null)
+                    Text('Essentials: ${inc.liveReportData!['patientEssentials']['name'] ?? 'Unknown'}', style: const TextStyle(color: Colors.white, fontSize: 12)),
+                  if (inc.liveReportData?['situationBrief'] != null)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 6),
+                      child: Text('Brief: ${inc.liveReportData!['situationBrief']}', style: const TextStyle(color: Colors.white70, fontSize: 11)),
+                    ),
+                  if (inc.liveReportData?['emrHandoff'] != null)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 6),
+                      child: Text('Handoff ETA required: ${inc.liveReportData!['emrHandoff']?['etaRequiredServices']?.join(', ') ?? 'Pending'}', style: const TextStyle(color: Colors.white70, fontSize: 11)),
+                    ),
+                ],
+              ),
+            ),
+          ],
           const SizedBox(height: 18),
           _sectionTitle('Volunteer roster'),
           Text(

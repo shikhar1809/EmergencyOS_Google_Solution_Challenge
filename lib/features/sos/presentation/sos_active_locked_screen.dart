@@ -68,11 +68,14 @@ class SosActiveLockedScreen extends ConsumerStatefulWidget {
   final String incidentId;
   /// Practice flow from login: no LiveKit/PTT to real incident, no Firestore writes.
   final bool isDrillMode;
+  /// True if the user arrived via the Quick Intake form (1-Tap), bypassing the initial AI voice interview.
+  final bool skipInitialVoiceIntake;
 
   const SosActiveLockedScreen({
     super.key,
     required this.incidentId,
     this.isDrillMode = false,
+    this.skipInitialVoiceIntake = false,
   });
 
   @override
@@ -184,8 +187,8 @@ class _SosActiveLockedScreenState extends ConsumerState<SosActiveLockedScreen> {
   int _onSceneVolunteerCount = 0;
 
   // Voice interview state
-  bool _consciousConfirmedOnce = false;
-  bool _interviewCompleted = false;
+  late bool _consciousConfirmedOnce;
+  late bool _interviewCompleted;
   int _interviewStep = -1; // -1 = not started, 0+ = question index
   /// Captured when the interview starts so step indices stay stable.
   List<Map<String, String>>? _frozenInterviewFlow;
@@ -274,6 +277,8 @@ class _SosActiveLockedScreenState extends ConsumerState<SosActiveLockedScreen> {
   @override
   void initState() {
     super.initState();
+    _consciousConfirmedOnce = widget.skipInitialVoiceIntake;
+    _interviewCompleted = widget.skipInitialVoiceIntake;
     final id = widget.incidentId.trim();
     if (id.isNotEmpty && !widget.isDrillMode) {
       unawaited(IncidentService.persistActiveSos(id));
@@ -4323,6 +4328,9 @@ class _DispatchChainStatusStrip extends StatefulWidget {
 }
 
 class _DispatchChainStatusStripState extends State<_DispatchChainStatusStrip> {
+  bool _consciousConfirmedOnce = false;
+  bool _interviewCompleted = false;
+  String? _intakeMode;
   String? _lastSpokenPhase;
   String? _lastSpokenHospital;
   int? _lastSpokenTier;
