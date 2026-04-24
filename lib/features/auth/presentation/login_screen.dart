@@ -201,7 +201,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
   }
 
   static const _staffAccent = Color(0xFFFF6B35);
-  bool _staffExpanded = false;
+  bool _staffExpanded = true;
 
   Widget _buildStaffPortalsSection() {
     final disabled = _isLoading;
