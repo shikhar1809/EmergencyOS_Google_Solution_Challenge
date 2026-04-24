@@ -202,6 +202,104 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
   }
 
   static const _drillAccent = Color(0xFF4DD0E1);
+  static const _staffAccent = Color(0xFFFF6B35);
+  bool _staffExpanded = false;
+
+  Widget _buildStaffPortalsSection() {
+    final disabled = _isLoading;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Material(
+          color: Colors.white.withValues(alpha: 0.06),
+          borderRadius: BorderRadius.circular(14),
+          clipBehavior: Clip.antiAlias,
+          child: InkWell(
+            onTap: disabled ? null : () => setState(() => _staffExpanded = !_staffExpanded),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+              child: Row(
+                children: [
+                  Icon(
+                    Icons.admin_panel_settings_rounded,
+                    size: 22,
+                    color: _staffAccent.withValues(alpha: 0.95),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Staff Portals',
+                          style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                                fontWeight: FontWeight.w800,
+                                color: Colors.white,
+                              ),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          'Access Fleet, Hospital or Admin dashboards',
+                          style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                                color: Colors.white54,
+                                height: 1.25,
+                              ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  Icon(
+                    _staffExpanded ? Icons.expand_less_rounded : Icons.expand_more_rounded,
+                    color: Colors.white54,
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+        AnimatedCrossFade(
+          firstChild: const SizedBox(width: double.infinity),
+          secondChild: Padding(
+            padding: const EdgeInsets.only(top: 12),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                // Fleet Operator App
+                _StaffPortalButton(
+                  icon: Icons.local_shipping_rounded,
+                  label: 'Fleet Operator App',
+                  subtitle: 'emergencyos-fleet.web.app',
+                  color: const Color(0xFF64B5F6),
+                  onTap: disabled ? null : _enterFleetConsole,
+                ),
+                const SizedBox(height: 10),
+                // Hospital Dashboard
+                _StaffPortalButton(
+                  icon: Icons.local_hospital_rounded,
+                  label: 'Hospital Dashboard',
+                  subtitle: 'emergencyos-hospital.web.app',
+                  color: const Color(0xFF81C784),
+                  onTap: disabled ? null : _enterHospitalConsole,
+                ),
+                const SizedBox(height: 10),
+                // Master Admin Dashboard
+                _StaffPortalButton(
+                  icon: Icons.shield_rounded,
+                  label: 'Master Admin Dashboard',
+                  subtitle: 'emergencyos-admin.web.app',
+                  color: _staffAccent,
+                  onTap: disabled ? null : _enterAdminConsole,
+                ),
+              ],
+            ),
+          ),
+          crossFadeState: _staffExpanded ? CrossFadeState.showSecond : CrossFadeState.showFirst,
+          duration: const Duration(milliseconds: 200),
+          sizeCurve: Curves.easeOutCubic,
+        ),
+      ],
+    );
+  }
 
   Future<void> _startVictimDrill() async {
     if (_isLoading) return;
@@ -421,13 +519,89 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                           padding: const EdgeInsets.symmetric(vertical: 14),
                         ),
                       ),
-                      const SizedBox(height: 26),
+                      const SizedBox(height: 14),
                       _buildDrillSection(),
+                      const SizedBox(height: 10),
+                      _buildStaffPortalsSection(),
                     ],
                     const Spacer(),
                     const SizedBox(height: 16),
                   ],
                 ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// A compact staff portal entry row with an icon, label, subtitle and tap handler.
+class _StaffPortalButton extends StatelessWidget {
+  const _StaffPortalButton({
+    required this.icon,
+    required this.label,
+    required this.subtitle,
+    required this.color,
+    required this.onTap,
+  });
+
+  final IconData icon;
+  final String label;
+  final String subtitle;
+  final Color color;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: color.withValues(alpha: 0.12),
+      borderRadius: BorderRadius.circular(12),
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 13),
+          child: Row(
+            children: [
+              Container(
+                width: 38,
+                height: 38,
+                decoration: BoxDecoration(
+                  color: color.withValues(alpha: 0.18),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Icon(icon, size: 20, color: color),
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      label,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.w700,
+                        fontSize: 13.5,
+                      ),
+                    ),
+                    const SizedBox(height: 1),
+                    Text(
+                      subtitle,
+                      style: TextStyle(
+                        color: Colors.white.withValues(alpha: 0.45),
+                        fontSize: 11.5,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Icon(
+                Icons.arrow_forward_ios_rounded,
+                size: 14,
+                color: color.withValues(alpha: 0.7),
               ),
             ],
           ),
