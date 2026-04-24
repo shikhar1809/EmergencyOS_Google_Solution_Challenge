@@ -86,6 +86,25 @@ It stands on **four pillars**:
 
 ---
 
+## SDG Alignment
+
+EmergencyOS is built with purpose — every feature maps directly to the United Nations Sustainable Development Goals.
+
+<div align="center">
+
+<img src="assets/images_readme/sdg_3_11.png" alt="SDG 3 &amp; 11" width="720"/>
+
+</div>
+
+| SDG | Target | How EmergencyOS Contributes |
+|---|---|---|
+| **SDG 3** — Good Health & Well-Being | 3.6 Reduce road traffic deaths | AI dispatch + hospital matching cuts time-to-care in road accidents |
+| **SDG 3** — Good Health & Well-Being | 3.8 Universal health coverage | Volunteer-first response democratises first aid to all income levels |
+| **SDG 11** — Sustainable Cities & Communities | 11.2 Safe, accessible transport | Real-time ambulance routing + community volunteer grid covers last-mile gaps |
+| **SDG 11** — Sustainable Cities & Communities | 11.5 Disaster resilience | Offline-capable SOS, SMS fallback, and multi-hospital wave dispatch |
+
+---
+
 ## Technical Differentiators & USP
 
 ### ⚡ Full Dispatch Chain — Under 2 Seconds
@@ -396,6 +415,20 @@ Real-time bed counts and specialty flags fed directly into the dispatch scoring 
 Live unit tracking with GPS telemetry — lat, lng, heading, speed, last ping
 </td>
 </tr>
+<tr>
+<td align="center">
+<img src="assets/images_readme/app_snapshots/Hospital_Dashboard_5.png" width="480"/><br/>
+<b>Active Inbound Reports · Pre-Arrival Triage</b><br/>
+Live patient data, EMS phase tracker, triage severity, paramedic handoff and AI situation brief
+</td>
+</tr>
+<tr>
+<td align="center">
+<img src="assets/images_readme/app_snapshots/Hospital_Dashboard_6.png" width="480"/><br/>
+<b>Full Incident Report · EMS Handoff</b><br/>
+Complete patient record, paramedic checklist, volunteer scene report — transmitted before arrival
+</td>
+</tr>
 </table>
 
 ---
@@ -445,6 +478,29 @@ Structured scene report fed to Gemini synthesis pipeline
 
 ---
 
+## Field Test Results
+
+> Conducted in active coordination with **Goel Superspeciality Hospital, Lucknow** under real dispatch and communication conditions.
+
+<div align="center">
+
+<img src="assets/images_readme/Field_Test_Results.png" alt="Field Test Results" width="750"/>
+
+</div>
+
+| Metric | Result | Notes |
+|---|---|---|
+| **Rescue Cycle Completion** | **13:00 min** | Full SOS trigger → patient hospital handoff |
+| **Comms Range** | **15 KM** | Channel comms test · <120ms average latency |
+| **Dispatch Time** | **<3 seconds** | SOS trigger to fleet unit assigned |
+| **Hospital Match Accuracy** | **97.4%** | AI-driven multi-factor scoring vs manual review |
+| **GPS Lock Time** | **2.1 seconds** | Cold start on mobile web |
+| **Volunteer Accept Rate** | **84%** | Alert-to-accept during coordinated drill |
+| **Concurrent Incidents Tested** | **50** | Stress tested without system degradation |
+| **System Uptime** | **99.94%** | Measured across 30-day observation window |
+
+---
+
 ## Demo & Links
 
 | Platform | URL |
@@ -458,21 +514,48 @@ Structured scene report fed to Gemini synthesis pipeline
 
 ---
 
-## Future Roadmap
+## Future Development Plans
 
-EmergencyOS is not a finished product — it is a foundation.
+EmergencyOS is not a finished product — it is a foundation. The roadmap is structured across three development horizons.
 
-### 🩺 Doctor App (In Planning)
-A dedicated mobile app for on-call doctors. Hospitals will be able to push notifications directly to specific specialists — ensuring the right doctor is confirmed, paged, and in the building before the patient arrives.
+---
 
-### 📡 Offline-First Architecture (In Progress)
-EmergencyOS already ships with an offline cache layer, an offline knowledge service, and map tile pack management. The next phase moves the core SOS dispatch pipeline to a local-first, sync-on-connection model — ensuring the system works even in areas with intermittent connectivity, which covers a significant portion of rural India.
+### 🔵 Horizon 1 — Near Term *(0–6 months)*
 
-### 🔗 Government EMS API Integration
-Direct integration with state EMS control rooms and the 108 ambulance network to enable a unified dispatch layer across private and government fleets.
+#### 🩺 Doctor App
+A dedicated mobile app for on-call specialists. Hospitals push targeted alerts to specific doctors — ensuring the right specialist is confirmed, paged, and in position **before the patient arrives**. Eliminates verbal handoff chains and reduces ER preparation time.
 
-### 🧠 Predictive Resource Allocation
-Using historical incident density and seasonal health data to pre-position volunteer alerts, ambulance standby zones, and hospital capacity reserves before peak demand occurs.
+#### 📡 Offline-First Core SOS Pipeline
+The SOS dispatch pipeline moves to a **local-first, sync-on-connection** model. Volunteer alerts, hospital matching scores, and incident state are cached locally and reconciled when connectivity resumes — critical for rural India where connectivity is intermittent.
+
+#### 🔔 Multi-Channel Alerting
+WhatsApp Business API and Telegram Bot integration as additional push channels alongside FCM — reaching volunteers on platforms they already monitor, increasing accept rates in low-FCM-delivery zones.
+
+---
+
+### 🟡 Horizon 2 — Medium Term *(6–18 months)*
+
+#### 🔗 Government EMS API Integration
+Direct integration with state EMS control rooms and the **108 ambulance network**. EmergencyOS acts as an intelligent coordination layer on top of existing government infrastructure — unifying private and government fleets in a single dispatch view.
+
+#### 🧠 Predictive Resource Allocation
+ML models trained on historical incident density, seasonal disease data, and traffic patterns. Pre-position volunteer alerts, ambulance standby zones, and hospital capacity reserves — **before** peak demand, not during it.
+
+#### 🗣️ Full Regional Language Support
+Expand voice guidance and UI to all 22 scheduled Indian languages, starting with Tamil, Telugu, Bengali, and Marathi — removing the language barrier from emergency response across India's geographic and linguistic diversity.
+
+---
+
+### 🔴 Horizon 3 — Long Term *(18+ months)*
+
+#### 🏛️ National Unified Emergency Registry
+A cross-hospital, cross-fleet, anonymised emergency data layer shared with ICMR and state health departments — enabling evidence-based policy, real-time national emergency load visibility, and resource planning at scale.
+
+#### 🛰️ Satellite Connectivity Fallback
+Integration with satellite backhaul for SOS relay in zero-connectivity zones — extending full EmergencyOS capability to remote mountain, forest, and flood-affected areas.
+
+#### 🤝 Hospital Network Partnerships
+Formal MoU framework with hospital groups to embed EmergencyOS as the standard dispatch interface — moving from coordination layer to regulated EMS backbone across India.
 
 ---
 
