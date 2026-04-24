@@ -274,18 +274,34 @@ GoRouter buildRouter(AppVariant variant) {
             ),
             GoRoute(
               path: '/drill/dashboard',
+              redirect: (context, state) {
+                if (FirebaseAuth.instance.currentUser == null) return '/login';
+                return null;
+              },
               builder: (context, state) => const DashboardScreen(isDrillShell: true),
             ),
             GoRoute(
               path: '/drill/map',
+              redirect: (context, state) {
+                if (FirebaseAuth.instance.currentUser == null) return '/login';
+                return null;
+              },
               builder: (context, state) => const MapScreen(isDrillShell: true),
             ),
             GoRoute(
               path: '/drill/sos-intake',
+              redirect: (context, state) {
+                if (FirebaseAuth.instance.currentUser == null) return '/login';
+                return null;
+              },
               builder: (context, state) => const SosQuickIntakePage(isDrillShell: true),
             ),
             GoRoute(
               path: '/drill/lifeline',
+              redirect: (context, state) {
+                if (FirebaseAuth.instance.currentUser == null) return '/login';
+                return null;
+              },
               builder: (context, state) {
                 final openAid = state.uri.queryParameters['openAid'];
                 final mode = state.uri.queryParameters['mode'];
@@ -300,6 +316,10 @@ GoRouter buildRouter(AppVariant variant) {
             ),
             GoRoute(
               path: '/drill/profile',
+              redirect: (context, state) {
+                if (FirebaseAuth.instance.currentUser == null) return '/login';
+                return null;
+              },
               builder: (context, state) => const ProfileHubScreen(isDrillShell: true),
               routes: [
                 GoRoute(
