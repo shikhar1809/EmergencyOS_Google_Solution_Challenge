@@ -97,6 +97,31 @@ class _OpsDashboardScreenState extends ConsumerState<OpsDashboardScreen> {
       final a = await AdminPanelSessionService.load();
       if (!context.mounted) return;
 
+      // ── Role-path mismatch guard ─────────────────────────────────────────
+      // If the saved session role doesn't match what this URL expects (e.g.
+      // user previously logged into master-dashboard, then opens the
+      // hospital-dashboard URL in the same browser), clear the stale session
+      // and show the correct credential gate instead of silently redirecting.
+      if (a != null) {
+        final currentPath = GoRouterState.of(context).uri.path;
+        final urlWantsMedical = OpsAdminRoutes.pathPrefersMedicalGate(currentPath);
+        final sessionIsMedical = a.role == AdminConsoleRole.medical;
+        if (urlWantsMedical != sessionIsMedical) {
+          await AdminPanelSessionService.clear();
+          if (!context.mounted) return;
+          setState(() {
+            _access = null;
+            _loading = false;
+          });
+          // Re-sync the gate role so the credential fields match this URL.
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (mounted) _syncGateRoleFromRoute();
+          });
+          return;
+        }
+      }
+      // ─────────────────────────────────────────────────────────────────────
+
       if (a != null &&
           a.role == AdminConsoleRole.medical &&
           (a.boundHospitalDocId ?? '').trim().isNotEmpty) {
@@ -968,51 +993,7 @@ class _OpsDashboardScreenState extends ConsumerState<OpsDashboardScreen> {
                     ),
                     const SizedBox(height: 12),
                   ],
-                  InputDecorator(
-                    decoration: InputDecoration(
-                      labelText: context.opsTr('Role'),
-                      labelStyle: const TextStyle(color: Colors.white54),
-                      filled: true,
-                      fillColor: AppColors.slate900,
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                    ),
-                    child: DropdownButtonHideUnderline(
-                      child: DropdownButton<AdminConsoleRole>(
-                        value: _gateRole,
-                        isExpanded: true,
-                        dropdownColor: AppColors.slate800,
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 15,
-                        ),
-                        items: [
-                          DropdownMenuItem(
-                            value: AdminConsoleRole.master,
-                            child: Text(context.opsTr('Master — full access')),
-                          ),
-                          DropdownMenuItem(
-                            value: AdminConsoleRole.medical,
-                            child: Text(context.opsTr('Medical — EMS + hospital')),
-                          ),
-                        ],
-                        onChanged: (v) {
-                          if (v == null) return;
-                          setState(() => _gateRole = v);
-                          // Re-sync demo password for the newly selected role.
-                          const demoPw = DemoCredentials.adminPassword;
-                          const demoGatePw = DemoGatePassword.value;
-                          if (v == AdminConsoleRole.medical) {
-                            if (demoGatePw.isNotEmpty) _hospitalPasswordCtrl.text = demoGatePw;
-                          } else {
-                            if (demoPw.isNotEmpty) _passwordCtrl.text = demoPw;
-                          }
-                        },
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 16),
+
                   if (_gateRole == AdminConsoleRole.medical) ...[
                     TextField(
                       controller: _hospitalIdCtrl,

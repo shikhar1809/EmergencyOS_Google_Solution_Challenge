@@ -410,7 +410,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                         padding: EdgeInsets.symmetric(vertical: 32),
                         child: Center(child: CircularProgressIndicator(color: AppColors.primaryDanger)),
                       )
-                    else if (!_isPhoneAuth) ...[
+                    else ...[
                       ElevatedButton.icon(
                         onPressed: _handleGoogleSignIn,
                         icon: const Icon(Icons.g_mobiledata_rounded, size: 32),
@@ -421,158 +421,8 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                           padding: const EdgeInsets.symmetric(vertical: 14),
                         ),
                       ),
-                      const SizedBox(height: 14),
-                      OutlinedButton.icon(
-                        onPressed: () => setState(() {
-                          _isPhoneAuth = true;
-                          _drillExpanded = false;
-                        }),
-                        icon: const Icon(Icons.phone_android_rounded),
-                        label: Text(l.loginContinuePhone),
-                        style: OutlinedButton.styleFrom(
-                          padding: const EdgeInsets.symmetric(vertical: 16),
-                          side: const BorderSide(color: Colors.white24, width: 2),
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                          foregroundColor: AppColors.textPrimary,
-                        ),
-                      ),
                       const SizedBox(height: 26),
-                      const Text(
-                        '── STAFF DASHBOARDS ──',
-                        textAlign: TextAlign.center,
-                        style: TextStyle(
-                          color: Colors.white38,
-                          fontSize: 11,
-                          fontWeight: FontWeight.w600,
-                          letterSpacing: 1.5,
-                        ),
-                      ),
-                      const SizedBox(height: 14),
-                      Row(
-                        children: [
-                          Expanded(
-                            child: FilledButton.icon(
-                              onPressed: _isLoading ? null : _enterAdminConsole,
-                              icon: const Icon(Icons.admin_panel_settings_rounded, size: 18),
-                              label: const Text('Admin'),
-                              style: FilledButton.styleFrom(
-                                backgroundColor: Colors.amber,
-                                foregroundColor: Colors.black87,
-                                padding: const EdgeInsets.symmetric(vertical: 16),
-                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                              ),
-                            ),
-                          ),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: FilledButton.icon(
-                              onPressed: _isLoading ? null : _enterHospitalConsole,
-                              icon: const Icon(Icons.local_hospital_rounded, size: 18),
-                              label: const Text('Hospital'),
-                              style: FilledButton.styleFrom(
-                                backgroundColor: const Color(0xFF4CAF50),
-                                foregroundColor: Colors.white,
-                                padding: const EdgeInsets.symmetric(vertical: 16),
-                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 14),
                       _buildDrillSection(),
-                      const SizedBox(height: 28),
-                      Text(
-                        l.loginAdminNote,
-                        textAlign: TextAlign.center,
-                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                              color: Colors.white38,
-                              height: 1.35,
-                            ),
-                      ),
-                      const SizedBox(height: 12),
-                      OutlinedButton.icon(
-                        onPressed: _isLoading ? null : _enterEmergencyServicesConsole,
-                        icon: const Icon(Icons.medical_services_rounded),
-                        label: const Text('EMS Services'),
-                        style: OutlinedButton.styleFrom(
-                          padding: const EdgeInsets.symmetric(vertical: 14),
-                          side: const BorderSide(color: Colors.amberAccent, width: 1.5),
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                          foregroundColor: Colors.amberAccent,
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      OutlinedButton.icon(
-                        onPressed: _isLoading ? null : _enterEmergencyServicesConsole,
-                        icon: const Icon(Icons.local_hospital_outlined),
-                        label: Text(l.loginEmergencyOperator),
-                        style: OutlinedButton.styleFrom(
-                          padding: const EdgeInsets.symmetric(vertical: 14),
-                          side: const BorderSide(color: Color(0xFF4FC3F7), width: 1.5),
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                          foregroundColor: const Color(0xFF4FC3F7),
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      OutlinedButton.icon(
-                        onPressed: _isLoading ? null : _enterHospitalConsole,
-                        icon: const Icon(Icons.local_pharmacy_rounded),
-                        label: const Text('Hospital Dashboard'),
-                        style: OutlinedButton.styleFrom(
-                          padding: const EdgeInsets.symmetric(vertical: 14),
-                          side: const BorderSide(color: Color(0xFF81C784), width: 1.5),
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                          foregroundColor: const Color(0xFF81C784),
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      OutlinedButton.icon(
-                        onPressed: _isLoading ? null : _enterFleetConsole,
-                        icon: const Icon(Icons.directions_car_rounded),
-                        label: const Text('Fleet Operator'),
-                        style: OutlinedButton.styleFrom(
-                          padding: const EdgeInsets.symmetric(vertical: 14),
-                          side: const BorderSide(color: Color(0xFFFFB74D), width: 1.5),
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                          foregroundColor: const Color(0xFFFFB74D),
-                        ),
-                      ),
-                    ] else if (!_otpSent) ...[
-                      TextField(
-                        controller: _phoneController,
-                        keyboardType: TextInputType.phone,
-                        decoration: InputDecoration(
-                          labelText: l.loginPhoneLabel,
-                          hintText: l.loginPhoneHint,
-                        ),
-                      ),
-                      const SizedBox(height: 16),
-                      ElevatedButton(
-                        onPressed: _sendOTP,
-                        child: Text(l.loginSendCode),
-                      ),
-                      TextButton(
-                        onPressed: () => setState(() => _isPhoneAuth = false),
-                        child: Text(l.loginBackOptions, style: const TextStyle(color: Colors.white70)),
-                      ),
-                    ] else ...[
-                      TextField(
-                        controller: _otpController,
-                        keyboardType: TextInputType.number,
-                        decoration: InputDecoration(
-                          labelText: l.loginOtpLabel,
-                        ),
-                      ),
-                      const SizedBox(height: 16),
-                      ElevatedButton(
-                        onPressed: _verifyOTP,
-                        child: Text(l.loginVerifyLogin),
-                      ),
-                      TextButton(
-                        onPressed: () => setState(() => _otpSent = false),
-                        child: Text(l.loginChangePhone, style: const TextStyle(color: Colors.white70)),
-                      ),
                     ],
                     const Spacer(),
                     const SizedBox(height: 16),
