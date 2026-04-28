@@ -486,6 +486,10 @@ Structured scene report fed to Gemini synthesis pipeline
 
 <img src="assets/images_readme/Field_Test_Results.png" alt="Field Test Results" width="750"/>
 
+<br/>
+
+[![▶ Watch Field Test Video](https://img.youtube.com/vi/nR2P0SCCXNQ/maxresdefault.jpg)](https://youtu.be/nR2P0SCCXNQ)
+
 </div>
 
 | Metric | Result | Notes |
